@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agentwatch"
+name = "agentwatch-ai"
 version = "0.1.0"
 description = "The Reliability, Safety, and Observability Layer for AI Agents"
 readme = "README.md"
