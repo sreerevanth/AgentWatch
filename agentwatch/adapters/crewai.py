@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import logging
 import uuid
-from typing import Any, Optional
 
 from agentwatch.core.event_bus import EventBus, get_event_bus
 from agentwatch.core.schema import (
@@ -27,11 +26,13 @@ class AgentWatchCrewAIAdapter:
 
     def __init__(
         self,
-        session_id: Optional[str] = None,
-        agent_id: Optional[str] = None,
-        event_bus: Optional[EventBus] = None,
+        session_id: str | None = None,
+        agent_id: str | None = None,
+        event_bus: EventBus | None = None,
     ):
-        """Initialize CrewAI adapter with session, agent and event bus."""
+        """
+        Initialize CrewAI adapter with session, agent and event bus.
+        """
         self.session_id = session_id or str(uuid.uuid4())
         self.agent_id = agent_id or f"crewai-{uuid.uuid4().hex[:8]}"
         self._bus = event_bus or get_event_bus()
@@ -64,35 +65,27 @@ class AgentWatchCrewAIAdapter:
     def on_agent_start(self, *args, **kwargs):
         """
         Handles CrewAI agent start event.
-
-        Emits SESSION_START event to AgentWatch event bus.
+        Emits SESSION_START event.
         """
         event = self._base(EventType.SESSION_START)
-        event.status = ExecutionStatus.SUCCESS
-        event.metadata = {
-            "args": str(args),
-            "kwargs": str(kwargs),
-        }
+        event.status = ExecutionStatus.RUNNING
+        event.metadata = {"args": str(args), "kwargs": str(kwargs)}
         self._emit(event)
 
     def on_agent_finish(self, *args, **kwargs):
         """
         Handles CrewAI agent finish event.
-
-        Emits SESSION_END event with result metadata.
+        Emits SESSION_END event.
         """
         event = self._base(EventType.SESSION_END)
         event.status = ExecutionStatus.SUCCESS
-        event.metadata = {
-            "result": str(kwargs.get("result")),
-        }
+        event.metadata = {"result": str(kwargs.get("result"))}
         self._emit(event)
 
     def on_tool_start(self, tool_name, *args, **kwargs):
         """
-        Handles CrewAI tool execution start event.
-
-        Emits TOOL_CALL event with tool metadata.
+        Handles tool start event.
+        Emits TOOL_CALL event.
         """
         event = self._base(EventType.TOOL_CALL)
         event.metadata = {
@@ -104,11 +97,11 @@ class AgentWatchCrewAIAdapter:
 
     def on_tool_end(self, tool_name, result=None, *args, **kwargs):
         """
-        Handles CrewAI tool execution completion event.
-
-        Emits TOOL_RESULT event with execution result.
+        Handles tool end event.
+        Emits TOOL_RESULT event.
         """
         event = self._base(EventType.TOOL_RESULT)
+        event.status = ExecutionStatus.SUCCESS
         event.metadata = {
             "tool_name": tool_name,
             "result": str(result),
@@ -117,13 +110,10 @@ class AgentWatchCrewAIAdapter:
 
     def on_chain_error(self, error, *args, **kwargs):
         """
-        Handles CrewAI chain execution error.
-
-        Emits AGENT_ERROR event with failure details.
+        Handles chain error event.
+        Emits AGENT_ERROR event.
         """
         event = self._base(EventType.AGENT_ERROR)
         event.status = ExecutionStatus.FAILURE
-        event.metadata = {
-            "error": str(error),
-        }
+        event.metadata = {"error": str(error)}
         self._emit(event)
