@@ -163,7 +163,7 @@ For the least setup possible, keep your current LangChain code and only add the 
 
 ## 4. Understanding the Dashboard
 
-Open http://localhost:3000 after running the demo or your own agent. The main dashboard is split into four parts:
+Open http://localhost:3000 after running the demo or your own agent. The main dashboard is split into five parts:
 
 ### Live Event Feed
 
