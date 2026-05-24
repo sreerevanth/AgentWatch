@@ -4,8 +4,12 @@ AgentWatch Railway deployment script.
 Uses Railway GraphQL API to create project, add plugins, and deploy services.
 Run: python scripts/railway_deploy.py <RAILWAY_TOKEN>
 """
+
 from __future__ import annotations
-import json, subprocess, sys, time, textwrap
+
+import json
+import sys
+
 import httpx
 
 API = "https://backboard.railway.app/graphql/v2"
@@ -41,8 +45,7 @@ def main() -> None:
 
     # List existing projects
     projects = gql(token, "{ me { projects { edges { node { id name } } } } }")
-    existing = {p["node"]["name"]: p["node"]["id"]
-                for p in projects["me"]["projects"]["edges"]}
+    existing = {p["node"]["name"]: p["node"]["id"] for p in projects["me"]["projects"]["edges"]}
     print(f"Existing projects: {list(existing.keys()) or 'none'}")
 
     project_name = "agentwatch"
@@ -50,31 +53,44 @@ def main() -> None:
         project_id = existing[project_name]
         print(f"Using existing project: {project_id}")
     else:
-        result = gql(token, """
+        result = gql(
+            token,
+            """
             mutation($name: String!) {
                 projectCreate(input: { name: $name, isPublic: false }) { id name }
             }
-        """, {"name": project_name})
+        """,
+            {"name": project_name},
+        )
         project_id = result["projectCreate"]["id"]
         print(f"Created project: {project_id}")
 
     # Get environments
-    envs = gql(token, """
+    envs = gql(
+        token,
+        """
         query($id: String!) {
             project(id: $id) { environments { edges { node { id name } } } }
         }
-    """, {"id": project_id})
+    """,
+        {"id": project_id},
+    )
     env_id = envs["project"]["environments"]["edges"][0]["node"]["id"]
     print(f"Environment: {env_id}")
 
     # List services
-    services_data = gql(token, """
+    services_data = gql(
+        token,
+        """
         query($id: String!) {
             project(id: $id) { services { edges { node { id name } } } }
         }
-    """, {"id": project_id})
-    svc_map = {s["node"]["name"]: s["node"]["id"]
-               for s in services_data["project"]["services"]["edges"]}
+    """,
+        {"id": project_id},
+    )
+    svc_map = {
+        s["node"]["name"]: s["node"]["id"] for s in services_data["project"]["services"]["edges"]
+    }
     print(f"Existing services: {list(svc_map.keys()) or 'none'}")
 
     print("\nAll pre-checks done. Project and environment ready.")
