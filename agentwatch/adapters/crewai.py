@@ -109,7 +109,6 @@ class AgentWatchCrewAIAdapter:
         Emits TOOL_RESULT event with execution result.
         """
         event = self._base(EventType.TOOL_RESULT)
-        event.status = ExecutionStatus.SUCCESS
         event.metadata = {
             "tool_name": tool_name,
             "result": str(result),
@@ -120,7 +119,7 @@ class AgentWatchCrewAIAdapter:
         """
         Handles CrewAI chain execution error.
 
-        Emits ERROR event with failure details.
+        Emits AGENT_ERROR event with failure details.
         """
         event = self._base(EventType.AGENT_ERROR)
         event.status = ExecutionStatus.FAILURE
