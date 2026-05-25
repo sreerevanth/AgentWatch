@@ -70,7 +70,7 @@
       }
     ]
   },
-  "description": "AgentWatch observability \u00e2\u20ac\u201d session activity, safety events, agent confidence, and cost tracking",
+  "description": "AgentWatch observability - session activity, safety events, agent confidence, and cost tracking",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 1,
