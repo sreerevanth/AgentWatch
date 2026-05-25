@@ -68,7 +68,6 @@ class AgentWatchCrewAIAdapter:
         Emits SESSION_START event.
         """
         event = self._base(EventType.SESSION_START)
-        event.status = ExecutionStatus.RUNNING
         event.metadata = {"args": str(args), "kwargs": str(kwargs)}
         self._emit(event)
 
