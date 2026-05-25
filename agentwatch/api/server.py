@@ -101,7 +101,9 @@ def _event_to_pg(event: AgentEvent) -> dict:
         d["estimated_cost_usd"] = event.token_usage.estimated_cost_usd
     if event.confidence:
         d["confidence_score"] = event.confidence.overall_score
-        d["anomaly_flags"] = list(event.confidence.anomaly_flags) if event.confidence.anomaly_flags else []
+        d["anomaly_flags"] = (
+            list(event.confidence.anomaly_flags) if event.confidence.anomaly_flags else []
+        )
     return d
 
 
