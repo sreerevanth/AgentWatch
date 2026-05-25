@@ -37,7 +37,7 @@ from agentwatch.replay.engine import ReplayEngine
 from agentwatch.rollback.engine import RollbackEngine
 from agentwatch.scoring.confidence import ConfidenceScorer
 from agentwatch.tracing.collector import TraceCollector
-from core.models import Repository, init_db
+from agentwatch.core.models import Repository, init_db
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +73,8 @@ def _event_to_pg(event: AgentEvent) -> dict:
         "step_number": event.step_number,
         "timestamp": event.timestamp,
         "goal": event.goal,
+        "duration_ms": event.duration_ms,
+        "task_id": event.task_id,
         "trace_id": event.trace_id,
         "parent_event_id": event.parent_event_id,
         "prompt_preview": event.prompt_preview,
@@ -111,7 +113,7 @@ async def _pg_write_session(session: AgentSession) -> None:
             await Repository(db).upsert_session(_session_to_pg(session))
             await db.commit()
     except Exception:
-        logger.debug("PG session write failed", exc_info=True)
+        logger.warning("PG session write failed", exc_info=True)
 
 
 async def _pg_write_event(event: AgentEvent) -> None:
@@ -126,7 +128,7 @@ async def _pg_write_event(event: AgentEvent) -> None:
                 await repo.upsert_session(_session_to_pg(trace.session))
             await db.commit()
     except Exception:
-        logger.debug("PG event write failed", exc_info=True)
+        logger.warning("PG event write failed", exc_info=True)
 
 
 _collector = TraceCollector()
