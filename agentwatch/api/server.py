@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
 from agentwatch.core.event_bus import get_event_bus
+from agentwatch.core.models import Repository, init_db
 from agentwatch.core.safety import SafetyEngine, SafetyPolicy
 from agentwatch.core.schema import (
     AgentEvent,
@@ -37,7 +38,6 @@ from agentwatch.replay.engine import ReplayEngine
 from agentwatch.rollback.engine import RollbackEngine
 from agentwatch.scoring.confidence import ConfidenceScorer
 from agentwatch.tracing.collector import TraceCollector
-from agentwatch.core.models import Repository, init_db
 
 logger = logging.getLogger(__name__)
 
