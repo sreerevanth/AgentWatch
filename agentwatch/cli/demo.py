@@ -1,1 +1,1 @@
-from cli.demo import *
+"""CLI demo commands for AgentWatch."""

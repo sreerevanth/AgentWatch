@@ -4,12 +4,19 @@ import useSWR from 'swr'
 import { AlertTriangle, ArrowLeft, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
 import { format } from 'date-fns'
 
+import { FailureAnalysis, ReplayStep, api } from '../../lib/api'
+
+// Resolved at build time from the NEXT_PUBLIC_API_HOST Docker build arg.
+// In production the browser calls the API origin directly (no proxy hop).
+// In local dev falls back to the Next.js proxy route at /api/v1.
+const API_BASE = process.env.NEXT_PUBLIC_API_HOST
+  ? `https://${process.env.NEXT_PUBLIC_API_HOST}/api/v1`
+  : '/api/v1'
+
 function safeFormat(ts: string | null | undefined, fmt: string): string {
   if (!ts) return '—'
   try { return format(new Date(ts), fmt) } catch { return '—' }
 }
-
-import { FailureAnalysis, ReplayStep, api } from '../../lib/api'
 
 const fetcher = async (url: string) => {
   const response = await fetch(url)
@@ -85,10 +92,10 @@ export default function SessionPage() {
   const router = useRouter()
   const { id } = router.query as { id?: string }
   const [rollbackStep, setRollbackStep] = useState('')
-  const { data: session } = useSWR(id ? `/api/v1/sessions/${id}` : null, fetcher)
-  const { data: replayData } = useSWR(id ? `/api/v1/sessions/${id}/replay` : null, fetcher)
-  const { data: confidenceData } = useSWR(id ? `/api/v1/sessions/${id}/confidence` : null, fetcher)
-  const { data: checkpointsData } = useSWR(id ? `/api/v1/sessions/${id}/checkpoints` : null, fetcher)
+  const { data: session } = useSWR(id ? `${API_BASE}/sessions/${id}` : null, fetcher)
+  const { data: replayData } = useSWR(id ? `${API_BASE}/sessions/${id}/replay` : null, fetcher)
+  const { data: confidenceData } = useSWR(id ? `${API_BASE}/sessions/${id}/confidence` : null, fetcher)
+  const { data: checkpointsData } = useSWR(id ? `${API_BASE}/sessions/${id}/checkpoints` : null, fetcher)
 
   if (!id) return null
 

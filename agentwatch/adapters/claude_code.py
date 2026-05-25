@@ -15,13 +15,12 @@ import asyncio
 import json
 import logging
 import os
-import subprocess
 import time
 import uuid
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, AsyncIterator, Dict, List, Optional
+from datetime import UTC, datetime
+from typing import Any
 
 from agentwatch.core.event_bus import EventBus, get_event_bus
 from agentwatch.core.safety import SafetyEngine
@@ -31,10 +30,9 @@ from agentwatch.core.schema import (
     AgentSession,
     EventType,
     ExecutionStatus,
-    RiskLevel,
+    TokenUsage,
     ToolCallData,
     ToolResultData,
-    TokenUsage,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,6 +42,7 @@ logger = logging.getLogger(__name__)
 # Claude Code event parser
 # ─────────────────────────────────────────────
 
+
 class ClaudeCodeEventParser:
     """
     Parses Claude Code's JSON streaming output format into AgentWatch events.
@@ -51,7 +50,7 @@ class ClaudeCodeEventParser:
     """
 
     # Claude Code tool names to canonical names
-    TOOL_MAP: Dict[str, str] = {
+    TOOL_MAP: dict[str, str] = {
         "Bash": "bash",
         "Read": "file_read",
         "Write": "file_write",
@@ -72,7 +71,7 @@ class ClaudeCodeEventParser:
         self.agent_id = agent_id
         self._step = 0
 
-    def parse_line(self, raw_line: str) -> Optional[AgentEvent]:
+    def parse_line(self, raw_line: str) -> AgentEvent | None:
         """Parse one JSON line from Claude Code output."""
         raw_line = raw_line.strip()
         if not raw_line:
@@ -85,7 +84,7 @@ class ClaudeCodeEventParser:
 
         return self._dispatch(data)
 
-    def _dispatch(self, data: Dict[str, Any]) -> Optional[AgentEvent]:
+    def _dispatch(self, data: dict[str, Any]) -> AgentEvent | None:
         msg_type = data.get("type", "")
 
         if msg_type == "system":
@@ -113,7 +112,7 @@ class ClaudeCodeEventParser:
             step_number=self._step,
         )
 
-    def _parse_system(self, data: Dict[str, Any]) -> AgentEvent:
+    def _parse_system(self, data: dict[str, Any]) -> AgentEvent:
         event = self._base_event(EventType.AGENT_START)
         subtype = data.get("subtype", "")
         if subtype == "init":
@@ -123,7 +122,7 @@ class ClaudeCodeEventParser:
             event.metadata["available_tools"] = tools
         return event
 
-    def _parse_assistant(self, data: Dict[str, Any]) -> AgentEvent:
+    def _parse_assistant(self, data: dict[str, Any]) -> AgentEvent:
         event = self._base_event(EventType.PLANNER_OUTPUT)
         message = data.get("message", {})
         content = message.get("content", [])
@@ -149,7 +148,7 @@ class ClaudeCodeEventParser:
 
         return event
 
-    def _parse_tool_use(self, data: Dict[str, Any]) -> AgentEvent:
+    def _parse_tool_use(self, data: dict[str, Any]) -> AgentEvent:
         event = self._base_event(EventType.TOOL_CALL)
         tool_name = data.get("name", "unknown")
         tool_id = data.get("id", str(uuid.uuid4()))
@@ -159,7 +158,7 @@ class ClaudeCodeEventParser:
 
         # Extract raw command for bash calls
         raw_command = None
-        affected_resources: List[str] = []
+        affected_resources: list[str] = []
 
         if tool_name == "Bash":
             raw_command = args.get("command", "")
@@ -181,7 +180,7 @@ class ClaudeCodeEventParser:
 
         return event
 
-    def _parse_tool_result(self, data: Dict[str, Any]) -> AgentEvent:
+    def _parse_tool_result(self, data: dict[str, Any]) -> AgentEvent:
         event = self._base_event(EventType.TOOL_RESULT)
         tool_use_id = data.get("tool_use_id", "")
         content = data.get("content", "")
@@ -206,7 +205,7 @@ class ClaudeCodeEventParser:
         )
         return event
 
-    def _parse_result(self, data: Dict[str, Any]) -> AgentEvent:
+    def _parse_result(self, data: dict[str, Any]) -> AgentEvent:
         event = self._base_event(EventType.AGENT_END)
         subtype = data.get("subtype", "")
 
@@ -229,7 +228,7 @@ class ClaudeCodeEventParser:
 
         return event
 
-    def _parse_error(self, data: Dict[str, Any]) -> AgentEvent:
+    def _parse_error(self, data: dict[str, Any]) -> AgentEvent:
         event = self._base_event(EventType.AGENT_ERROR)
         event.status = ExecutionStatus.FAILURE
         event.metadata["error"] = data.get("error", "unknown error")
@@ -240,6 +239,7 @@ class ClaudeCodeEventParser:
 # Claude Code Adapter
 # ─────────────────────────────────────────────
 
+
 class ClaudeCodeAdapter:
     """
     Wraps Claude Code CLI subprocess execution with full AgentWatch
@@ -248,19 +248,19 @@ class ClaudeCodeAdapter:
 
     def __init__(
         self,
-        event_bus: Optional[EventBus] = None,
-        safety_engine: Optional[SafetyEngine] = None,
-        session_id: Optional[str] = None,
-        agent_id: Optional[str] = None,
-        working_dir: Optional[str] = None,
+        event_bus: EventBus | None = None,
+        safety_engine: SafetyEngine | None = None,
+        session_id: str | None = None,
+        agent_id: str | None = None,
+        working_dir: str | None = None,
     ):
         self._bus = event_bus or get_event_bus()
         self._safety = safety_engine or SafetyEngine()
         self.session_id = session_id or str(uuid.uuid4())
         self.agent_id = agent_id or f"claude-code-{uuid.uuid4().hex[:8]}"
         self._working_dir = working_dir or os.getcwd()
-        self._session: Optional[AgentSession] = None
-        self._events: List[AgentEvent] = []
+        self._session: AgentSession | None = None
+        self._events: list[AgentEvent] = []
         self._start_time: float = 0.0
 
     async def run(
@@ -269,10 +269,10 @@ class ClaudeCodeAdapter:
         *,
         model: str = "claude-opus-4-5",
         max_turns: int = 50,
-        allowed_tools: Optional[List[str]] = None,
-        disallowed_tools: Optional[List[str]] = None,
-        extra_args: Optional[List[str]] = None,
-        env_override: Optional[Dict[str, str]] = None,
+        allowed_tools: list[str] | None = None,
+        disallowed_tools: list[str] | None = None,
+        extra_args: list[str] | None = None,
+        env_override: dict[str, str] | None = None,
     ) -> AgentSession:
         """
         Execute Claude Code with the given prompt and return the session.
@@ -326,7 +326,7 @@ class ClaudeCodeAdapter:
             )
             await self._emit(error_event)
         finally:
-            self._session.ended_at = datetime.now(timezone.utc)
+            self._session.ended_at = datetime.now(UTC)
             if self._session.status == ExecutionStatus.RUNNING:
                 self._session.status = ExecutionStatus.SUCCESS
             self._session.total_events = len(self._events)
@@ -345,8 +345,8 @@ class ClaudeCodeAdapter:
 
     async def _run_subprocess(
         self,
-        cmd: List[str],
-        env_override: Optional[Dict[str, str]] = None,
+        cmd: list[str],
+        env_override: dict[str, str] | None = None,
     ) -> None:
         env = dict(os.environ)
         if env_override:
@@ -388,7 +388,11 @@ class ClaudeCodeAdapter:
                         event_type=EventType.SAFETY_BLOCK,
                         status=ExecutionStatus.BLOCKED,
                         safety=event.safety,
-                        metadata={"blocked_tool": event.tool_call.tool_name if event.tool_call else "unknown"},
+                        metadata={
+                            "blocked_tool": event.tool_call.tool_name
+                            if event.tool_call
+                            else "unknown"
+                        },
                     )
                     await self._emit(block_event)
                     continue
@@ -411,16 +415,20 @@ class ClaudeCodeAdapter:
         prompt: str,
         model: str,
         max_turns: int,
-        allowed_tools: Optional[List[str]],
-        disallowed_tools: Optional[List[str]],
-        extra_args: Optional[List[str]],
-    ) -> List[str]:
+        allowed_tools: list[str] | None,
+        disallowed_tools: list[str] | None,
+        extra_args: list[str] | None,
+    ) -> list[str]:
         cmd = [
             "claude",
-            "--output-format", "stream-json",
-            "--model", model,
-            "--max-turns", str(max_turns),
-            "-p", prompt,
+            "--output-format",
+            "stream-json",
+            "--model",
+            model,
+            "--max-turns",
+            str(max_turns),
+            "-p",
+            prompt,
         ]
         if allowed_tools:
             cmd += ["--allowedTools", ",".join(allowed_tools)]
@@ -440,11 +448,11 @@ class ClaudeCodeAdapter:
                 self._session.estimated_cost_usd += event.token_usage.estimated_cost_usd
 
     @property
-    def events(self) -> List[AgentEvent]:
+    def events(self) -> list[AgentEvent]:
         return list(self._events)
 
     @property
-    def session(self) -> Optional[AgentSession]:
+    def session(self) -> AgentSession | None:
         return self._session
 
 
@@ -452,13 +460,14 @@ class ClaudeCodeAdapter:
 # Context manager wrapper
 # ─────────────────────────────────────────────
 
+
 @asynccontextmanager
 async def watch_claude_code(
     prompt: str,
     *,
     model: str = "claude-opus-4-5",
-    safety_engine: Optional[SafetyEngine] = None,
-    session_id: Optional[str] = None,
+    safety_engine: SafetyEngine | None = None,
+    session_id: str | None = None,
 ) -> AsyncIterator[ClaudeCodeAdapter]:
     """
     Context manager for watching Claude Code execution.

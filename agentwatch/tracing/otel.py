@@ -1,1 +1,1 @@
-from telemetry.otel import *
+"""OpenTelemetry tracing integration for AgentWatch."""

@@ -10,27 +10,27 @@ import asyncio
 import json
 import logging
 from collections import defaultdict
-from datetime import datetime, timezone
+from collections.abc import AsyncIterator, Callable
+from datetime import datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, AsyncIterator, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
 from agentwatch.core.schema import (
     AgentEvent,
     AgentSession,
     EventType,
     ExecutionStatus,
-    RiskLevel,
 )
 
 logger = logging.getLogger(__name__)
 
 
 class ReplaySpeed(str, Enum):
-    INSTANT = "instant"    # No delays
-    FAST = "fast"          # 10ms between steps
-    NORMAL = "normal"      # Proportional to original timing
-    SLOW = "slow"          # 2x original timing
+    INSTANT = "instant"  # No delays
+    FAST = "fast"  # 10ms between steps
+    NORMAL = "normal"  # Proportional to original timing
+    SLOW = "slow"  # 2x original timing
 
 
 class DivergenceType(str, Enum):
@@ -59,13 +59,14 @@ class FailureCause(str, Enum):
 # Data classes
 # ─────────────────────────────────────────────
 
+
 class ReplayStep:
-    def __init__(self, index: int, event: AgentEvent, annotations: Optional[List[str]] = None):
+    def __init__(self, index: int, event: AgentEvent, annotations: list[str] | None = None):
         self.index = index
         self.event = event
         self.annotations = annotations or []
         self.is_failure_point = False
-        self.divergences: List["Divergence"] = []
+        self.divergences: list[Divergence] = []
 
 
 class Divergence:
@@ -74,8 +75,8 @@ class Divergence:
         divergence_type: DivergenceType,
         step_index: int,
         description: str,
-        original_event: Optional[AgentEvent] = None,
-        replay_event: Optional[AgentEvent] = None,
+        original_event: AgentEvent | None = None,
+        replay_event: AgentEvent | None = None,
         severity: str = "medium",
     ):
         self.divergence_type = divergence_type
@@ -89,29 +90,29 @@ class Divergence:
 class FailureAnalysis:
     def __init__(self):
         self.primary_cause: FailureCause = FailureCause.UNKNOWN
-        self.contributing_factors: List[str] = []
-        self.first_anomaly_step: Optional[int] = None
-        self.failure_step: Optional[int] = None
-        self.failure_event: Optional[AgentEvent] = None
-        self.tool_error_counts: Dict[str, int] = defaultdict(int)
-        self.repeated_tools: List[str] = []
-        self.blocked_actions: List[AgentEvent] = []
+        self.contributing_factors: list[str] = []
+        self.first_anomaly_step: int | None = None
+        self.failure_step: int | None = None
+        self.failure_event: AgentEvent | None = None
+        self.tool_error_counts: dict[str, int] = defaultdict(int)
+        self.repeated_tools: list[str] = []
+        self.blocked_actions: list[AgentEvent] = []
         self.summary: str = ""
-        self.recommendations: List[str] = []
+        self.recommendations: list[str] = []
 
 
 class ReplaySession:
-    def __init__(self, session: AgentSession, events: List[AgentEvent]):
+    def __init__(self, session: AgentSession, events: list[AgentEvent]):
         self.session = session
         self.events = events
-        self.steps: List[ReplayStep] = []
-        self.failure_analysis: Optional[FailureAnalysis] = None
-        self.divergences: List[Divergence] = []
+        self.steps: list[ReplayStep] = []
+        self.failure_analysis: FailureAnalysis | None = None
+        self.divergences: list[Divergence] = []
         self.total_steps = len(events)
         self.current_step = 0
         self._built = False
 
-    def build(self) -> "ReplaySession":
+    def build(self) -> ReplaySession:
         """Build step list and run analysis."""
         self.steps = [ReplayStep(i, e) for i, e in enumerate(self.events)]
         self.failure_analysis = _analyze_failures(self.steps)
@@ -135,12 +136,12 @@ class ReplaySession:
             if step.event.event_type == EventType.TOOL_ERROR:
                 step.annotations.append("❌ Tool error")
 
-    def step_at(self, index: int) -> Optional[ReplayStep]:
+    def step_at(self, index: int) -> ReplayStep | None:
         if 0 <= index < len(self.steps):
             return self.steps[index]
         return None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "session_id": self.session.session_id,
             "agent_id": self.session.agent_id,
@@ -158,12 +159,13 @@ class ReplaySession:
 # Failure analysis
 # ─────────────────────────────────────────────
 
-def _analyze_failures(steps: List[ReplayStep]) -> FailureAnalysis:
+
+def _analyze_failures(steps: list[ReplayStep]) -> FailureAnalysis:
     analysis = FailureAnalysis()
-    tool_call_sequence: List[str] = []
-    tool_errors: Dict[str, int] = defaultdict(int)
-    blocked_events: List[AgentEvent] = []
-    first_error_step: Optional[int] = None
+    tool_call_sequence: list[str] = []
+    tool_errors: dict[str, int] = defaultdict(int)
+    blocked_events: list[AgentEvent] = []
+    first_error_step: int | None = None
 
     for step in steps:
         event = step.event
@@ -214,9 +216,7 @@ def _analyze_failures(steps: List[ReplayStep]) -> FailureAnalysis:
 
     elif analysis.repeated_tools:
         analysis.primary_cause = FailureCause.INFINITE_LOOP
-        analysis.contributing_factors.append(
-            f"Repeated tool sequence: {analysis.repeated_tools}"
-        )
+        analysis.contributing_factors.append(f"Repeated tool sequence: {analysis.repeated_tools}")
 
     elif tool_errors:
         most_failed = max(tool_errors, key=lambda k: tool_errors[k])
@@ -262,7 +262,7 @@ def _generate_summary(analysis: FailureAnalysis) -> str:
     return "Execution failed. Root cause could not be determined automatically."
 
 
-def _generate_recommendations(analysis: FailureAnalysis) -> List[str]:
+def _generate_recommendations(analysis: FailureAnalysis) -> list[str]:
     recs = []
     cause = analysis.primary_cause
 
@@ -292,6 +292,7 @@ def _generate_recommendations(analysis: FailureAnalysis) -> List[str]:
 # Replay Engine
 # ─────────────────────────────────────────────
 
+
 class ReplayEngine:
     """
     Loads and replays captured AgentWatch sessions.
@@ -299,13 +300,11 @@ class ReplayEngine:
     and failure root-cause analysis.
     """
 
-    def __init__(self, storage_path: Optional[Path] = None):
+    def __init__(self, storage_path: Path | None = None):
         self._storage_path = storage_path or Path(".agentwatch/sessions")
-        self._loaded_sessions: Dict[str, ReplaySession] = {}
+        self._loaded_sessions: dict[str, ReplaySession] = {}
 
-    def load_from_events(
-        self, session: AgentSession, events: List[AgentEvent]
-    ) -> ReplaySession:
+    def load_from_events(self, session: AgentSession, events: list[AgentEvent]) -> ReplaySession:
         """Load a replay session from in-memory events."""
         rs = ReplaySession(session=session, events=events)
         rs.build()
@@ -321,11 +320,9 @@ class ReplayEngine:
         events = [AgentEvent(**e) for e in data["events"]]
         return self.load_from_events(session, events)
 
-    def save_to_file(self, rs: ReplaySession, path: Optional[Path] = None) -> Path:
+    def save_to_file(self, rs: ReplaySession, path: Path | None = None) -> Path:
         """Persist a replay session to disk."""
-        out_path = path or (
-            self._storage_path / f"{rs.session.session_id}.json"
-        )
+        out_path = path or (self._storage_path / f"{rs.session.session_id}.json")
         out_path.parent.mkdir(parents=True, exist_ok=True)
 
         payload = {
@@ -338,23 +335,23 @@ class ReplayEngine:
         logger.info("Saved replay session to %s", out_path)
         return out_path
 
-    def get_session(self, session_id: str) -> Optional[ReplaySession]:
+    def get_session(self, session_id: str) -> ReplaySession | None:
         return self._loaded_sessions.get(session_id)
 
     async def replay_async(
         self,
         rs: ReplaySession,
         speed: ReplaySpeed = ReplaySpeed.NORMAL,
-        on_step: Optional[Callable[[ReplayStep], None]] = None,
+        on_step: Callable[[ReplayStep], None] | None = None,
         start_step: int = 0,
-        end_step: Optional[int] = None,
+        end_step: int | None = None,
     ) -> AsyncIterator[ReplayStep]:
         """
         Async generator that yields replay steps with optional timing.
         """
-        steps = rs.steps[start_step : end_step]
+        steps = rs.steps[start_step:end_step]
 
-        prev_ts: Optional[datetime] = None
+        prev_ts: datetime | None = None
 
         for step in steps:
             # Compute delay
@@ -380,81 +377,93 @@ class ReplayEngine:
         self,
         session_a: ReplaySession,
         session_b: ReplaySession,
-    ) -> List[Divergence]:
+    ) -> list[Divergence]:
         """
         Compare two replay sessions for divergences.
         Useful for comparing original vs re-run executions.
         """
-        divergences: List[Divergence] = []
+        divergences: list[Divergence] = []
         steps_a = session_a.steps
         steps_b = session_b.steps
         max_len = max(len(steps_a), len(steps_b))
 
         for i in range(max_len):
             if i >= len(steps_a):
-                divergences.append(Divergence(
-                    divergence_type=DivergenceType.EXTRA_EVENT,
-                    step_index=i,
-                    description=f"Session B has extra event at step {i}: {steps_b[i].event.event_type.value}",
-                    replay_event=steps_b[i].event,
-                    severity="low",
-                ))
+                divergences.append(
+                    Divergence(
+                        divergence_type=DivergenceType.EXTRA_EVENT,
+                        step_index=i,
+                        description=f"Session B has extra event at step {i}: {steps_b[i].event.event_type.value}",
+                        replay_event=steps_b[i].event,
+                        severity="low",
+                    )
+                )
                 continue
             if i >= len(steps_b):
-                divergences.append(Divergence(
-                    divergence_type=DivergenceType.MISSING_EVENT,
-                    step_index=i,
-                    description=f"Session B is missing event at step {i}: {steps_a[i].event.event_type.value}",
-                    original_event=steps_a[i].event,
-                    severity="medium",
-                ))
+                divergences.append(
+                    Divergence(
+                        divergence_type=DivergenceType.MISSING_EVENT,
+                        step_index=i,
+                        description=f"Session B is missing event at step {i}: {steps_a[i].event.event_type.value}",
+                        original_event=steps_a[i].event,
+                        severity="medium",
+                    )
+                )
                 continue
 
             ea = steps_a[i].event
             eb = steps_b[i].event
 
             if ea.event_type != eb.event_type:
-                divergences.append(Divergence(
-                    divergence_type=DivergenceType.TOOL_MISMATCH,
-                    step_index=i,
-                    description=f"Step {i}: event type differs ({ea.event_type.value} vs {eb.event_type.value})",
-                    original_event=ea,
-                    replay_event=eb,
-                    severity="high",
-                ))
-
-            elif ea.event_type == eb.event_type and ea.tool_call and eb.tool_call:
-                if ea.tool_call.tool_name != eb.tool_call.tool_name:
-                    divergences.append(Divergence(
+                divergences.append(
+                    Divergence(
                         divergence_type=DivergenceType.TOOL_MISMATCH,
                         step_index=i,
-                        description=(
-                            f"Step {i}: tool name differs "
-                            f"({ea.tool_call.tool_name} vs {eb.tool_call.tool_name})"
-                        ),
+                        description=f"Step {i}: event type differs ({ea.event_type.value} vs {eb.event_type.value})",
                         original_event=ea,
                         replay_event=eb,
                         severity="high",
-                    ))
+                    )
+                )
+
+            elif ea.event_type == eb.event_type and ea.tool_call and eb.tool_call:
+                if ea.tool_call.tool_name != eb.tool_call.tool_name:
+                    divergences.append(
+                        Divergence(
+                            divergence_type=DivergenceType.TOOL_MISMATCH,
+                            step_index=i,
+                            description=(
+                                f"Step {i}: tool name differs "
+                                f"({ea.tool_call.tool_name} vs {eb.tool_call.tool_name})"
+                            ),
+                            original_event=ea,
+                            replay_event=eb,
+                            severity="high",
+                        )
+                    )
                 elif ea.tool_call.arguments != eb.tool_call.arguments:
-                    divergences.append(Divergence(
-                        divergence_type=DivergenceType.ARGUMENT_MISMATCH,
-                        step_index=i,
-                        description=f"Step {i}: tool arguments differ for {ea.tool_call.tool_name}",
-                        original_event=ea,
-                        replay_event=eb,
-                        severity="medium",
-                    ))
+                    divergences.append(
+                        Divergence(
+                            divergence_type=DivergenceType.ARGUMENT_MISMATCH,
+                            step_index=i,
+                            description=f"Step {i}: tool arguments differ for {ea.tool_call.tool_name}",
+                            original_event=ea,
+                            replay_event=eb,
+                            severity="medium",
+                        )
+                    )
 
             if ea.status != eb.status:
-                divergences.append(Divergence(
-                    divergence_type=DivergenceType.STATUS_MISMATCH,
-                    step_index=i,
-                    description=f"Step {i}: status differs ({ea.status.value} vs {eb.status.value})",
-                    original_event=ea,
-                    replay_event=eb,
-                    severity="high" if eb.status == ExecutionStatus.FAILURE else "medium",
-                ))
+                divergences.append(
+                    Divergence(
+                        divergence_type=DivergenceType.STATUS_MISMATCH,
+                        step_index=i,
+                        description=f"Step {i}: status differs ({ea.status.value} vs {eb.status.value})",
+                        original_event=ea,
+                        replay_event=eb,
+                        severity="high" if eb.status == ExecutionStatus.FAILURE else "medium",
+                    )
+                )
 
         return divergences
 
@@ -463,7 +472,8 @@ class ReplayEngine:
 # Serialization helpers
 # ─────────────────────────────────────────────
 
-def _step_to_dict(step: ReplayStep) -> Dict[str, Any]:
+
+def _step_to_dict(step: ReplayStep) -> dict[str, Any]:
     return {
         "index": step.index,
         "event": step.event.model_dump_for_storage(),
@@ -472,7 +482,7 @@ def _step_to_dict(step: ReplayStep) -> Dict[str, Any]:
     }
 
 
-def _failure_analysis_to_dict(fa: Optional[FailureAnalysis]) -> Optional[Dict[str, Any]]:
+def _failure_analysis_to_dict(fa: FailureAnalysis | None) -> dict[str, Any] | None:
     if not fa:
         return None
     return {

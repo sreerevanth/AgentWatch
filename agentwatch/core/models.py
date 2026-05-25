@@ -1,1 +1,1 @@
-from core.models import *
+from core.models import *  # noqa: F403

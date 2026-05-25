@@ -5,14 +5,13 @@ Policy enforcement, audit logging, capability controls, and RBAC.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -59,7 +58,7 @@ class AuditEventType(str, Enum):
 @dataclass
 class Role:
     name: str
-    permissions: Set[Permission] = field(default_factory=set)
+    permissions: set[Permission] = field(default_factory=set)
     description: str = ""
 
     def has_permission(self, perm: Permission) -> bool:
@@ -72,10 +71,10 @@ class Role:
 class Principal:
     principal_id: str
     name: str
-    roles: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    roles: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def has_permission(self, perm: Permission, role_registry: Dict[str, Role]) -> bool:
+    def has_permission(self, perm: Permission, role_registry: dict[str, Role]) -> bool:
         for role_name in self.roles:
             role = role_registry.get(role_name)
             if role and role.has_permission(perm):
@@ -87,16 +86,16 @@ class Principal:
 class AuditEntry:
     audit_id: str
     timestamp: datetime
-    principal_id: Optional[str]
+    principal_id: str | None
     event_type: AuditEventType
     resource: str
     action: str
     allowed: bool
-    session_id: Optional[str] = None
-    details: Dict[str, Any] = field(default_factory=dict)
-    ip_address: Optional[str] = None
+    session_id: str | None = None
+    details: dict[str, Any] = field(default_factory=dict)
+    ip_address: str | None = None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "audit_id": self.audit_id,
             "timestamp": self.timestamp.isoformat(),
@@ -114,7 +113,7 @@ class AuditEntry:
 # Built-in roles
 # ─────────────────────────────────────────────
 
-BUILTIN_ROLES: Dict[str, Role] = {
+BUILTIN_ROLES: dict[str, Role] = {
     "viewer": Role(
         name="viewer",
         description="Read-only access to sessions and traces",
@@ -162,6 +161,7 @@ BUILTIN_ROLES: Dict[str, Role] = {
 # Governance Engine
 # ─────────────────────────────────────────────
 
+
 class GovernanceEngine:
     """
     Enforces access control and maintains an immutable audit log.
@@ -169,12 +169,12 @@ class GovernanceEngine:
 
     def __init__(
         self,
-        audit_log_path: Optional[Path] = None,
-        roles: Optional[Dict[str, Role]] = None,
+        audit_log_path: Path | None = None,
+        roles: dict[str, Role] | None = None,
     ):
         self._roles = {**BUILTIN_ROLES, **(roles or {})}
-        self._principals: Dict[str, Principal] = {}
-        self._audit_log: List[AuditEntry] = []
+        self._principals: dict[str, Principal] = {}
+        self._audit_log: list[AuditEntry] = []
         self._audit_path = audit_log_path
         self._entry_counter = 0
 
@@ -190,8 +190,8 @@ class GovernanceEngine:
         principal_id: str,
         permission: Permission,
         resource: str = "",
-        session_id: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
+        session_id: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> bool:
         principal = self._principals.get(principal_id)
 
@@ -226,13 +226,13 @@ class GovernanceEngine:
 
     def record_action(
         self,
-        principal_id: Optional[str],
+        principal_id: str | None,
         event_type: AuditEventType,
         resource: str,
         action: str,
         allowed: bool = True,
-        session_id: Optional[str] = None,
-        details: Optional[Dict[str, Any]] = None,
+        session_id: str | None = None,
+        details: dict[str, Any] | None = None,
     ) -> AuditEntry:
         return self._audit(
             principal_id=principal_id,
@@ -246,20 +246,21 @@ class GovernanceEngine:
 
     def _audit(
         self,
-        principal_id: Optional[str],
+        principal_id: str | None,
         event_type: AuditEventType,
         resource: str,
         action: str,
         allowed: bool,
-        session_id: Optional[str],
-        details: Dict[str, Any],
+        session_id: str | None,
+        details: dict[str, Any],
     ) -> AuditEntry:
         import uuid
+
         self._entry_counter += 1
 
         entry = AuditEntry(
             audit_id=str(uuid.uuid4()),
-            timestamp=datetime.now(timezone.utc),
+            timestamp=datetime.now(UTC),
             principal_id=principal_id,
             event_type=event_type,
             resource=resource,
@@ -296,10 +297,10 @@ class GovernanceEngine:
     def get_audit_log(
         self,
         limit: int = 100,
-        principal_id: Optional[str] = None,
-        event_type: Optional[AuditEventType] = None,
-        allowed_only: Optional[bool] = None,
-    ) -> List[AuditEntry]:
+        principal_id: str | None = None,
+        event_type: AuditEventType | None = None,
+        allowed_only: bool | None = None,
+    ) -> list[AuditEntry]:
         entries = list(reversed(self._audit_log))
         if principal_id:
             entries = [e for e in entries if e.principal_id == principal_id]
@@ -309,7 +310,7 @@ class GovernanceEngine:
             entries = [e for e in entries if e.allowed == allowed_only]
         return entries[:limit]
 
-    def stats(self) -> Dict[str, Any]:
+    def stats(self) -> dict[str, Any]:
         return {
             "total_audit_entries": len(self._audit_log),
             "denied_count": sum(1 for e in self._audit_log if not e.allowed),

@@ -1,4 +1,9 @@
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? '/api/v1'
+// NEXT_PUBLIC_API_HOST is baked into the bundle at build time via Dockerfile ARG.
+// In production it resolves to the full API origin; in local dev it falls back
+// to the Next.js proxy route so no CORS config is needed locally.
+const BASE = process.env.NEXT_PUBLIC_API_HOST
+  ? `https://${process.env.NEXT_PUBLIC_API_HOST}/api/v1`
+  : (process.env.NEXT_PUBLIC_API_URL ?? '/api/v1')
 
 export type ExecutionStatus = 'pending' | 'running' | 'success' | 'failure' | 'blocked' | 'rolled_back' | 'timeout'
 

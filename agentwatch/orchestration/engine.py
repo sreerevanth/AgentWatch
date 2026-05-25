@@ -9,10 +9,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any
 
 from agentwatch.core.event_bus import EventBus, get_event_bus
 from agentwatch.core.schema import (
@@ -28,10 +29,10 @@ logger = logging.getLogger(__name__)
 
 
 class AgentRole(str, Enum):
-    PLANNER = "planner"        # Decomposes goals into tasks
-    EXECUTOR = "executor"      # Executes concrete actions
-    VERIFIER = "verifier"      # Validates outputs
-    MEMORY = "memory"          # Manages retrieval and context
+    PLANNER = "planner"  # Decomposes goals into tasks
+    EXECUTOR = "executor"  # Executes concrete actions
+    VERIFIER = "verifier"  # Validates outputs
+    MEMORY = "memory"  # Manages retrieval and context
     COORDINATOR = "coordinator"  # Routes and delegates
 
 
@@ -51,15 +52,15 @@ class AgentMessage:
     sender_id: str = ""
     receiver_id: str = ""
     message_type: MessageType = MessageType.QUERY
-    payload: Dict[str, Any] = field(default_factory=dict)
-    correlation_id: Optional[str] = None
-    task_id: Optional[str] = None
-    timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    payload: dict[str, Any] = field(default_factory=dict)
+    correlation_id: str | None = None
+    task_id: str | None = None
+    timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     ttl_seconds: int = 300
 
     @property
     def is_expired(self) -> bool:
-        age = (datetime.now(timezone.utc) - self.timestamp).total_seconds()
+        age = (datetime.now(UTC) - self.timestamp).total_seconds()
         return age > self.ttl_seconds
 
 
@@ -69,12 +70,12 @@ class SubAgent:
     name: str
     role: AgentRole
     framework: AgentFramework
-    capabilities: List[str] = field(default_factory=list)
+    capabilities: list[str] = field(default_factory=list)
     max_concurrent_tasks: int = 1
     _active_tasks: int = field(default=0, init=False, repr=False)
     _inbox: asyncio.Queue = field(default_factory=asyncio.Queue, init=False, repr=False)
-    _handler: Optional[Callable] = field(default=None, init=False, repr=False)
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    _handler: Callable | None = field(default=None, init=False, repr=False)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def is_available(self) -> bool:
@@ -110,16 +111,16 @@ class TaskGraph:
         self.graph_id = str(uuid.uuid4())
         self.session_id = session_id
         self.goal = goal
-        self.nodes: Dict[str, TaskNode] = {}
-        self._adjacency: Dict[str, Set[str]] = {}
-        self.created_at = datetime.now(timezone.utc)
+        self.nodes: dict[str, TaskNode] = {}
+        self._adjacency: dict[str, set[str]] = {}
+        self.created_at = datetime.now(UTC)
 
     def add_task(
         self,
         title: str,
-        description: Optional[str] = None,
-        depends_on: Optional[List[str]] = None,
-        assigned_agent_id: Optional[str] = None,
+        description: str | None = None,
+        depends_on: list[str] | None = None,
+        assigned_agent_id: str | None = None,
     ) -> TaskNode:
         node = TaskNode(
             session_id=self.session_id,
@@ -138,7 +139,7 @@ class TaskGraph:
 
         return node
 
-    def get_ready_tasks(self) -> List[TaskNode]:
+    def get_ready_tasks(self) -> list[TaskNode]:
         """Return tasks whose all dependencies are completed."""
         ready = []
         for node in self.nodes.values():
@@ -157,14 +158,14 @@ class TaskGraph:
         node = self.nodes.get(task_id)
         if node:
             node.status = ExecutionStatus.RUNNING
-            node.started_at = datetime.now(timezone.utc)
+            node.started_at = datetime.now(UTC)
             node.assigned_agent_id = agent_id
 
-    def mark_completed(self, task_id: str, outputs: Optional[Dict[str, Any]] = None) -> None:
+    def mark_completed(self, task_id: str, outputs: dict[str, Any] | None = None) -> None:
         node = self.nodes.get(task_id)
         if node:
             node.status = ExecutionStatus.SUCCESS
-            node.completed_at = datetime.now(timezone.utc)
+            node.completed_at = datetime.now(UTC)
             if outputs:
                 node.outputs = outputs
 
@@ -172,7 +173,7 @@ class TaskGraph:
         node = self.nodes.get(task_id)
         if node:
             node.status = ExecutionStatus.FAILURE
-            node.completed_at = datetime.now(timezone.utc)
+            node.completed_at = datetime.now(UTC)
             node.metadata["error"] = error
 
     @property
@@ -183,7 +184,7 @@ class TaskGraph:
     def has_failures(self) -> bool:
         return any(n.status == ExecutionStatus.FAILURE for n in self.nodes.values())
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "graph_id": self.graph_id,
             "session_id": self.session_id,
@@ -204,8 +205,8 @@ class SharedMemoryBus:
     """
 
     def __init__(self) -> None:
-        self._store: Dict[str, Any] = {}
-        self._subscribers: Dict[str, List[asyncio.Queue]] = {}
+        self._store: dict[str, Any] = {}
+        self._subscribers: dict[str, list[asyncio.Queue]] = {}
         self._lock = asyncio.Lock()
 
     async def publish(self, key: str, value: Any) -> None:
@@ -215,7 +216,7 @@ class SharedMemoryBus:
             for q in queues:
                 await q.put((key, value))
 
-    async def get(self, key: str) -> Optional[Any]:
+    async def get(self, key: str) -> Any | None:
         return self._store.get(key)
 
     async def subscribe(self, key: str) -> asyncio.Queue:
@@ -226,7 +227,7 @@ class SharedMemoryBus:
             self._subscribers[key].append(q)
         return q
 
-    def snapshot(self) -> Dict[str, Any]:
+    def snapshot(self) -> dict[str, Any]:
         return dict(self._store)
 
 
@@ -237,26 +238,26 @@ class OrchestrationEngine:
 
     def __init__(
         self,
-        session_id: Optional[str] = None,
-        event_bus: Optional[EventBus] = None,
+        session_id: str | None = None,
+        event_bus: EventBus | None = None,
     ):
         self.session_id = session_id or str(uuid.uuid4())
         self._bus = event_bus or get_event_bus()
-        self._agents: Dict[str, SubAgent] = {}
-        self._agent_tasks: Dict[str, asyncio.Task] = {}
+        self._agents: dict[str, SubAgent] = {}
+        self._agent_tasks: dict[str, asyncio.Task] = {}
         self._shared_memory = SharedMemoryBus()
-        self._message_log: List[AgentMessage] = []
-        self._active_graph: Optional[TaskGraph] = None
+        self._message_log: list[AgentMessage] = []
+        self._active_graph: TaskGraph | None = None
         self._dispatch_lock = asyncio.Lock()
 
     def register_agent(self, agent: SubAgent) -> None:
         self._agents[agent.agent_id] = agent
         logger.info("Registered agent %s (%s/%s)", agent.agent_id, agent.role.value, agent.name)
 
-    def get_agent(self, agent_id: str) -> Optional[SubAgent]:
+    def get_agent(self, agent_id: str) -> SubAgent | None:
         return self._agents.get(agent_id)
 
-    def agents_by_role(self, role: AgentRole) -> List[SubAgent]:
+    def agents_by_role(self, role: AgentRole) -> list[SubAgent]:
         return [a for a in self._agents.values() if a.role == role]
 
     async def start(self) -> None:
@@ -277,9 +278,9 @@ class OrchestrationEngine:
         sender_id: str,
         receiver_id: str,
         message_type: MessageType,
-        payload: Dict[str, Any],
-        task_id: Optional[str] = None,
-        correlation_id: Optional[str] = None,
+        payload: dict[str, Any],
+        task_id: str | None = None,
+        correlation_id: str | None = None,
     ) -> AgentMessage:
         msg = AgentMessage(
             sender_id=sender_id,
@@ -321,17 +322,14 @@ class OrchestrationEngine:
     ) -> bool:
         """Delegate a task to an available executor agent."""
         async with self._dispatch_lock:
-            executors = [
-                a for a in self.agents_by_role(AgentRole.EXECUTOR)
-                if a.is_available
-            ]
+            executors = [a for a in self.agents_by_role(AgentRole.EXECUTOR) if a.is_available]
             if not executors:
                 logger.warning("No available executor agents for task %s", task.task_id)
                 return False
 
             executor = executors[0]
 
-            msg = await self.send_message(
+            await self.send_message(
                 sender_id=from_agent_id,
                 receiver_id=executor.agent_id,
                 message_type=MessageType.TASK_ASSIGN,
@@ -357,7 +355,7 @@ class OrchestrationEngine:
             await self._bus.publish(event)
             return True
 
-    async def run_graph(self, graph: TaskGraph) -> Dict[str, Any]:
+    async def run_graph(self, graph: TaskGraph) -> dict[str, Any]:
         """
         Execute a task graph by dispatching ready tasks
         to available agents until completion or failure.
@@ -369,8 +367,10 @@ class OrchestrationEngine:
         while not graph.is_complete and not graph.has_failures:
             ready = graph.get_ready_tasks()
             if not ready:
-                if all(n.status in (ExecutionStatus.RUNNING, ExecutionStatus.SUCCESS)
-                       for n in graph.nodes.values()):
+                if all(
+                    n.status in (ExecutionStatus.RUNNING, ExecutionStatus.SUCCESS)
+                    for n in graph.nodes.values()
+                ):
                     await asyncio.sleep(0.1)
                     continue
                 else:
@@ -387,7 +387,7 @@ class OrchestrationEngine:
 
         return graph.to_dict()
 
-    def message_log(self) -> List[Dict[str, Any]]:
+    def message_log(self) -> list[dict[str, Any]]:
         return [
             {
                 "message_id": m.message_id,
@@ -404,7 +404,7 @@ class OrchestrationEngine:
     def shared_memory(self) -> SharedMemoryBus:
         return self._shared_memory
 
-    def agent_status(self) -> List[Dict[str, Any]]:
+    def agent_status(self) -> list[dict[str, Any]]:
         return [
             {
                 "agent_id": a.agent_id,

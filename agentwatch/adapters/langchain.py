@@ -7,8 +7,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Union
+from typing import Any
 
 from agentwatch.core.event_bus import EventBus, get_event_bus
 from agentwatch.core.schema import (
@@ -16,9 +15,9 @@ from agentwatch.core.schema import (
     AgentFramework,
     EventType,
     ExecutionStatus,
+    TokenUsage,
     ToolCallData,
     ToolResultData,
-    TokenUsage,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,21 +38,21 @@ class AgentWatchCallbackHandler:
 
     def __init__(
         self,
-        session_id: Optional[str] = None,
-        agent_id: Optional[str] = None,
-        event_bus: Optional[EventBus] = None,
+        session_id: str | None = None,
+        agent_id: str | None = None,
+        event_bus: EventBus | None = None,
     ):
         self.session_id = session_id or str(uuid.uuid4())
         self.agent_id = agent_id or f"langchain-{uuid.uuid4().hex[:8]}"
         self._bus = event_bus or get_event_bus()
         self._step = 0
-        self._run_map: Dict[str, str] = {}  # run_id -> event_id for correlation
+        self._run_map: dict[str, str] = {}  # run_id -> event_id for correlation
 
     def _step_up(self) -> int:
         self._step += 1
         return self._step
 
-    def _base(self, event_type: EventType, run_id: Optional[str] = None) -> AgentEvent:
+    def _base(self, event_type: EventType, run_id: str | None = None) -> AgentEvent:
         event = AgentEvent(
             session_id=self.session_id,
             agent_id=self.agent_id,
@@ -73,13 +72,13 @@ class AgentWatchCallbackHandler:
 
     def on_llm_start(
         self,
-        serialized: Dict[str, Any],
-        prompts: List[str],
+        serialized: dict[str, Any],
+        prompts: list[str],
         *,
         run_id: uuid.UUID,
-        parent_run_id: Optional[uuid.UUID] = None,
-        tags: Optional[List[str]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        parent_run_id: uuid.UUID | None = None,
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
         **kwargs: Any,
     ) -> None:
         event = self._base(EventType.PLANNER_INPUT, run_id=str(run_id))
@@ -96,7 +95,7 @@ class AgentWatchCallbackHandler:
         response: Any,
         *,
         run_id: uuid.UUID,
-        parent_run_id: Optional[uuid.UUID] = None,
+        parent_run_id: uuid.UUID | None = None,
         **kwargs: Any,
     ) -> None:
         event = self._base(EventType.PLANNER_OUTPUT)
@@ -105,21 +104,23 @@ class AgentWatchCallbackHandler:
         # Extract usage if available
         try:
             if hasattr(response, "llm_output") and response.llm_output:
-                usage_meta = response.llm_output.get("usage", response.llm_output.get("token_usage", {}))
+                usage_meta = response.llm_output.get(
+                    "usage", response.llm_output.get("token_usage", {})
+                )
                 if usage_meta:
                     event.token_usage = TokenUsage(
                         prompt_tokens=usage_meta.get("prompt_tokens", 0),
                         completion_tokens=usage_meta.get("completion_tokens", 0),
                         total_tokens=usage_meta.get("total_tokens", 0),
                     )
-        except Exception:
-            pass
+        except Exception:  # noqa: S110
+            pass  # Malformed usage metadata — safe to ignore, event still emits
 
         self._emit_sync(event)
 
     def on_llm_error(
         self,
-        error: Union[Exception, KeyboardInterrupt],
+        error: Exception | KeyboardInterrupt,
         *,
         run_id: uuid.UUID,
         **kwargs: Any,
@@ -133,11 +134,11 @@ class AgentWatchCallbackHandler:
 
     def on_chain_start(
         self,
-        serialized: Dict[str, Any],
-        inputs: Dict[str, Any],
+        serialized: dict[str, Any],
+        inputs: dict[str, Any],
         *,
         run_id: uuid.UUID,
-        parent_run_id: Optional[uuid.UUID] = None,
+        parent_run_id: uuid.UUID | None = None,
         **kwargs: Any,
     ) -> None:
         event = self._base(EventType.AGENT_START, run_id=str(run_id))
@@ -149,7 +150,7 @@ class AgentWatchCallbackHandler:
 
     def on_chain_end(
         self,
-        outputs: Dict[str, Any],
+        outputs: dict[str, Any],
         *,
         run_id: uuid.UUID,
         **kwargs: Any,
@@ -162,7 +163,7 @@ class AgentWatchCallbackHandler:
 
     def on_chain_error(
         self,
-        error: Union[Exception, KeyboardInterrupt],
+        error: Exception | KeyboardInterrupt,
         *,
         run_id: uuid.UUID,
         **kwargs: Any,
@@ -176,11 +177,11 @@ class AgentWatchCallbackHandler:
 
     def on_tool_start(
         self,
-        serialized: Dict[str, Any],
+        serialized: dict[str, Any],
         input_str: str,
         *,
         run_id: uuid.UUID,
-        parent_run_id: Optional[uuid.UUID] = None,
+        parent_run_id: uuid.UUID | None = None,
         **kwargs: Any,
     ) -> None:
         event = self._base(EventType.TOOL_CALL, run_id=str(run_id))
@@ -203,7 +204,7 @@ class AgentWatchCallbackHandler:
         output: str,
         *,
         run_id: uuid.UUID,
-        parent_run_id: Optional[uuid.UUID] = None,
+        parent_run_id: uuid.UUID | None = None,
         **kwargs: Any,
     ) -> None:
         event = self._base(EventType.TOOL_RESULT)
@@ -216,7 +217,7 @@ class AgentWatchCallbackHandler:
 
     def on_tool_error(
         self,
-        error: Union[Exception, KeyboardInterrupt],
+        error: Exception | KeyboardInterrupt,
         *,
         run_id: uuid.UUID,
         **kwargs: Any,
@@ -267,8 +268,8 @@ class AgentWatchCallbackHandler:
 
 
 def create_langchain_handler(
-    session_id: Optional[str] = None,
-    agent_id: Optional[str] = None,
+    session_id: str | None = None,
+    agent_id: str | None = None,
 ) -> AgentWatchCallbackHandler:
     """Factory function for easy handler creation."""
     return AgentWatchCallbackHandler(session_id=session_id, agent_id=agent_id)

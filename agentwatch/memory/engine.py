@@ -7,21 +7,19 @@ Cross-session continuity with semantic retrieval and contradiction handling.
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 import logging
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
 class MemoryType(str, Enum):
-    EPISODIC = "episodic"      # What happened (events, observations, interactions)
-    SEMANTIC = "semantic"      # What is known (facts, relationships, entities)
+    EPISODIC = "episodic"  # What happened (events, observations, interactions)
+    SEMANTIC = "semantic"  # What is known (facts, relationships, entities)
     PROCEDURAL = "procedural"  # How to do things (learned workflows, patterns)
 
 
@@ -38,25 +36,25 @@ class MemoryEntry:
     agent_id: str
     memory_type: MemoryType
     content: str
-    summary: Optional[str] = None
+    summary: str | None = None
     importance: ImportanceLevel = ImportanceLevel.MEDIUM
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    last_accessed: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    last_accessed: datetime = field(default_factory=lambda: datetime.now(UTC))
     access_count: int = 0
-    session_id: Optional[str] = None
-    task_id: Optional[str] = None
-    tags: List[str] = field(default_factory=list)
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    embedding: Optional[List[float]] = None
-    contradiction_ids: List[str] = field(default_factory=list)
-    superseded_by: Optional[str] = None
+    session_id: str | None = None
+    task_id: str | None = None
+    tags: list[str] = field(default_factory=list)
+    metadata: dict[str, Any] = field(default_factory=dict)
+    embedding: list[float] | None = None
+    contradiction_ids: list[str] = field(default_factory=list)
+    superseded_by: str | None = None
     decay_factor: float = 1.0
 
     @property
     def is_active(self) -> bool:
         return self.superseded_by is None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "entry_id": self.entry_id,
             "agent_id": self.agent_id,
@@ -81,7 +79,7 @@ class MemoryEntry:
 class MemorySearchResult:
     entry: MemoryEntry
     similarity_score: float
-    relevance_explanation: Optional[str] = None
+    relevance_explanation: str | None = None
 
 
 @dataclass
@@ -96,6 +94,7 @@ class ContradictionReport:
 # ─────────────────────────────────────────────
 # Embedding interface
 # ─────────────────────────────────────────────
+
 
 class EmbeddingProvider:
     """
@@ -114,6 +113,7 @@ class EmbeddingProvider:
             if self._model is None and not self._disabled:
                 try:
                     from sentence_transformers import SentenceTransformer
+
                     self._model = SentenceTransformer(self._model_name)
                     logger.info("Loaded embedding model: %s", self._model_name)
                 except ImportError:
@@ -129,24 +129,24 @@ class EmbeddingProvider:
                     )
                     self._disabled = True
 
-    async def embed(self, texts: List[str]) -> List[Optional[List[float]]]:
+    async def embed(self, texts: list[str]) -> list[list[float] | None]:
         await self._load()
         if self._model is None:
             return [None] * len(texts)
 
-        def _encode() -> List[List[float]]:
+        def _encode() -> list[list[float]]:
             return self._model.encode(texts, normalize_embeddings=True).tolist()
 
         embeddings = await asyncio.get_event_loop().run_in_executor(None, _encode)
         return embeddings
 
 
-def _cosine_similarity(a: List[float], b: List[float]) -> float:
+def _cosine_similarity(a: list[float], b: list[float]) -> float:
     if not a or not b or len(a) != len(b):
         return 0.0
     dot = sum(x * y for x, y in zip(a, b))
-    norm_a = sum(x ** 2 for x in a) ** 0.5
-    norm_b = sum(x ** 2 for x in b) ** 0.5
+    norm_a = sum(x**2 for x in a) ** 0.5
+    norm_b = sum(x**2 for x in b) ** 0.5
     if norm_a == 0 or norm_b == 0:
         return 0.0
     return dot / (norm_a * norm_b)
@@ -165,6 +165,7 @@ def _keyword_similarity(query: str, content: str) -> float:
 # In-memory store (swap for PostgreSQL/pgvector)
 # ─────────────────────────────────────────────
 
+
 class MemoryStore:
     """
     In-process memory store.
@@ -172,8 +173,8 @@ class MemoryStore:
     """
 
     def __init__(self) -> None:
-        self._entries: Dict[str, MemoryEntry] = {}
-        self._agent_index: Dict[str, List[str]] = {}  # agent_id -> [entry_ids]
+        self._entries: dict[str, MemoryEntry] = {}
+        self._agent_index: dict[str, list[str]] = {}  # agent_id -> [entry_ids]
 
     def add(self, entry: MemoryEntry) -> None:
         self._entries[entry.entry_id] = entry
@@ -181,15 +182,15 @@ class MemoryStore:
             self._agent_index[entry.agent_id] = []
         self._agent_index[entry.agent_id].append(entry.entry_id)
 
-    def get(self, entry_id: str) -> Optional[MemoryEntry]:
+    def get(self, entry_id: str) -> MemoryEntry | None:
         return self._entries.get(entry_id)
 
     def get_for_agent(
         self,
         agent_id: str,
-        memory_type: Optional[MemoryType] = None,
+        memory_type: MemoryType | None = None,
         active_only: bool = True,
-    ) -> List[MemoryEntry]:
+    ) -> list[MemoryEntry]:
         ids = self._agent_index.get(agent_id, [])
         entries = [self._entries[i] for i in ids if i in self._entries]
         if active_only:
@@ -209,6 +210,7 @@ class MemoryStore:
 # Memory Engine
 # ─────────────────────────────────────────────
 
+
 class MemoryEngine:
     """
     Layered memory engine with episodic, semantic, and procedural stores.
@@ -223,13 +225,13 @@ class MemoryEngine:
 
     def __init__(
         self,
-        embedding_provider: Optional[EmbeddingProvider] = None,
+        embedding_provider: EmbeddingProvider | None = None,
         max_entries_per_agent: int = 10_000,
     ):
         self._store = MemoryStore()
         self._embedder = embedding_provider or EmbeddingProvider()
         self._max_entries = max_entries_per_agent
-        self._contradiction_reports: List[ContradictionReport] = []
+        self._contradiction_reports: list[ContradictionReport] = []
 
     async def store(
         self,
@@ -237,10 +239,10 @@ class MemoryEngine:
         content: str,
         memory_type: MemoryType = MemoryType.EPISODIC,
         importance: ImportanceLevel = ImportanceLevel.MEDIUM,
-        session_id: Optional[str] = None,
-        task_id: Optional[str] = None,
-        tags: Optional[List[str]] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        session_id: str | None = None,
+        task_id: str | None = None,
+        tags: list[str] | None = None,
+        metadata: dict[str, Any] | None = None,
         check_contradictions: bool = True,
     ) -> MemoryEntry:
         """Store a new memory entry with optional embedding and contradiction check."""
@@ -267,7 +269,8 @@ class MemoryEngine:
                 self._contradiction_reports.extend(contradictions)
                 logger.warning(
                     "Memory contradiction detected for agent %s: %d conflict(s)",
-                    agent_id, len(contradictions),
+                    agent_id,
+                    len(contradictions),
                 )
 
         self._store.add(entry)
@@ -277,13 +280,13 @@ class MemoryEngine:
         self,
         agent_id: str,
         query: str,
-        memory_types: Optional[List[MemoryType]] = None,
+        memory_types: list[MemoryType] | None = None,
         top_k: int = 10,
         min_similarity: float = 0.3,
         recency_boost: bool = True,
-    ) -> List[MemorySearchResult]:
+    ) -> list[MemorySearchResult]:
         """Retrieve relevant memories using semantic search."""
-        candidates: List[MemoryEntry] = []
+        candidates: list[MemoryEntry] = []
         if memory_types:
             for mt in memory_types:
                 candidates.extend(self._store.get_for_agent(agent_id, memory_type=mt))
@@ -296,8 +299,8 @@ class MemoryEngine:
         query_embeddings = await self._embedder.embed([query])
         query_vec = query_embeddings[0] if query_embeddings else None
 
-        results: List[MemorySearchResult] = []
-        now = datetime.now(timezone.utc)
+        results: list[MemorySearchResult] = []
+        now = datetime.now(UTC)
 
         for entry in candidates:
             if query_vec and entry.embedding:
@@ -322,10 +325,12 @@ class MemoryEngine:
             }[entry.importance]
             score *= importance_boost
 
-            results.append(MemorySearchResult(
-                entry=entry,
-                similarity_score=min(1.0, score),
-            ))
+            results.append(
+                MemorySearchResult(
+                    entry=entry,
+                    similarity_score=min(1.0, score),
+                )
+            )
 
             entry.last_accessed = now
             entry.access_count += 1
@@ -339,7 +344,7 @@ class MemoryEngine:
         agent_id: str,
         query: str,
         max_tokens: int = 2000,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
     ) -> str:
         """
         Build a formatted memory context string for injection into prompts.
@@ -347,14 +352,17 @@ class MemoryEngine:
         """
         results = await self.retrieve(agent_id, query, top_k=20)
 
-        context_parts: List[str] = []
+        context_parts: list[str] = []
         estimated_tokens = 0
         tokens_per_char = 0.25
 
-        ordered = sorted(results, key=lambda r: (
-            {"semantic": 0, "procedural": 1, "episodic": 2}[r.entry.memory_type.value],
-            -r.similarity_score,
-        ))
+        ordered = sorted(
+            results,
+            key=lambda r: (
+                {"semantic": 0, "procedural": 1, "episodic": 2}[r.entry.memory_type.value],
+                -r.similarity_score,
+            ),
+        )
 
         for result in ordered:
             entry = result.entry
@@ -376,11 +384,9 @@ class MemoryEngine:
         self,
         new_entry: MemoryEntry,
         agent_id: str,
-    ) -> List[ContradictionReport]:
-        reports: List[ContradictionReport] = []
-        existing = self._store.get_for_agent(
-            agent_id, memory_type=MemoryType.SEMANTIC
-        )
+    ) -> list[ContradictionReport]:
+        reports: list[ContradictionReport] = []
+        existing = self._store.get_for_agent(agent_id, memory_type=MemoryType.SEMANTIC)
 
         if not existing:
             return []
@@ -390,9 +396,13 @@ class MemoryEngine:
             if embeddings and embeddings[0]:
                 new_entry.embedding = embeddings[0]
 
-        NEGATION_PAIRS = [
-            ("is", "is not"), ("can", "cannot"), ("will", "will not"),
-            ("does", "does not"), ("has", "has not"), ("true", "false"),
+        negation_pairs = [
+            ("is", "is not"),
+            ("can", "cannot"),
+            ("will", "will not"),
+            ("does", "does not"),
+            ("has", "has not"),
+            ("true", "false"),
         ]
 
         for existing_entry in existing[:100]:
@@ -404,38 +414,40 @@ class MemoryEngine:
                 if sim > 0.85:
                     n_lower = new_entry.content.lower()
                     e_lower = existing_entry.content.lower()
-                    for pos, neg in NEGATION_PAIRS:
+                    for pos, neg in negation_pairs:
                         if pos in n_lower and neg in e_lower:
-                            reports.append(ContradictionReport(
-                                entry_a_id=existing_entry.entry_id,
-                                entry_b_id=new_entry.entry_id,
-                                reason=f"Negation conflict: '{pos}' vs '{neg}'",
-                                confidence=sim,
-                                suggested_resolution=(
-                                    "Keep the more recent entry. Review both manually."
-                                ),
-                            ))
+                            reports.append(
+                                ContradictionReport(
+                                    entry_a_id=existing_entry.entry_id,
+                                    entry_b_id=new_entry.entry_id,
+                                    reason=f"Negation conflict: '{pos}' vs '{neg}'",
+                                    confidence=sim,
+                                    suggested_resolution=(
+                                        "Keep the more recent entry. Review both manually."
+                                    ),
+                                )
+                            )
                             break
                         if neg in n_lower and pos in e_lower:
-                            reports.append(ContradictionReport(
-                                entry_a_id=existing_entry.entry_id,
-                                entry_b_id=new_entry.entry_id,
-                                reason=f"Negation conflict: '{neg}' vs '{pos}'",
-                                confidence=sim,
-                                suggested_resolution=(
-                                    "Keep the more recent entry. Review both manually."
-                                ),
-                            ))
+                            reports.append(
+                                ContradictionReport(
+                                    entry_a_id=existing_entry.entry_id,
+                                    entry_b_id=new_entry.entry_id,
+                                    reason=f"Negation conflict: '{neg}' vs '{pos}'",
+                                    confidence=sim,
+                                    suggested_resolution=(
+                                        "Keep the more recent entry. Review both manually."
+                                    ),
+                                )
+                            )
                             break
 
         return reports
 
-    def get_contradictions(
-        self, agent_id: Optional[str] = None
-    ) -> List[ContradictionReport]:
+    def get_contradictions(self, agent_id: str | None = None) -> list[ContradictionReport]:
         return list(self._contradiction_reports)
 
-    def stats(self, agent_id: Optional[str] = None) -> Dict[str, Any]:
+    def stats(self, agent_id: str | None = None) -> dict[str, Any]:
         if agent_id:
             entries = self._store.get_for_agent(agent_id)
             by_type = {}

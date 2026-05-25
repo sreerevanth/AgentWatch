@@ -1,1 +1,1 @@
-from plugins.sandbox import *
+"""Sandbox plugin for AgentWatch."""

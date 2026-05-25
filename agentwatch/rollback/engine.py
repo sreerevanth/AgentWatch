@@ -7,26 +7,16 @@ git-backed checkpoints, and transactional execution tracking.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
 import logging
 import os
-import shutil
-import subprocess
 import tarfile
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-
-from agentwatch.core.schema import (
-    AgentEvent,
-    CheckpointData,
-    EventType,
-    ExecutionStatus,
-)
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -51,15 +41,15 @@ class Checkpoint:
     session_id: str
     step_number: int
     checkpoint_type: CheckpointType
-    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    snapshot_path: Optional[Path] = None
-    git_stash_ref: Optional[str] = None
-    git_commit_ref: Optional[str] = None
-    memory_snapshot: Optional[Dict[str, Any]] = None
-    working_dir: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+    snapshot_path: Path | None = None
+    git_stash_ref: str | None = None
+    git_commit_ref: str | None = None
+    memory_snapshot: dict[str, Any] | None = None
+    working_dir: str | None = None
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "checkpoint_id": self.checkpoint_id,
             "session_id": self.session_id,
@@ -78,11 +68,11 @@ class Checkpoint:
 class RollbackResult:
     checkpoint_id: str
     status: RollbackStatus
-    rolled_back_files: List[str] = field(default_factory=list)
-    rolled_back_git_ref: Optional[str] = None
-    error: Optional[str] = None
-    duration_seconds: Optional[float] = None
-    completed_at: Optional[datetime] = None
+    rolled_back_files: list[str] = field(default_factory=list)
+    rolled_back_git_ref: str | None = None
+    error: str | None = None
+    duration_seconds: float | None = None
+    completed_at: datetime | None = None
 
 
 class FilesystemSnapshot:
@@ -93,19 +83,25 @@ class FilesystemSnapshot:
         source_path: Path,
         snapshot_dir: Path,
         checkpoint_id: str,
-        exclude_patterns: Optional[List[str]] = None,
+        exclude_patterns: list[str] | None = None,
     ) -> Path:
         snapshot_dir.mkdir(parents=True, exist_ok=True)
         out_path = snapshot_dir / f"{checkpoint_id}.tar.gz"
 
         exclude = exclude_patterns or [
-            ".git", "__pycache__", "*.pyc", "node_modules",
-            ".agentwatch", "*.log", "*.tmp",
+            ".git",
+            "__pycache__",
+            "*.pyc",
+            "node_modules",
+            ".agentwatch",
+            "*.log",
+            "*.tmp",
         ]
 
         def _create() -> None:
             with tarfile.open(out_path, "w:gz") as tar:
-                def filter_fn(member: tarfile.TarInfo) -> Optional[tarfile.TarInfo]:
+
+                def filter_fn(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
                     for pat in exclude:
                         if pat.lstrip("*.") in member.name:
                             return None
@@ -114,13 +110,16 @@ class FilesystemSnapshot:
                 tar.add(str(source_path), arcname=".", filter=filter_fn)
 
         await asyncio.get_event_loop().run_in_executor(None, _create)
-        logger.info("Created filesystem snapshot at %s (%.1f MB)",
-                    out_path, out_path.stat().st_size / 1_048_576)
+        logger.info(
+            "Created filesystem snapshot at %s (%.1f MB)",
+            out_path,
+            out_path.stat().st_size / 1_048_576,
+        )
         return out_path
 
     @staticmethod
-    async def restore(snapshot_path: Path, target_path: Path) -> List[str]:
-        restored: List[str] = []
+    async def restore(snapshot_path: Path, target_path: Path) -> list[str]:
+        restored: list[str] = []
 
         def _restore() -> None:
             with tarfile.open(snapshot_path, "r:gz") as tar:
@@ -141,16 +140,15 @@ class GitCheckpointer:
 
     async def _run_git(self, *args: str) -> str:
         proc = await asyncio.create_subprocess_exec(
-            "git", *args,
+            "git",
+            *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=str(self.repo_path),
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:
-            raise RuntimeError(
-                f"git {' '.join(args)} failed: {stderr.decode().strip()}"
-            )
+            raise RuntimeError(f"git {' '.join(args)} failed: {stderr.decode().strip()}")
         return stdout.decode().strip()
 
     async def is_git_repo(self) -> bool:
@@ -163,7 +161,7 @@ class GitCheckpointer:
     async def current_commit(self) -> str:
         return await self._run_git("rev-parse", "HEAD")
 
-    async def stash(self, message: str) -> Optional[str]:
+    async def stash(self, message: str) -> str | None:
         """Stash current changes. Returns stash ref or None if nothing to stash."""
         status = await self._run_git("status", "--porcelain")
         if not status:
@@ -179,9 +177,7 @@ class GitCheckpointer:
         """Restore a specific stash."""
         await self._run_git("stash", "pop")
 
-    async def create_checkpoint_branch(
-        self, checkpoint_id: str
-    ) -> str:
+    async def create_checkpoint_branch(self, checkpoint_id: str) -> str:
         """Create a branch at current HEAD for the checkpoint."""
         branch = f"agentwatch/checkpoint/{checkpoint_id[:12]}"
         await self._run_git("branch", branch)
@@ -201,6 +197,7 @@ class GitCheckpointer:
 # Rollback Engine
 # ─────────────────────────────────────────────
 
+
 class RollbackEngine:
     """
     Framework-agnostic rollback engine.
@@ -211,13 +208,13 @@ class RollbackEngine:
 
     def __init__(
         self,
-        checkpoints_dir: Optional[Path] = None,
+        checkpoints_dir: Path | None = None,
         auto_checkpoint_on_risk: bool = True,
     ):
         self._checkpoints_dir = checkpoints_dir or Path(".agentwatch/checkpoints")
         self._auto_checkpoint = auto_checkpoint_on_risk
-        self._checkpoints: Dict[str, Checkpoint] = {}
-        self._session_checkpoints: Dict[str, List[str]] = {}  # session_id -> [checkpoint_ids]
+        self._checkpoints: dict[str, Checkpoint] = {}
+        self._session_checkpoints: dict[str, list[str]] = {}  # session_id -> [checkpoint_ids]
 
     def _checkpoint_snapshot_dir(self, checkpoint_id: str) -> Path:
         return self._checkpoints_dir / "snapshots" / checkpoint_id
@@ -226,10 +223,10 @@ class RollbackEngine:
         self,
         session_id: str,
         step_number: int,
-        working_dir: Optional[str] = None,
-        memory_snapshot: Optional[Dict[str, Any]] = None,
+        working_dir: str | None = None,
+        memory_snapshot: dict[str, Any] | None = None,
         checkpoint_type: CheckpointType = CheckpointType.COMPOSITE,
-        label: Optional[str] = None,
+        label: str | None = None,
     ) -> Checkpoint:
         """Create a checkpoint of current system state."""
         checkpoint_id = f"ckpt-{uuid.uuid4().hex[:12]}"
@@ -282,7 +279,9 @@ class RollbackEngine:
 
         logger.info(
             "Created checkpoint %s for session %s step %d",
-            checkpoint_id, session_id, step_number,
+            checkpoint_id,
+            session_id,
+            step_number,
         )
         return cp
 
@@ -294,6 +293,7 @@ class RollbackEngine:
     ) -> RollbackResult:
         """Rollback to a specific checkpoint."""
         import time
+
         start = time.monotonic()
 
         cp = self._checkpoints.get(checkpoint_id)
@@ -337,13 +337,13 @@ class RollbackEngine:
             logger.error("Rollback failed for checkpoint %s: %s", checkpoint_id, exc)
 
         result.duration_seconds = time.monotonic() - start
-        result.completed_at = datetime.now(timezone.utc)
+        result.completed_at = datetime.now(UTC)
         return result
 
     async def rollback_session(
         self,
         session_id: str,
-        to_step: Optional[int] = None,
+        to_step: int | None = None,
     ) -> RollbackResult:
         """
         Rollback a session to its latest checkpoint (or to a specific step).
@@ -376,11 +376,11 @@ class RollbackEngine:
 
         return await self.rollback(target.checkpoint_id)
 
-    def list_checkpoints(self, session_id: str) -> List[Checkpoint]:
+    def list_checkpoints(self, session_id: str) -> list[Checkpoint]:
         ids = self._session_checkpoints.get(session_id, [])
         return [self._checkpoints[i] for i in ids if i in self._checkpoints]
 
-    def get_checkpoint(self, checkpoint_id: str) -> Optional[Checkpoint]:
+    def get_checkpoint(self, checkpoint_id: str) -> Checkpoint | None:
         return self._checkpoints.get(checkpoint_id)
 
     async def _save_checkpoint_meta(self, cp: Checkpoint) -> None:
@@ -389,7 +389,7 @@ class RollbackEngine:
         with open(meta_path, "w") as f:
             json.dump(cp.to_dict(), f, indent=2)
 
-    async def load_checkpoint_meta(self, checkpoint_id: str) -> Optional[Checkpoint]:
+    async def load_checkpoint_meta(self, checkpoint_id: str) -> Checkpoint | None:
         meta_path = self._checkpoints_dir / "meta" / f"{checkpoint_id}.json"
         if not meta_path.exists():
             return None

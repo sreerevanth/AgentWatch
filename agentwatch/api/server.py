@@ -8,8 +8,8 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
 from agentwatch.core.event_bus import get_event_bus
+from agentwatch.core.models import Repository, init_db
 from agentwatch.core.safety import SafetyEngine, SafetyPolicy
 from agentwatch.core.schema import (
     AgentEvent,
@@ -25,9 +26,9 @@ from agentwatch.core.schema import (
     EventType,
     ExecutionStatus,
     SafetyCheckData,
+    TokenUsage,
     ToolCallData,
     ToolResultData,
-    TokenUsage,
 )
 from agentwatch.cost.tracker import CostTracker
 from agentwatch.governance.compliance_reporter import ComplianceReporter
@@ -39,6 +40,98 @@ from agentwatch.scoring.confidence import ConfidenceScorer
 from agentwatch.tracing.collector import TraceCollector
 
 logger = logging.getLogger(__name__)
+
+_db_session_factory = None
+
+
+def _session_to_pg(session: AgentSession) -> dict:
+    return {
+        "session_id": session.session_id,
+        "agent_id": session.agent_id,
+        "agent_name": session.agent_name,
+        "framework": session.framework.value,
+        "status": session.status.value,
+        "goal": session.goal,
+        "started_at": session.started_at,
+        "ended_at": session.ended_at,
+        "total_events": session.total_events,
+        "total_tokens": session.total_tokens,
+        "estimated_cost_usd": session.estimated_cost_usd,
+        "final_confidence": session.final_confidence,
+        "session_metadata": session.metadata or {},
+    }
+
+
+def _event_to_pg(event: AgentEvent) -> dict:
+    d: dict = {
+        "event_id": event.event_id,
+        "session_id": event.session_id,
+        "agent_id": event.agent_id,
+        "framework": event.framework.value,
+        "event_type": event.event_type.value,
+        "status": event.status.value,
+        "step_number": event.step_number,
+        "timestamp": event.timestamp,
+        "goal": event.goal,
+        "duration_ms": event.duration_ms,
+        "task_id": event.task_id,
+        "trace_id": event.trace_id,
+        "parent_event_id": event.parent_event_id,
+        "prompt_preview": event.prompt_preview,
+        "planner_output_preview": event.planner_output_preview,
+        "event_metadata": event.metadata or {},
+        "tags": list(event.tags) if event.tags else [],
+    }
+    if event.tool_call:
+        d["tool_name"] = event.tool_call.tool_name
+        d["tool_raw_command"] = event.tool_call.raw_command
+        d["tool_arguments"] = dict(event.tool_call.arguments) if event.tool_call.arguments else {}
+    if event.tool_result:
+        d["tool_output"] = event.tool_result.output
+        d["tool_error"] = event.tool_result.error
+    if event.safety:
+        d["risk_level"] = event.safety.risk_level.value
+        d["risk_score"] = event.safety.risk_score
+        d["safety_blocked"] = event.safety.blocked
+        d["safety_reasons"] = list(event.safety.reasons) if event.safety.reasons else []
+    if event.token_usage:
+        d["prompt_tokens"] = event.token_usage.prompt_tokens
+        d["completion_tokens"] = event.token_usage.completion_tokens
+        d["total_tokens"] = event.token_usage.total_tokens
+        d["estimated_cost_usd"] = event.token_usage.estimated_cost_usd
+    if event.confidence:
+        d["confidence_score"] = event.confidence.overall_score
+        d["anomaly_flags"] = (
+            list(event.confidence.anomaly_flags) if event.confidence.anomaly_flags else []
+        )
+    return d
+
+
+async def _pg_write_session(session: AgentSession) -> None:
+    if _db_session_factory is None:
+        return
+    try:
+        async with _db_session_factory() as db:
+            await Repository(db).upsert_session(_session_to_pg(session))
+            await db.commit()
+    except Exception:
+        logger.warning("PG session write failed", exc_info=True)
+
+
+async def _pg_write_event(event: AgentEvent) -> None:
+    if _db_session_factory is None:
+        return
+    try:
+        async with _db_session_factory() as db:
+            repo = Repository(db)
+            await repo.insert_event(_event_to_pg(event))
+            trace = _collector.get_trace(event.session_id)
+            if trace:
+                await repo.upsert_session(_session_to_pg(trace.session))
+            await db.commit()
+    except Exception:
+        logger.warning("PG event write failed", exc_info=True)
+
 
 _collector = TraceCollector()
 _replay_engine = ReplayEngine()
@@ -55,17 +148,17 @@ _alerting = AlertingEngine(
         pagerduty_webhook_url=os.getenv("PAGERDUTY_WEBHOOK_URL"),
     )
 )
-_ws_clients: List[WebSocket] = []
+_ws_clients: list[WebSocket] = []
 
 
 class SessionListResponse(BaseModel):
-    sessions: List[Dict[str, Any]]
+    sessions: list[dict[str, Any]]
     total: int
 
 
 class TraceResponse(BaseModel):
     session_id: str
-    events: List[Dict[str, Any]]
+    events: list[dict[str, Any]]
     total: int
 
 
@@ -74,14 +167,14 @@ class ConfidenceResponse(BaseModel):
     overall_score: float
     goal_alignment: float
     consistency_score: float
-    anomaly_flags: List[str]
+    anomaly_flags: list[str]
     explanation: str
-    component_scores: Dict[str, float]
+    component_scores: dict[str, float]
 
 
 class RollbackRequest(BaseModel):
-    checkpoint_id: Optional[str] = None
-    to_step: Optional[int] = None
+    checkpoint_id: str | None = None
+    to_step: int | None = None
     restore_filesystem: bool = True
     restore_git: bool = True
 
@@ -100,9 +193,8 @@ def _record_budget(event: AgentEvent) -> None:
 
 async def _after_publish(event: AgentEvent) -> None:
     _record_budget(event)
-    if event.is_blocked or (
-        event.safety and event.safety.risk_level.value in {"high", "critical"}
-    ):
+    await _pg_write_event(event)
+    if event.is_blocked or (event.safety and event.safety.risk_level.value in {"high", "critical"}):
         await _alerting.alert_event(event)
 
 
@@ -124,7 +216,7 @@ def _seed_demo_data() -> None:
     )
     _collector.register_session(session)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     demo_events = [
         AgentEvent(
             session_id=session_id,
@@ -141,7 +233,9 @@ def _seed_demo_data() -> None:
             framework=AgentFramework.CLAUDE_CODE,
             event_type=EventType.PLANNER_OUTPUT,
             planner_output_preview="I will inspect the project, avoid destructive commands, and summarize findings.",
-            token_usage=TokenUsage(prompt_tokens=210, completion_tokens=88, total_tokens=298, estimated_cost_usd=0.004),
+            token_usage=TokenUsage(
+                prompt_tokens=210, completion_tokens=88, total_tokens=298, estimated_cost_usd=0.004
+            ),
             timestamp=now + timedelta(seconds=1),
         ),
         AgentEvent(
@@ -150,7 +244,9 @@ def _seed_demo_data() -> None:
             framework=AgentFramework.CLAUDE_CODE,
             event_type=EventType.TOOL_CALL,
             step_number=2,
-            tool_call=ToolCallData(tool_name="bash", raw_command="rg --files", arguments={"command": "rg --files"}),
+            tool_call=ToolCallData(
+                tool_name="bash", raw_command="rg --files", arguments={"command": "rg --files"}
+            ),
             timestamp=now + timedelta(seconds=2),
         ),
         AgentEvent(
@@ -160,7 +256,9 @@ def _seed_demo_data() -> None:
             event_type=EventType.TOOL_RESULT,
             step_number=3,
             status=ExecutionStatus.SUCCESS,
-            tool_result=ToolResultData(tool_name="bash", output="api/server.py\nfrontend/pages/index.tsx"),
+            tool_result=ToolResultData(
+                tool_name="bash", output="api/server.py\nfrontend/pages/index.tsx"
+            ),
             timestamp=now + timedelta(seconds=3),
         ),
         AgentEvent(
@@ -170,7 +268,11 @@ def _seed_demo_data() -> None:
             event_type=EventType.TOOL_CALL,
             step_number=4,
             status=ExecutionStatus.BLOCKED,
-            tool_call=ToolCallData(tool_name="bash", raw_command="rm -rf /var/log/*", arguments={"command": "rm -rf /var/log/*"}),
+            tool_call=ToolCallData(
+                tool_name="bash",
+                raw_command="rm -rf /var/log/*",
+                arguments={"command": "rm -rf /var/log/*"},
+            ),
             safety=SafetyCheckData(
                 risk_level="critical",
                 risk_score=1.0,
@@ -193,13 +295,23 @@ def _seed_demo_data() -> None:
     for event in demo_events:
         _collector.register_session(session)
         _collector._traces[session_id].add_event(event)  # noqa: SLF001
-        _collector._traces[session_id].session.total_events = _collector._traces[session_id].event_count  # noqa: SLF001
+        _collector._traces[session_id].session.total_events = _collector._traces[
+            session_id
+        ].event_count  # noqa: SLF001
         bus.publish_sync(event)
         _record_budget(event)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _db_session_factory
+    db_url = os.getenv("DATABASE_URL", "")
+    if db_url:
+        try:
+            _db_session_factory = await init_db(db_url)
+            logger.info("PostgreSQL connected and tables ready")
+        except Exception:
+            logger.warning("PostgreSQL unavailable — running in-memory only", exc_info=True)
     bus = get_event_bus()
     bus.subscribe_fn(_collector.ingest, handler_id="api.collector")
     bus.subscribe_fn(_after_publish, handler_id="api.post_publish")
@@ -226,11 +338,11 @@ app.add_middleware(
 
 
 @app.get("/health")
-async def health() -> Dict[str, Any]:
+async def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "version": "0.1.0",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "traces": _collector.get_stats(),
         "event_bus": get_event_bus().stats(),
         "safety": _safety_engine.stats(),
@@ -241,25 +353,30 @@ async def health() -> Dict[str, Any]:
 @app.get("/api/v1/sessions", response_model=SessionListResponse)
 async def list_sessions(
     limit: int = Query(default=50, le=200),
-    framework: Optional[str] = Query(default=None),
-    status: Optional[str] = Query(default=None),
-    since_hours: Optional[int] = Query(default=None),
+    framework: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    since_hours: int | None = Query(default=None),
 ) -> SessionListResponse:
     since = None
     if since_hours is not None:
-        since = datetime.now(timezone.utc) - timedelta(hours=since_hours)
-    sessions = _collector.list_sessions(limit=limit, framework=framework, status=status, since=since)
-    return SessionListResponse(sessions=[session.model_dump(mode="json") for session in sessions], total=len(sessions))
+        since = datetime.now(UTC) - timedelta(hours=since_hours)
+    sessions = _collector.list_sessions(
+        limit=limit, framework=framework, status=status, since=since
+    )
+    return SessionListResponse(
+        sessions=[session.model_dump(mode="json") for session in sessions], total=len(sessions)
+    )
 
 
 @app.post("/api/v1/sessions")
-async def create_session(session: AgentSession) -> Dict[str, Any]:
+async def create_session(session: AgentSession) -> dict[str, Any]:
     _collector.register_session(session)
+    await _pg_write_session(session)
     return {"status": "registered", "session": session.model_dump(mode="json")}
 
 
 @app.get("/api/v1/sessions/{session_id}")
-async def get_session(session_id: str) -> Dict[str, Any]:
+async def get_session(session_id: str) -> dict[str, Any]:
     trace = _collector.get_trace(session_id)
     if not trace:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -269,21 +386,25 @@ async def get_session(session_id: str) -> Dict[str, Any]:
 @app.get("/api/v1/sessions/{session_id}/events", response_model=TraceResponse)
 async def get_events(
     session_id: str,
-    event_type: Optional[str] = Query(default=None),
+    event_type: str | None = Query(default=None),
     limit: int = Query(default=500, le=2000),
 ) -> TraceResponse:
     events = _collector.get_events(session_id, event_type=event_type, limit=limit)
-    return TraceResponse(session_id=session_id, events=[event.model_dump_for_storage() for event in events], total=len(events))
+    return TraceResponse(
+        session_id=session_id,
+        events=[event.model_dump_for_storage() for event in events],
+        total=len(events),
+    )
 
 
 @app.post("/api/v1/events")
-async def ingest_event(event: AgentEvent) -> Dict[str, Any]:
+async def ingest_event(event: AgentEvent) -> dict[str, Any]:
     await get_event_bus().publish(event)
     return {"status": "accepted", "event_id": event.event_id}
 
 
 @app.get("/api/v1/sessions/{session_id}/trace")
-async def get_trace(session_id: str) -> Dict[str, Any]:
+async def get_trace(session_id: str) -> dict[str, Any]:
     trace = _collector.get_trace(session_id)
     if not trace:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -309,7 +430,7 @@ async def get_confidence(session_id: str) -> ConfidenceResponse:
 
 
 @app.get("/api/v1/sessions/{session_id}/reasoning")
-async def get_reasoning_audit(session_id: str) -> Dict[str, Any]:
+async def get_reasoning_audit(session_id: str) -> dict[str, Any]:
     events = _collector.get_events(session_id, limit=5000)
     if not events:
         raise HTTPException(status_code=404, detail=f"No events for session {session_id}")
@@ -317,7 +438,7 @@ async def get_reasoning_audit(session_id: str) -> Dict[str, Any]:
 
 
 @app.get("/api/v1/sessions/{session_id}/cost")
-async def get_cost_budget(session_id: str) -> Dict[str, Any]:
+async def get_cost_budget(session_id: str) -> dict[str, Any]:
     budget = _cost_tracker.get_session(session_id)
     if not budget:
         events = _collector.get_events(session_id, limit=5000)
@@ -330,7 +451,7 @@ async def get_cost_budget(session_id: str) -> Dict[str, Any]:
 
 
 @app.get("/api/v1/sessions/{session_id}/replay")
-async def get_replay(session_id: str) -> Dict[str, Any]:
+async def get_replay(session_id: str) -> dict[str, Any]:
     events = _collector.get_events(session_id, limit=5000)
     trace = _collector.get_trace(session_id)
     if not events or not trace:
@@ -339,13 +460,16 @@ async def get_replay(session_id: str) -> Dict[str, Any]:
 
 
 @app.get("/api/v1/sessions/{session_id}/checkpoints")
-async def list_checkpoints(session_id: str) -> Dict[str, Any]:
+async def list_checkpoints(session_id: str) -> dict[str, Any]:
     checkpoints = _rollback_engine.list_checkpoints(session_id)
-    return {"session_id": session_id, "checkpoints": [checkpoint.to_dict() for checkpoint in checkpoints]}
+    return {
+        "session_id": session_id,
+        "checkpoints": [checkpoint.to_dict() for checkpoint in checkpoints],
+    }
 
 
 @app.post("/api/v1/sessions/{session_id}/rollback")
-async def rollback_session(session_id: str, request: RollbackRequest) -> Dict[str, Any]:
+async def rollback_session(session_id: str, request: RollbackRequest) -> dict[str, Any]:
     if request.checkpoint_id:
         result = await _rollback_engine.rollback(
             request.checkpoint_id,
@@ -375,7 +499,7 @@ async def rollback_session(session_id: str, request: RollbackRequest) -> Dict[st
 
 
 @app.get("/api/v1/safety/policy")
-async def get_safety_policy() -> Dict[str, Any]:
+async def get_safety_policy() -> dict[str, Any]:
     policy = _safety_engine.policy
     return {
         "policy_id": policy.policy_id,
@@ -389,7 +513,7 @@ async def get_safety_policy() -> Dict[str, Any]:
 
 
 @app.put("/api/v1/safety/policy")
-async def update_safety_policy(update: SafetyPolicyUpdate) -> Dict[str, Any]:
+async def update_safety_policy(update: SafetyPolicyUpdate) -> dict[str, Any]:
     policy = SafetyPolicy(
         policy_id="api-configured",
         name="API-configured policy",
@@ -414,25 +538,32 @@ async def update_safety_policy(update: SafetyPolicyUpdate) -> Dict[str, Any]:
 async def get_blocked_events(
     limit: int = Query(default=50, le=200),
     since_hours: int = Query(default=24),
-) -> Dict[str, Any]:
-    threshold = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+) -> dict[str, Any]:
+    threshold = datetime.now(UTC) - timedelta(hours=since_hours)
     events = [
         event
         for event in get_event_bus().get_recent_events(limit=5000)
         if event.is_blocked and event.timestamp >= threshold
     ][:limit]
-    return {"blocked_events": [event.model_dump_for_storage() for event in events], "total": len(events)}
+    return {
+        "blocked_events": [event.model_dump_for_storage() for event in events],
+        "total": len(events),
+    }
 
 
 @app.get("/api/v1/dashboard/summary")
-async def dashboard_summary() -> Dict[str, Any]:
+async def dashboard_summary() -> dict[str, Any]:
     sessions = _collector.list_sessions(limit=200)
     stats = _collector.get_stats()
     return {
         "total_sessions": len(sessions),
         "active_sessions": stats["active_sessions"],
-        "failed_sessions": sum(1 for session in sessions if session.status == ExecutionStatus.FAILURE),
-        "blocked_sessions": sum(1 for session in sessions if session.status == ExecutionStatus.BLOCKED),
+        "failed_sessions": sum(
+            1 for session in sessions if session.status == ExecutionStatus.FAILURE
+        ),
+        "blocked_sessions": sum(
+            1 for session in sessions if session.status == ExecutionStatus.BLOCKED
+        ),
         "total_tokens": sum(session.total_tokens for session in sessions),
         "estimated_cost_usd": round(sum(session.estimated_cost_usd for session in sessions), 4),
         "safety_stats": _safety_engine.stats(),
@@ -441,12 +572,12 @@ async def dashboard_summary() -> Dict[str, Any]:
 
 
 @app.get("/api/v1/governance/compliance-report")
-async def compliance_report() -> Dict[str, Any]:
+async def compliance_report() -> dict[str, Any]:
     return _compliance_reporter.generate().to_dict()
 
 
 @app.post("/api/v1/demo/seed")
-async def seed_demo() -> Dict[str, Any]:
+async def seed_demo() -> dict[str, Any]:
     _seed_demo_data()
     return {"status": "seeded"}
 

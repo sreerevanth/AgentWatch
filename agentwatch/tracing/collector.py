@@ -9,11 +9,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import uuid
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from agentwatch.core.schema import AgentEvent, AgentSession, EventType, ExecutionStatus
 
@@ -31,7 +30,7 @@ class TraceSpan:
         self.start_time = event.timestamp
         self.end_time = None
         self.status = event.status.value
-        self.attributes: Dict[str, Any] = {
+        self.attributes: dict[str, Any] = {
             "agent.id": event.agent_id,
             "agent.framework": event.framework.value,
             "agent.step": event.step_number,
@@ -48,7 +47,7 @@ class TraceSpan:
 
         self._event = event
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "span_id": self.span_id,
             "trace_id": self.trace_id,
@@ -67,7 +66,7 @@ class Trace:
     def __init__(self, session: AgentSession):
         self.trace_id = session.session_id
         self.session = session
-        self.spans: List[TraceSpan] = []
+        self.spans: list[TraceSpan] = []
         self._event_count = 0
 
     def add_event(self, event: AgentEvent) -> TraceSpan:
@@ -81,12 +80,12 @@ class Trace:
         return self._event_count
 
     @property
-    def duration_seconds(self) -> Optional[float]:
+    def duration_seconds(self) -> float | None:
         if self.session.ended_at and self.session.started_at:
             return (self.session.ended_at - self.session.started_at).total_seconds()
         return None
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "trace_id": self.trace_id,
             "session": self.session.model_dump(mode="json"),
@@ -104,17 +103,17 @@ class TraceCollector:
     def __init__(
         self,
         max_traces: int = 500,
-        storage_path: Optional[Path] = None,
+        storage_path: Path | None = None,
         flush_interval_seconds: float = 30.0,
     ):
-        self._traces: Dict[str, Trace] = {}
-        self._session_index: Dict[str, AgentSession] = {}
+        self._traces: dict[str, Trace] = {}
+        self._session_index: dict[str, AgentSession] = {}
         self._max_traces = max_traces
         self._storage_path = storage_path
         self._flush_interval = flush_interval_seconds
-        self._event_buffer: List[AgentEvent] = []
+        self._event_buffer: list[AgentEvent] = []
         self._lock = asyncio.Lock()
-        self._stats: Dict[str, int] = defaultdict(int)
+        self._stats: dict[str, int] = defaultdict(int)
 
     async def ingest(self, event: AgentEvent) -> None:
         """Process one event into the trace collection."""
@@ -160,16 +159,16 @@ class TraceCollector:
             self._traces[session.session_id] = trace
             self._session_index[session.session_id] = session
 
-    def get_trace(self, session_id: str) -> Optional[Trace]:
+    def get_trace(self, session_id: str) -> Trace | None:
         return self._traces.get(session_id)
 
     def list_sessions(
         self,
         limit: int = 50,
-        framework: Optional[str] = None,
-        status: Optional[str] = None,
-        since: Optional[datetime] = None,
-    ) -> List[AgentSession]:
+        framework: str | None = None,
+        status: str | None = None,
+        since: datetime | None = None,
+    ) -> list[AgentSession]:
         sessions = [t.session for t in self._traces.values()]
 
         if framework:
@@ -185,9 +184,9 @@ class TraceCollector:
     def get_events(
         self,
         session_id: str,
-        event_type: Optional[str] = None,
+        event_type: str | None = None,
         limit: int = 1000,
-    ) -> List[AgentEvent]:
+    ) -> list[AgentEvent]:
         trace = self._traces.get(session_id)
         if not trace:
             return []
@@ -199,13 +198,12 @@ class TraceCollector:
 
         return events[:limit]
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         return {
             "total_traces": len(self._traces),
             "total_ingested": self._stats["ingested"],
             "active_sessions": sum(
-                1 for t in self._traces.values()
-                if t.session.status == ExecutionStatus.RUNNING
+                1 for t in self._traces.values() if t.session.status == ExecutionStatus.RUNNING
             ),
         }
 

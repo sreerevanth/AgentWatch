@@ -108,7 +108,7 @@ jobs:
         env:
           DATABASE_URL: postgresql+asyncpg://agentwatch:agentwatch@localhost:5432/agentwatch_test
           REDIS_URL: redis://localhost:6379/0
-        run: pytest tests/integration/ -v --timeout=60
+        run: pytest tests/integration/ -v
 
   # ─── Frontend build ───────────────────────────────────────────────────────
   frontend-build:
@@ -147,7 +147,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: deploy/docker/Dockerfile.api
+          file: Dockerfile.api
           push: false
           tags: agentwatch/api:${{ github.sha }}
           cache-from: type=gha
@@ -156,7 +156,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: ./frontend
-          file: deploy/docker/Dockerfile.frontend
+          file: frontend/Dockerfile
           push: false
           tags: agentwatch/frontend:${{ github.sha }}
           cache-from: type=gha

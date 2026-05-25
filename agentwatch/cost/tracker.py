@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional
 
 from agentwatch.core.schema import AgentEvent
 
@@ -18,7 +17,7 @@ class SessionBudget:
     exceeded: bool = False
     warnings: list[str] = field(default_factory=list)
 
-    def to_dict(self) -> Dict[str, object]:
+    def to_dict(self) -> dict[str, object]:
         return {
             "session_id": self.session_id,
             "token_budget": self.token_budget,
@@ -34,13 +33,13 @@ class CostTracker:
     def __init__(self, default_token_budget: int = 100_000, default_usd_budget: float = 25.0):
         self._default_token_budget = default_token_budget
         self._default_usd_budget = default_usd_budget
-        self._budgets: Dict[str, SessionBudget] = {}
+        self._budgets: dict[str, SessionBudget] = {}
 
     def configure_session(
         self,
         session_id: str,
-        token_budget: Optional[int] = None,
-        usd_budget: Optional[float] = None,
+        token_budget: int | None = None,
+        usd_budget: float | None = None,
     ) -> SessionBudget:
         budget = SessionBudget(
             session_id=session_id,
@@ -58,10 +57,10 @@ class CostTracker:
         self._evaluate(budget)
         return budget
 
-    def get_session(self, session_id: str) -> Optional[SessionBudget]:
+    def get_session(self, session_id: str) -> SessionBudget | None:
         return self._budgets.get(session_id)
 
-    def stats(self) -> Dict[str, object]:
+    def stats(self) -> dict[str, object]:
         return {
             "tracked_sessions": len(self._budgets),
             "sessions_over_budget": sum(1 for budget in self._budgets.values() if budget.exceeded),

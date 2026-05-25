@@ -91,8 +91,21 @@ addopts = "-v --tb=short"
 [tool.ruff]
 target-version = "py312"
 line-length = 100
-select = ["E", "F", "I", "N", "UP", "ANN001", "ANN201", "S"]
-ignore = ["S101", "ANN", "E501"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "S"]
+ignore = [
+  "E501",   # line too long — handled by formatter
+  "S101",   # assert — fine in tests
+  "S104",   # hardcoded 0.0.0.0 — intentional in server code
+  "S202",   # tarfile.extractall — needed for rollback restore
+  "UP042",  # StrEnum — str+Enum is more explicit for Pydantic compat
+]
+
+[tool.ruff.lint.per-file-ignores]
+# __init__.py re-exports: wildcard imports and implicit re-exports are intentional
+"agentwatch/**/__init__.py" = ["F401", "F403"]
+"agentwatch/*/__init__.py"  = ["F401", "F403"]
 
 [tool.mypy]
 python_version = "3.12"

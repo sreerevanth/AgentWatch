@@ -10,9 +10,8 @@ from __future__ import annotations
 
 import logging
 import re
-from collections import Counter, defaultdict
+from collections import Counter
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Tuple
 
 from agentwatch.core.schema import (
     AgentEvent,
@@ -44,9 +43,9 @@ class ScoringResult:
     overall_score: float  # 0.0 = very anomalous, 1.0 = healthy
     goal_alignment: float
     consistency_score: float
-    anomaly_flags: List[str] = field(default_factory=list)
+    anomaly_flags: list[str] = field(default_factory=list)
     explanation: str = ""
-    component_scores: Dict[str, float] = field(default_factory=dict)
+    component_scores: dict[str, float] = field(default_factory=dict)
 
     def to_confidence_data(self) -> ConfidenceData:
         return ConfidenceData(
@@ -62,12 +61,11 @@ class ScoringResult:
 # Individual heuristic checkers
 # ─────────────────────────────────────────────
 
-def _check_tool_loop(events: List[AgentEvent]) -> Tuple[float, List[str]]:
+
+def _check_tool_loop(events: list[AgentEvent]) -> tuple[float, list[str]]:
     """Detect repetitive tool call sequences with no progress."""
     tool_calls = [
-        e.tool_call.tool_name
-        for e in events
-        if e.event_type == EventType.TOOL_CALL and e.tool_call
+        e.tool_call.tool_name for e in events if e.event_type == EventType.TOOL_CALL and e.tool_call
     ]
     if len(tool_calls) < 4:
         return 1.0, []
@@ -90,11 +88,12 @@ def _check_tool_loop(events: List[AgentEvent]) -> Tuple[float, List[str]]:
     return 1.0, []
 
 
-def _check_repeated_failures(events: List[AgentEvent]) -> Tuple[float, List[str]]:
+def _check_repeated_failures(events: list[AgentEvent]) -> tuple[float, list[str]]:
     """Penalize runs with many tool errors."""
     errors = sum(1 for e in events if e.event_type == EventType.TOOL_ERROR)
     total_tool_events = sum(
-        1 for e in events
+        1
+        for e in events
         if e.event_type in (EventType.TOOL_CALL, EventType.TOOL_RESULT, EventType.TOOL_ERROR)
     )
     if total_tool_events == 0:
@@ -108,7 +107,7 @@ def _check_repeated_failures(events: List[AgentEvent]) -> Tuple[float, List[str]
     return 1.0, []
 
 
-def _check_hallucinated_success(events: List[AgentEvent]) -> Tuple[float, List[str]]:
+def _check_hallucinated_success(events: list[AgentEvent]) -> tuple[float, list[str]]:
     """
     Detect sessions that report success despite evidence of failure.
     Heuristic: final event is SUCCESS but there were blocked/failed tool calls.
@@ -130,9 +129,7 @@ def _check_hallucinated_success(events: List[AgentEvent]) -> Tuple[float, List[s
     return 1.0, []
 
 
-def _check_goal_alignment(
-    events: List[AgentEvent], goal: Optional[str]
-) -> Tuple[float, List[str]]:
+def _check_goal_alignment(events: list[AgentEvent], goal: str | None) -> tuple[float, list[str]]:
     """
     Approximate goal alignment check using keyword overlap between goal
     and observable planner outputs / tool call arguments.
@@ -145,7 +142,7 @@ def _check_goal_alignment(
     if not goal_tokens:
         return 1.0, []
 
-    observable_texts: List[str] = []
+    observable_texts: list[str] = []
     for e in events:
         if e.planner_output_preview:
             observable_texts.append(e.planner_output_preview.lower())
@@ -172,15 +169,15 @@ def _check_goal_alignment(
     return max(0.1, score), flags
 
 
-def _check_no_progress(events: List[AgentEvent]) -> Tuple[float, List[str]]:
+def _check_no_progress(events: list[AgentEvent]) -> tuple[float, list[str]]:
     """
     Detect sessions that have many events but no successful tool results.
     """
     tool_calls = sum(1 for e in events if e.event_type == EventType.TOOL_CALL)
     successes = sum(
-        1 for e in events
-        if e.event_type == EventType.TOOL_RESULT
-        and (not e.tool_result or not e.tool_result.error)
+        1
+        for e in events
+        if e.event_type == EventType.TOOL_RESULT and (not e.tool_result or not e.tool_result.error)
     )
 
     if tool_calls < 5:
@@ -192,16 +189,10 @@ def _check_no_progress(events: List[AgentEvent]) -> Tuple[float, List[str]]:
     return 1.0, []
 
 
-def _check_high_risk_actions(events: List[AgentEvent]) -> Tuple[float, List[str]]:
+def _check_high_risk_actions(events: list[AgentEvent]) -> tuple[float, list[str]]:
     """Penalize sessions with critical/high risk actions."""
-    critical = sum(
-        1 for e in events
-        if e.safety and e.safety.risk_level == RiskLevel.CRITICAL
-    )
-    high = sum(
-        1 for e in events
-        if e.safety and e.safety.risk_level == RiskLevel.HIGH
-    )
+    critical = sum(1 for e in events if e.safety and e.safety.risk_level == RiskLevel.CRITICAL)
+    high = sum(1 for e in events if e.safety and e.safety.risk_level == RiskLevel.HIGH)
 
     if critical > 0:
         return max(0.2, 0.7 - (critical * 0.1)), [ANOMALY_HIGH_RISK_ACTION]
@@ -210,7 +201,7 @@ def _check_high_risk_actions(events: List[AgentEvent]) -> Tuple[float, List[str]
     return 1.0, []
 
 
-def _check_context_explosion(events: List[AgentEvent]) -> Tuple[float, List[str]]:
+def _check_context_explosion(events: list[AgentEvent]) -> tuple[float, list[str]]:
     """Detect sessions where token usage grew exponentially."""
     token_counts = [
         e.token_usage.total_tokens
@@ -235,6 +226,7 @@ def _check_context_explosion(events: List[AgentEvent]) -> Tuple[float, List[str]
 # Confidence Scorer
 # ─────────────────────────────────────────────
 
+
 class ConfidenceScorer:
     """
     Computes a multi-dimensional confidence score for an agent execution.
@@ -249,7 +241,7 @@ class ConfidenceScorer:
     This is NOT reasoning inspection or chain-of-thought analysis.
     """
 
-    WEIGHTS: Dict[str, float] = {
+    WEIGHTS: dict[str, float] = {
         "tool_loop": 0.20,
         "repeated_failures": 0.20,
         "hallucinated_success": 0.15,
@@ -261,8 +253,8 @@ class ConfidenceScorer:
 
     def score(
         self,
-        events: List[AgentEvent],
-        goal: Optional[str] = None,
+        events: list[AgentEvent],
+        goal: str | None = None,
     ) -> ScoringResult:
         if not events:
             return ScoringResult(
@@ -290,19 +282,24 @@ class ConfidenceScorer:
             "context": context_score,
         }
 
-        overall = sum(
-            component_scores[k] * self.WEIGHTS[k]
-            for k in component_scores
-        )
+        overall = sum(component_scores[k] * self.WEIGHTS[k] for k in component_scores)
 
         all_flags = (
-            loop_flags + failure_flags + halluc_flags
-            + goal_flags + progress_flags + risk_flags + context_flags
+            loop_flags
+            + failure_flags
+            + halluc_flags
+            + goal_flags
+            + progress_flags
+            + risk_flags
+            + context_flags
         )
 
         consistency_components = [
-            loop_score, failure_score, halluc_score,
-            progress_score, context_score,
+            loop_score,
+            failure_score,
+            halluc_score,
+            progress_score,
+            context_score,
         ]
         consistency = sum(consistency_components) / len(consistency_components)
 
@@ -319,10 +316,10 @@ class ConfidenceScorer:
 
     def score_incremental(
         self,
-        existing_result: Optional[ScoringResult],
-        new_events: List[AgentEvent],
-        all_events: List[AgentEvent],
-        goal: Optional[str] = None,
+        existing_result: ScoringResult | None,
+        new_events: list[AgentEvent],
+        all_events: list[AgentEvent],
+        goal: str | None = None,
     ) -> ScoringResult:
         """Re-score with updated event list for streaming use cases."""
         return self.score(all_events, goal=goal)
@@ -330,8 +327,8 @@ class ConfidenceScorer:
 
 def _build_explanation(
     overall: float,
-    flags: List[str],
-    components: Dict[str, float],
+    flags: list[str],
+    components: dict[str, float],
 ) -> str:
     if not flags:
         return f"Execution appears healthy (score: {overall:.2f}). No anomalies detected."

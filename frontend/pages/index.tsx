@@ -8,6 +8,13 @@ import { format, formatDistanceToNow } from 'date-fns'
 
 import { AgentEvent, AgentSession, DashboardSummary, createEventSocket } from '../lib/api'
 
+// Resolved at build time from the NEXT_PUBLIC_API_HOST Docker build arg.
+// In production the browser calls the API origin directly (no proxy hop).
+// In local dev falls back to the Next.js proxy route at /api/v1.
+const API_BASE = process.env.NEXT_PUBLIC_API_HOST
+  ? `https://${process.env.NEXT_PUBLIC_API_HOST}/api/v1`
+  : '/api/v1'
+
 const fetcher = async (url: string) => {
   const response = await fetch(url)
   if (!response.ok) {
@@ -176,9 +183,9 @@ function SafetyPanel({ blockedEvents }: { blockedEvents: AgentEvent[] }) {
 }
 
 export default function DashboardPage() {
-  const { data: summary, mutate: refreshSummary } = useSWR<DashboardSummary>('/api/v1/dashboard/summary', fetcher, { refreshInterval: 15000 })
-  const { data: sessionsData, mutate: refreshSessions } = useSWR<{ sessions: AgentSession[]; total: number }>('/api/v1/sessions?limit=20', fetcher, { refreshInterval: 15000 })
-  const { data: blockedData } = useSWR<{ blocked_events: AgentEvent[]; total: number }>('/api/v1/safety/blocked?limit=20', fetcher, { refreshInterval: 15000 })
+  const { data: summary, mutate: refreshSummary } = useSWR<DashboardSummary>(`${API_BASE}/dashboard/summary`, fetcher, { refreshInterval: 15000 })
+  const { data: sessionsData, mutate: refreshSessions } = useSWR<{ sessions: AgentSession[]; total: number }>(`${API_BASE}/sessions?limit=20`, fetcher, { refreshInterval: 15000 })
+  const { data: blockedData } = useSWR<{ blocked_events: AgentEvent[]; total: number }>(`${API_BASE}/safety/blocked?limit=20`, fetcher, { refreshInterval: 15000 })
   const [liveEvents, setLiveEvents] = useState<AgentEvent[]>([])
 
   useEffect(() => {

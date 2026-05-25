@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 import httpx
 
@@ -15,16 +15,16 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class AlertingConfig:
-    slack_webhook_url: Optional[str] = None
-    pagerduty_webhook_url: Optional[str] = None
+    slack_webhook_url: str | None = None
+    pagerduty_webhook_url: str | None = None
     min_risk_for_pagerduty: RiskLevel = RiskLevel.HIGH
 
 
 class AlertingEngine:
-    def __init__(self, config: Optional[AlertingConfig] = None):
+    def __init__(self, config: AlertingConfig | None = None):
         self._config = config or AlertingConfig()
 
-    async def alert_event(self, event: AgentEvent) -> Dict[str, bool]:
+    async def alert_event(self, event: AgentEvent) -> dict[str, bool]:
         payload = self._build_payload(event)
         sent = {"slack": False, "pagerduty": False}
 
@@ -40,10 +40,16 @@ class AlertingEngine:
         return sent
 
     def _should_page(self, risk_level: RiskLevel) -> bool:
-        order = [RiskLevel.SAFE, RiskLevel.LOW, RiskLevel.MEDIUM, RiskLevel.HIGH, RiskLevel.CRITICAL]
+        order = [
+            RiskLevel.SAFE,
+            RiskLevel.LOW,
+            RiskLevel.MEDIUM,
+            RiskLevel.HIGH,
+            RiskLevel.CRITICAL,
+        ]
         return order.index(risk_level) >= order.index(self._config.min_risk_for_pagerduty)
 
-    def _build_payload(self, event: AgentEvent) -> Dict[str, Dict[str, Any]]:
+    def _build_payload(self, event: AgentEvent) -> dict[str, dict[str, Any]]:
         tool = event.tool_call.tool_name if event.tool_call else event.event_type.value
         risk = event.safety.risk_level.value if event.safety else "safe"
         reasons = event.safety.reasons if event.safety else []
@@ -86,7 +92,7 @@ class AlertingEngine:
             },
         }
 
-    async def _post(self, url: str, payload: Dict[str, Any]) -> bool:
+    async def _post(self, url: str, payload: dict[str, Any]) -> bool:
         try:
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.post(url, json=payload)
