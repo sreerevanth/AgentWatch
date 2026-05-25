@@ -389,7 +389,8 @@ class SafetyEngine:
             safety_data: Risk metadata shown to the approver.
 
         Returns:
-            True if approved within the timeout; False on timeout or error.
+            True if approved within the timeout. False on ``TimeoutError``
+            (approval timeout). Other exceptions propagate.
         """
         if self._approval_callback is None:
             logger.warning(
@@ -443,6 +444,7 @@ class SafetyEngine:
 # ─────────────────────────────────────────────
 # CLI approval handler (TTY interactive)
 # ─────────────────────────────────────────────
+
 
 async def cli_approval_handler(event: AgentEvent, safety: SafetyCheckData) -> bool:
     """Prompt on the TTY to approve or deny a risky tool call.

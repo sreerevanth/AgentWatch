@@ -262,8 +262,15 @@ class AgentEvent(BaseModel):
             A timezone-aware datetime in UTC.
         """
         if isinstance(v, str):
-            return datetime.fromisoformat(v)
-        return v
+            parsed = datetime.fromisoformat(v)
+        elif isinstance(v, datetime):
+            parsed = v
+        else:
+            return v
+
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
 
     def model_dump_for_storage(self) -> Dict[str, Any]:
         """Serialize the event for persistence with ISO-8601 timestamps.
