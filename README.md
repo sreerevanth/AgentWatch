@@ -11,7 +11,9 @@
     <img src="https://img.shields.io/badge/tests-47_passing-brightgreen?style=flat-square" />
     <img src="https://img.shields.io/github/stars/sreerevanth/AgentWatch?style=flat-square&color=gold" />
   </p>
+#contributors and supporters 
 
+💬 Contributors and supporters → discord.gg/n2RzUmZ4
 </div>
 ---
 <img width="1598" height="730" alt="image" src="https://github.com/user-attachments/assets/51d4d77a-d377-4235-8f9c-193e717f9a64" />
