@@ -20,7 +20,7 @@
 <br/>
 
 ```
-pip install agentwatch
+pip install agentwatch-ai
 agentwatch watch "your agent command"
 ```
 
