@@ -24,7 +24,7 @@ class RiskAssessment:
     risk_id: str
     description: str
     likelihood: float  # 0..1
-    impact: float      # 0..1
+    impact: float  # 0..1
     treatment: str = ""
     owner: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))

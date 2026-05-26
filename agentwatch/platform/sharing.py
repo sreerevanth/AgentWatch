@@ -64,9 +64,9 @@ class ShareLinkRegistry:
             "exp": int((datetime.now(UTC) + ttl).timestamp()),
             "n": secrets.token_hex(8),
         }
-        body = base64.urlsafe_b64encode(
-            json.dumps(payload, separators=(",", ":")).encode()
-        ).rstrip(b"=")
+        body = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).rstrip(
+            b"="
+        )
         sig = hmac.new(self._secret, body, hashlib.sha256).digest()
         token = (body + b"." + base64.urlsafe_b64encode(sig).rstrip(b"=")).decode()
         link = ShareLink(
@@ -103,9 +103,7 @@ class ShareLinkRegistry:
         return True
 
     def list_for_session(self, session_id: str) -> list[ShareLink]:
-        return [
-            link for link in self._links.values() if link.session_id == session_id
-        ]
+        return [link for link in self._links.values() if link.session_id == session_id]
 
 
 def render_for_viewer(

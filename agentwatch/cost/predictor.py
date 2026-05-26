@@ -73,7 +73,9 @@ class TaskCostPredictor:
         # Similarity-weighted means
         weights = sims if any(s > 0 for s in sims) else [1.0] * len(neighbors)
         wsum = sum(weights) or 1.0
-        exp_tokens = sum(r.total_tokens * w for r, w in zip(neighbors, weights, strict=False)) / wsum
+        exp_tokens = (
+            sum(r.total_tokens * w for r, w in zip(neighbors, weights, strict=False)) / wsum
+        )
         exp_usd = sum(r.total_usd * w for r, w in zip(neighbors, weights, strict=False)) / wsum
 
         usds = [r.total_usd for r in neighbors]

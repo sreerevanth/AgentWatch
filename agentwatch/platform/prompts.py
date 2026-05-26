@@ -97,9 +97,7 @@ class PromptRegistry:
                         return pv
         return self.active(name)
 
-    def record_outcome(
-        self, name: str, version: int, *, confidence: float, success: bool
-    ) -> None:
+    def record_outcome(self, name: str, version: int, *, confidence: float, success: bool) -> None:
         self._scores[(name, version)].append((confidence, success))
 
     def evaluate_ab(self, name: str) -> ABTestResult:

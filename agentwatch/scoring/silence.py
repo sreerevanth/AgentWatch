@@ -50,11 +50,7 @@ class SilentFailureDetector:
         self,
         sessions: list[tuple[AgentSession, list[AgentEvent]]],
     ) -> SilenceBaseline:
-        ok = [
-            (s, evs)
-            for (s, evs) in sessions
-            if s.status == ExecutionStatus.SUCCESS
-        ]
+        ok = [(s, evs) for (s, evs) in sessions if s.status == ExecutionStatus.SUCCESS]
         if len(ok) < self.min_baseline:
             self._baseline = SilenceBaseline(sample_size=len(ok))
             return self._baseline
@@ -68,9 +64,7 @@ class SilentFailureDetector:
             calls = [e for e in evs if e.event_type == EventType.TOOL_CALL]
             tool_counts.append(len(calls))
             if s.ended_at and s.started_at:
-                durations.append(
-                    (s.ended_at - s.started_at).total_seconds() * 1000.0
-                )
+                durations.append((s.ended_at - s.started_at).total_seconds() * 1000.0)
             token_counts.append(s.total_tokens)
             for e in calls:
                 if e.tool_call:

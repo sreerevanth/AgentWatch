@@ -121,7 +121,7 @@ class GenericAdapter:
         "astream",
         "execute",
         "kickoff",  # CrewAI
-        "step",     # AutoGPT-like
+        "step",  # AutoGPT-like
     )
 
     def __init__(
@@ -274,9 +274,7 @@ def _attach_langchain(agent: Any, session_id: str | None, bus: EventBus) -> Any:
     try:
         from agentwatch.adapters.langchain import AgentWatchCallbackHandler
 
-        handler = AgentWatchCallbackHandler(
-            session_id=session_id, event_bus=bus
-        )
+        handler = AgentWatchCallbackHandler(session_id=session_id, event_bus=bus)
         # Newer LangChain: set on `.callbacks`
         if hasattr(agent, "callbacks"):
             existing = getattr(agent, "callbacks", None) or []
@@ -309,9 +307,7 @@ def _attach_langgraph(agent: Any, session_id: str | None, bus: EventBus) -> Any:
     try:
         from agentwatch.adapters.langgraph import LangGraphAdapter
 
-        return LangGraphAdapter(
-            agent, event_bus=bus, session_id=session_id
-        ).attach()
+        return LangGraphAdapter(agent, event_bus=bus, session_id=session_id).attach()
     except Exception as exc:  # noqa: BLE001
         logger.debug("LangGraph attach failed: %s", exc)
         return None
@@ -321,9 +317,7 @@ def _attach_autogen(agent: Any, session_id: str | None, bus: EventBus) -> Any:
     try:
         from agentwatch.adapters.autogen import AutoGenAdapter
 
-        return AutoGenAdapter(
-            agent, event_bus=bus, session_id=session_id
-        ).attach()
+        return AutoGenAdapter(agent, event_bus=bus, session_id=session_id).attach()
     except Exception as exc:  # noqa: BLE001
         logger.debug("AutoGen attach failed: %s", exc)
         return None
@@ -333,9 +327,7 @@ def _attach_smolagents(agent: Any, session_id: str | None, bus: EventBus) -> Any
     try:
         from agentwatch.adapters.smolagents import SmolagentsAdapter
 
-        return SmolagentsAdapter(
-            agent, event_bus=bus, session_id=session_id
-        ).attach()
+        return SmolagentsAdapter(agent, event_bus=bus, session_id=session_id).attach()
     except Exception as exc:  # noqa: BLE001
         logger.debug("Smolagents attach failed: %s", exc)
         return None

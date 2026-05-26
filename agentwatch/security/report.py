@@ -53,7 +53,9 @@ def generate(session_id: str, events: list[AgentEvent]) -> SecurityReport:
     injection = sum(
         1
         for e in events
-        if (e.tool_result and e.tool_result.output and scan_text(str(e.tool_result.output)).detected)
+        if (
+            e.tool_result and e.tool_result.output and scan_text(str(e.tool_result.output)).detected
+        )
         or (e.prompt_preview and scan_text(e.prompt_preview).detected)
     )
 

@@ -79,7 +79,8 @@ class HallucinationClassifier:
                 novel = [
                     n
                     for n in novel
-                    if n.lower() not in {
+                    if n.lower()
+                    not in {
                         "true",
                         "false",
                         "none",

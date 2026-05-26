@@ -63,8 +63,7 @@ class CounterfactualEngine:
     ) -> CounterfactualResult:
         if scenario.rewind_to_step < 0 or scenario.rewind_to_step >= len(events):
             raise ValueError(
-                f"rewind_to_step {scenario.rewind_to_step} out of range "
-                f"[0, {len(events)})"
+                f"rewind_to_step {scenario.rewind_to_step} out of range [0, {len(events)})"
             )
 
         prefix = [copy.deepcopy(e) for e in events[: scenario.rewind_to_step + 1]]

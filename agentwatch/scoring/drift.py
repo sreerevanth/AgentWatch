@@ -60,6 +60,7 @@ def embed(text: str, dim: int = 128) -> list[float]:
         # Fall back to deterministic hashed vector when ST is unavailable.
         # Logged at debug to keep the hot path quiet.
         import logging
+
         logging.getLogger(__name__).debug("ST embed failed, using fallback: %s", exc)
     return _hashed_vector(text, dim=dim)
 

@@ -16,7 +16,7 @@ from typing import Any
 class MemoryEntry:
     key: str
     value: Any
-    trust: float = 0.5            # 0..1
+    trust: float = 0.5  # 0..1
     timestamp: datetime = field(default_factory=lambda: datetime.now(UTC))
     source: str = "unknown"
     metadata: dict[str, Any] = field(default_factory=dict)
@@ -49,7 +49,7 @@ def resolve(entries: list[MemoryEntry], *, recency_weight: float = 0.6) -> Resol
     return Resolution(
         winner=winner,
         rejected=rest,
-        rationale=f"trust×{1-recency_weight:.2f} + recency×{recency_weight:.2f}",
+        rationale=f"trust×{1 - recency_weight:.2f} + recency×{recency_weight:.2f}",
     )
 
 

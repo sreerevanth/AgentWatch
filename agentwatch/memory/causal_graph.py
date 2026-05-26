@@ -101,11 +101,11 @@ class CausalGraph:
 
     def to_dict(self) -> dict[str, Any]:
         return {
-            "nodes": [n.__dict__ | {"timestamp": n.timestamp.isoformat()} for n in self._nodes.values()],
+            "nodes": [
+                n.__dict__ | {"timestamp": n.timestamp.isoformat()} for n in self._nodes.values()
+            ],
             "edges": [
-                e.__dict__ | {"kind": e.kind.value}
-                for adj in self._out.values()
-                for e in adj
+                e.__dict__ | {"kind": e.kind.value} for adj in self._out.values() for e in adj
             ],
         }
 

@@ -154,7 +154,10 @@ class LangGraphAdapter:
             for node, state in chunk.items():
                 self._emit(
                     EventType.PLANNER_OUTPUT,
-                    metadata={"node": node, "state_keys": list(state) if isinstance(state, dict) else None},
+                    metadata={
+                        "node": node,
+                        "state_keys": list(state) if isinstance(state, dict) else None,
+                    },
                 )
         else:
             self._emit(

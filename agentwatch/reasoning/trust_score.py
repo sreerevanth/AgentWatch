@@ -60,7 +60,9 @@ class TrustScore:
 
 def _score_prefix(events: list[AgentEvent], goal: str | None) -> TrustScore:
     confidences = [
-        e.confidence.overall_score for e in events if e.confidence and e.confidence.overall_score is not None
+        e.confidence.overall_score
+        for e in events
+        if e.confidence and e.confidence.overall_score is not None
     ]
     confidence_avg = sum(confidences) / max(1, len(confidences)) if confidences else 1.0
 
@@ -122,10 +124,7 @@ def compute_trust(events: list[AgentEvent], *, goal: str | None = None) -> Trust
     final = _score_prefix(events, goal)
     # Trend — sample 10 evenly spaced prefixes
     step = max(1, len(events) // 10)
-    trend = [
-        _score_prefix(events[: i + 1], goal).score
-        for i in range(0, len(events), step)
-    ]
+    trend = [_score_prefix(events[: i + 1], goal).score for i in range(0, len(events), step)]
     final.trend = trend
     return final
 

@@ -104,10 +104,7 @@ def build_trajectory(
     for idx, ev in enumerate(events):
         if ev.event_type == EventType.TOOL_CALL and ev.tool_call:
             tail = events[idx + 1 : idx + 5]
-            if not any(
-                t.event_type in (EventType.TOOL_RESULT, EventType.TOOL_ERROR)
-                for t in tail
-            ):
+            if not any(t.event_type in (EventType.TOOL_RESULT, EventType.TOOL_ERROR) for t in tail):
                 dead_ends.append(ev.event_id)
 
     # Deviation: fraction of tool calls outside the intended set

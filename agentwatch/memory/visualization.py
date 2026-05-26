@@ -15,12 +15,12 @@ from typing import Any
 from agentwatch.memory.health import HealthReport
 
 _KIND_COLORS = {
-    "episodic": "#2563eb",   # blue
-    "semantic": "#16a34a",   # green
-    "procedural": "#f59e0b", # amber
+    "episodic": "#2563eb",  # blue
+    "semantic": "#16a34a",  # green
+    "procedural": "#f59e0b",  # amber
     "corrupted": "#dc2626",  # red
-    "stale": "#9ca3af",      # gray
-    "conflict": "#a855f7",   # purple
+    "stale": "#9ca3af",  # gray
+    "conflict": "#a855f7",  # purple
 }
 
 

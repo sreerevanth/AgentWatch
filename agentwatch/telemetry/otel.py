@@ -105,19 +105,14 @@ class OTELExporter:
                     "id": 1,
                     "title": "Tool calls per minute",
                     "type": "graph",
-                    "targets": [
-                        {"expr": "rate(agentwatch_tool_calls_total[1m])"}
-                    ],
+                    "targets": [{"expr": "rate(agentwatch_tool_calls_total[1m])"}],
                 },
                 {
                     "id": 2,
                     "title": "Confidence (p50 / p95)",
                     "type": "graph",
                     "targets": [
-                        {
-                            "expr": "histogram_quantile(0.5, "
-                            "rate(agentwatch_confidence_bucket[5m]))"
-                        },
+                        {"expr": "histogram_quantile(0.5, rate(agentwatch_confidence_bucket[5m]))"},
                         {
                             "expr": "histogram_quantile(0.95, "
                             "rate(agentwatch_confidence_bucket[5m]))"

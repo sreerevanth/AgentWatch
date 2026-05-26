@@ -22,7 +22,7 @@ export default function CompliancePage() {
     refreshInterval: 30_000,
   })
 
-  const items = data ?? FRAMEWORKS.map((f) => ({ framework: f, status: 'unknown' }))
+  const items: ComplianceStatus[] = data ?? FRAMEWORKS.map((f) => ({ framework: f, status: 'unknown' }))
 
   const exportFramework = (framework: string) => {
     window.open(`${API_BASE}/governance/compliance/export?framework=${framework}`, '_blank')

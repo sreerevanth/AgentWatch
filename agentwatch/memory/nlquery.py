@@ -70,7 +70,23 @@ def parse(question: str, *, now: datetime | None = None) -> QueryFilter:
         f.topic = m.group(1).strip().rstrip(".?!")
 
     words = re.findall(r"[A-Za-z]{4,}", question.lower())
-    stop = {"what", "when", "where", "which", "about", "last", "this", "year", "week", "month", "today", "did", "have", "the", "for"}
+    stop = {
+        "what",
+        "when",
+        "where",
+        "which",
+        "about",
+        "last",
+        "this",
+        "year",
+        "week",
+        "month",
+        "today",
+        "did",
+        "have",
+        "the",
+        "for",
+    }
     f.keywords = [w for w in words if w not in stop]
     return f
 

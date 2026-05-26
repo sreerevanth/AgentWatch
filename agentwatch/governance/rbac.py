@@ -133,7 +133,9 @@ def issue_token(claims: SAMLClaims, secret: bytes) -> str:
         "iat": claims.issued_at or int(time.time()),
         "exp": claims.expires_at or int(time.time()) + 3600,
     }
-    body = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).rstrip(b"=")
+    body = base64.urlsafe_b64encode(json.dumps(payload, separators=(",", ":")).encode()).rstrip(
+        b"="
+    )
     sig = hmac.new(secret, body, hashlib.sha256).digest()
     sig_b = base64.urlsafe_b64encode(sig).rstrip(b"=")
     return (body + b"." + sig_b).decode()

@@ -123,9 +123,7 @@ def run_benchmark(
         results.append(BenchmarkResult(prompt_id=p.id, passed=passed, score=score))
         by_cat_pass.setdefault(p.category, []).append(1 if passed else 0)
 
-    per_category = {
-        cat: (sum(xs) / len(xs) if xs else 0.0) for cat, xs in by_cat_pass.items()
-    }
+    per_category = {cat: (sum(xs) / len(xs) if xs else 0.0) for cat, xs in by_cat_pass.items()}
     pass_rate = sum(r.score for r in results) / max(1, len(results))
 
     payload = json.dumps(

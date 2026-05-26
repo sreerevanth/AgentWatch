@@ -72,48 +72,56 @@ class AgentWatchMCPServer:
     # ── built-in tools ─────────────────────────────────────────────────
     def _register_default_tools(self) -> None:
         # confidence_history
-        self.register(MCPTool(
-            name="agentwatch_confidence_history",
-            description="Return the confidence score history for a session.",
-            input_schema={
-                "type": "object",
-                "required": ["session_id"],
-                "properties": {"session_id": {"type": "string"}},
-            },
-            handler=self._confidence_history,
-        ))
-        # memory_query
-        self.register(MCPTool(
-            name="agentwatch_memory_query",
-            description="Query AgentWatch's persistent memory in natural language.",
-            input_schema={
-                "type": "object",
-                "required": ["question"],
-                "properties": {"question": {"type": "string"}},
-            },
-            handler=self._memory_query,
-        ))
-        # session_replay
-        self.register(MCPTool(
-            name="agentwatch_session_replay",
-            description="Retrieve a stored session for step-by-step inspection.",
-            input_schema={
-                "type": "object",
-                "required": ["session_id"],
-                "properties": {
-                    "session_id": {"type": "string"},
-                    "step": {"type": "integer", "minimum": 0},
+        self.register(
+            MCPTool(
+                name="agentwatch_confidence_history",
+                description="Return the confidence score history for a session.",
+                input_schema={
+                    "type": "object",
+                    "required": ["session_id"],
+                    "properties": {"session_id": {"type": "string"}},
                 },
-            },
-            handler=self._session_replay,
-        ))
+                handler=self._confidence_history,
+            )
+        )
+        # memory_query
+        self.register(
+            MCPTool(
+                name="agentwatch_memory_query",
+                description="Query AgentWatch's persistent memory in natural language.",
+                input_schema={
+                    "type": "object",
+                    "required": ["question"],
+                    "properties": {"question": {"type": "string"}},
+                },
+                handler=self._memory_query,
+            )
+        )
+        # session_replay
+        self.register(
+            MCPTool(
+                name="agentwatch_session_replay",
+                description="Retrieve a stored session for step-by-step inspection.",
+                input_schema={
+                    "type": "object",
+                    "required": ["session_id"],
+                    "properties": {
+                        "session_id": {"type": "string"},
+                        "step": {"type": "integer", "minimum": 0},
+                    },
+                },
+                handler=self._session_replay,
+            )
+        )
         # safety_status
-        self.register(MCPTool(
-            name="agentwatch_safety_status",
-            description="Return the current safety engine status and recent blocks.",
-            input_schema={"type": "object", "properties": {}},
-            handler=self._safety_status,
-        ))
+        self.register(
+            MCPTool(
+                name="agentwatch_safety_status",
+                description="Return the current safety engine status and recent blocks.",
+                input_schema={"type": "object", "properties": {}},
+                handler=self._safety_status,
+            )
+        )
 
     # ── default handlers (overridable) ─────────────────────────────────
     # These are stubs operating against in-memory state. Wire them to the

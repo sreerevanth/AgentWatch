@@ -133,7 +133,10 @@ class SmolagentsAdapter:
                 step_number=self._step,
                 tool_call=ToolCallData(
                     tool_name=tool_name,
-                    arguments={"args": [str(a)[:200] for a in args], "kwargs": {k: str(v)[:200] for k, v in kwargs.items()}},
+                    arguments={
+                        "args": [str(a)[:200] for a in args],
+                        "kwargs": {k: str(v)[:200] for k, v in kwargs.items()},
+                    },
                 ),
             )
             self.bus.publish_sync(event)

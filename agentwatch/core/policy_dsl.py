@@ -84,7 +84,7 @@ class _Eval:
         while pos < len(self.expr):
             m = self._TOKEN.match(self.expr, pos)
             if not m:
-                raise ValueError(f"bad token at {pos}: {self.expr[pos:pos+20]!r}")
+                raise ValueError(f"bad token at {pos}: {self.expr[pos : pos + 20]!r}")
             kind = m.lastgroup
             text = m.group(kind)
             self.tokens.append((kind, text))
@@ -257,7 +257,7 @@ def _mini_yaml(text: str) -> dict[str, Any]:
         m = re.match(r"\s*(\w+)\s*:\s*(.*)$", line)
         if m:
             key, val = m.group(1), m.group(2).strip()
-            if val.startswith("\"") and val.endswith("\""):
+            if val.startswith('"') and val.endswith('"'):
                 val = val[1:-1]
             cur[key] = val
     if cur:

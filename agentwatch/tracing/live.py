@@ -78,7 +78,8 @@ class LiveStreamHub:
         payload = {
             "type": "event",
             "event": event.model_dump_for_storage(),
-            "session": session.__dict__ | {
+            "session": session.__dict__
+            | {
                 "started_at": session.started_at.isoformat(),
                 "last_event_at": session.last_event_at.isoformat()
                 if session.last_event_at
@@ -126,9 +127,7 @@ class LiveStreamHub:
                 {
                     **s.__dict__,
                     "started_at": s.started_at.isoformat(),
-                    "last_event_at": s.last_event_at.isoformat()
-                    if s.last_event_at
-                    else None,
+                    "last_event_at": s.last_event_at.isoformat() if s.last_event_at else None,
                 }
                 for s in self._sessions.values()
             ],

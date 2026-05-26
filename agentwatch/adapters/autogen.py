@@ -76,7 +76,9 @@ class AutoGenAdapter:
         except (AttributeError, TypeError):
             pass
 
-        self._emit(EventType.SESSION_START, metadata={"adapter": "autogen", "name": self.agent_name})
+        self._emit(
+            EventType.SESSION_START, metadata={"adapter": "autogen", "name": self.agent_name}
+        )
         return self.agent
 
     def _wrap(self, name: str, original: Any) -> Any:
@@ -131,9 +133,7 @@ class AutoGenAdapter:
             return EventType.AGENT_START
         return EventType.AGENT_START
 
-    def _maybe_emit_message(
-        self, method_name: str, args: tuple, kwargs: dict, result: Any
-    ) -> None:
+    def _maybe_emit_message(self, method_name: str, args: tuple, kwargs: dict, result: Any) -> None:
         if "send" not in method_name and "receive" not in method_name:
             return
         try:

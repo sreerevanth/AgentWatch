@@ -103,7 +103,9 @@ class BudgetGovernance:
 
         # Auto-approve small actions
         if team_b and action_cost_usd <= team_b.auto_approve_ceiling_usd:
-            return self._commit(team_b, agent_b, action_cost_usd, BudgetAction.APPROVE, "auto_approve")
+            return self._commit(
+                team_b, agent_b, action_cost_usd, BudgetAction.APPROVE, "auto_approve"
+            )
 
         # Otherwise require human
         return BudgetDecision(
@@ -116,7 +118,9 @@ class BudgetGovernance:
     def commit_human_approval(self, agent_id: str, action_cost_usd: float) -> BudgetDecision:
         agent_b = self._agents[agent_id]
         team_b = self._teams[self._agent_to_team[agent_id]]
-        return self._commit(team_b, agent_b, action_cost_usd, BudgetAction.APPROVE, "human_approved")
+        return self._commit(
+            team_b, agent_b, action_cost_usd, BudgetAction.APPROVE, "human_approved"
+        )
 
     def _commit(
         self,

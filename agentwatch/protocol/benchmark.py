@@ -17,15 +17,15 @@ from typing import Any
 @dataclass
 class FailurePattern:
     pattern_id: str
-    fingerprint: str          # SHA256 hash of the canonical pattern
-    category: str             # tool_error | timeout | hallucination | safety_block
+    fingerprint: str  # SHA256 hash of the canonical pattern
+    category: str  # tool_error | timeout | hallucination | safety_block
     occurrence_count: int = 0
 
 
 @dataclass
 class BenchmarkAggregate:
     generated_at: datetime
-    n_contributors: int       # distinct opted-in sources
+    n_contributors: int  # distinct opted-in sources
     n_failures: int
     patterns: list[FailurePattern]
     per_category: dict[str, int]

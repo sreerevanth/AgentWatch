@@ -18,9 +18,9 @@ from agentwatch.reasoning.quality import compute_quality
 class DualEvalResult:
     step_passed: int
     step_failed: int
-    step_score: float       # mean step alignment
+    step_score: float  # mean step alignment
     session_achieved: bool  # did session end successfully on-goal
-    session_score: float    # 0..1 overall quality
+    session_score: float  # 0..1 overall quality
     notes: list[str]
 
 
@@ -51,9 +51,7 @@ def dual_evaluate(events: list[AgentEvent], *, goal: str) -> DualEvalResult:
         None,
     )
     achieved = (
-        final is not None
-        and final.status == ExecutionStatus.SUCCESS
-        and quality.overall >= 0.6
+        final is not None and final.status == ExecutionStatus.SUCCESS and quality.overall >= 0.6
     )
 
     notes: list[str] = []

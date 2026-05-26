@@ -96,10 +96,7 @@ class AgentWatchIntelligence:
                     continue
                 if ev.event_type == EventType.TOOL_CALL:
                     tool_calls[tool_name] += 1
-                if (
-                    ev.event_type == EventType.TOOL_ERROR
-                    or ev.status == ExecutionStatus.FAILURE
-                ):
+                if ev.event_type == EventType.TOOL_ERROR or ev.status == ExecutionStatus.FAILURE:
                     tool_failures[tool_name] += 1
 
         # Metrics
@@ -108,15 +105,15 @@ class AgentWatchIntelligence:
         if durations:
             metrics["p50_duration_s"] = statistics.median(durations)
             metrics["p95_duration_s"] = (
-                statistics.quantiles(durations, n=20)[18] if len(durations) >= 20 else max(durations)
+                statistics.quantiles(durations, n=20)[18]
+                if len(durations) >= 20
+                else max(durations)
             )
         if costs:
             metrics["total_usd"] = sum(costs)
 
         # Day-of-week insight
-        dow_rate = {
-            d: dow_fail[d] / dow_total[d] for d in dow_total if dow_total[d] >= 3
-        }
+        dow_rate = {d: dow_fail[d] / dow_total[d] for d in dow_total if dow_total[d] >= 3}
         if dow_rate:
             worst_day = max(dow_rate, key=dow_rate.get)
             if dow_rate[worst_day] >= 0.25:
@@ -125,7 +122,7 @@ class AgentWatchIntelligence:
                     Insight(
                         title=f"Failures cluster on {names[worst_day]}",
                         detail=(
-                            f"{dow_rate[worst_day]*100:.0f}% of {names[worst_day]} "
+                            f"{dow_rate[worst_day] * 100:.0f}% of {names[worst_day]} "
                             f"sessions fail vs. baseline."
                         ),
                         severity="warn",
@@ -142,7 +139,7 @@ class AgentWatchIntelligence:
             if rate >= 0.3:
                 insights.append(
                     Insight(
-                        title=f"Tool '{tool}' failing {rate*100:.0f}%",
+                        title=f"Tool '{tool}' failing {rate * 100:.0f}%",
                         detail=f"{tool_failures.get(tool, 0)} failures out of {calls} calls.",
                         severity="warn",
                         suggestion=f"Add input validation or switch to a fallback for '{tool}'.",
@@ -157,7 +154,7 @@ class AgentWatchIntelligence:
                 insights.append(
                     Insight(
                         title="Cost outliers detected",
-                        detail=f"At least one session ran {max(costs)/mean_cost:.1f}x the mean.",
+                        detail=f"At least one session ran {max(costs) / mean_cost:.1f}x the mean.",
                         severity="warn",
                         suggestion="Enable CostAnomalyDetector and configure budget caps.",
                         evidence_count=len(costs),

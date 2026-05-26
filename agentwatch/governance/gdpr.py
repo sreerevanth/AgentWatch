@@ -77,7 +77,9 @@ class GDPREngine:
                 counts[f.label] = counts.get(f.label, 0) + 1
         return counts
 
-    def erase(self, user_id: str, records: list[dict[str, Any]], *, scope: str = "all") -> tuple[list[dict[str, Any]], ErasureReceipt]:
+    def erase(
+        self, user_id: str, records: list[dict[str, Any]], *, scope: str = "all"
+    ) -> tuple[list[dict[str, Any]], ErasureReceipt]:
         submitted = datetime.now(UTC)
         kept = [r for r in records if r.get("user_id") != user_id]
         erased = len(records) - len(kept)

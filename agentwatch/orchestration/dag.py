@@ -102,8 +102,7 @@ class InterAgentDAG:
     def to_dict(self) -> dict[str, Any]:
         return {
             "nodes": [
-                {**n.__dict__, "timestamp": n.timestamp.isoformat()}
-                for n in self._nodes.values()
+                {**n.__dict__, "timestamp": n.timestamp.isoformat()} for n in self._nodes.values()
             ],
             "edges": [e.__dict__ for e in self._edges],
         }
