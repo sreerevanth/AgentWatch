@@ -17,6 +17,7 @@ from pydantic import BaseModel
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
 from agentwatch.core.event_bus import get_event_bus
+from agentwatch.core.models import Repository, init_db
 from agentwatch.core.safety import SafetyEngine, SafetyPolicy
 from agentwatch.core.schema import (
     AgentEvent,
@@ -39,6 +40,98 @@ from agentwatch.scoring.confidence import ConfidenceScorer
 from agentwatch.tracing.collector import TraceCollector
 
 logger = logging.getLogger(__name__)
+
+_db_session_factory = None
+
+
+def _session_to_pg(session: AgentSession) -> dict:
+    return {
+        "session_id": session.session_id,
+        "agent_id": session.agent_id,
+        "agent_name": session.agent_name,
+        "framework": session.framework.value,
+        "status": session.status.value,
+        "goal": session.goal,
+        "started_at": session.started_at,
+        "ended_at": session.ended_at,
+        "total_events": session.total_events,
+        "total_tokens": session.total_tokens,
+        "estimated_cost_usd": session.estimated_cost_usd,
+        "final_confidence": session.final_confidence,
+        "session_metadata": session.metadata or {},
+    }
+
+
+def _event_to_pg(event: AgentEvent) -> dict:
+    d: dict = {
+        "event_id": event.event_id,
+        "session_id": event.session_id,
+        "agent_id": event.agent_id,
+        "framework": event.framework.value,
+        "event_type": event.event_type.value,
+        "status": event.status.value,
+        "step_number": event.step_number,
+        "timestamp": event.timestamp,
+        "goal": event.goal,
+        "duration_ms": event.duration_ms,
+        "task_id": event.task_id,
+        "trace_id": event.trace_id,
+        "parent_event_id": event.parent_event_id,
+        "prompt_preview": event.prompt_preview,
+        "planner_output_preview": event.planner_output_preview,
+        "event_metadata": event.metadata or {},
+        "tags": list(event.tags) if event.tags else [],
+    }
+    if event.tool_call:
+        d["tool_name"] = event.tool_call.tool_name
+        d["tool_raw_command"] = event.tool_call.raw_command
+        d["tool_arguments"] = dict(event.tool_call.arguments) if event.tool_call.arguments else {}
+    if event.tool_result:
+        d["tool_output"] = event.tool_result.output
+        d["tool_error"] = event.tool_result.error
+    if event.safety:
+        d["risk_level"] = event.safety.risk_level.value
+        d["risk_score"] = event.safety.risk_score
+        d["safety_blocked"] = event.safety.blocked
+        d["safety_reasons"] = list(event.safety.reasons) if event.safety.reasons else []
+    if event.token_usage:
+        d["prompt_tokens"] = event.token_usage.prompt_tokens
+        d["completion_tokens"] = event.token_usage.completion_tokens
+        d["total_tokens"] = event.token_usage.total_tokens
+        d["estimated_cost_usd"] = event.token_usage.estimated_cost_usd
+    if event.confidence:
+        d["confidence_score"] = event.confidence.overall_score
+        d["anomaly_flags"] = (
+            list(event.confidence.anomaly_flags) if event.confidence.anomaly_flags else []
+        )
+    return d
+
+
+async def _pg_write_session(session: AgentSession) -> None:
+    if _db_session_factory is None:
+        return
+    try:
+        async with _db_session_factory() as db:
+            await Repository(db).upsert_session(_session_to_pg(session))
+            await db.commit()
+    except Exception:
+        logger.warning("PG session write failed", exc_info=True)
+
+
+async def _pg_write_event(event: AgentEvent) -> None:
+    if _db_session_factory is None:
+        return
+    try:
+        async with _db_session_factory() as db:
+            repo = Repository(db)
+            await repo.insert_event(_event_to_pg(event))
+            trace = _collector.get_trace(event.session_id)
+            if trace:
+                await repo.upsert_session(_session_to_pg(trace.session))
+            await db.commit()
+    except Exception:
+        logger.warning("PG event write failed", exc_info=True)
+
 
 _collector = TraceCollector()
 _replay_engine = ReplayEngine()
@@ -100,6 +193,7 @@ def _record_budget(event: AgentEvent) -> None:
 
 async def _after_publish(event: AgentEvent) -> None:
     _record_budget(event)
+    await _pg_write_event(event)
     if event.is_blocked or (event.safety and event.safety.risk_level.value in {"high", "critical"}):
         await _alerting.alert_event(event)
 
@@ -210,6 +304,14 @@ def _seed_demo_data() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    global _db_session_factory
+    db_url = os.getenv("DATABASE_URL", "")
+    if db_url:
+        try:
+            _db_session_factory = await init_db(db_url)
+            logger.info("PostgreSQL connected and tables ready")
+        except Exception:
+            logger.warning("PostgreSQL unavailable — running in-memory only", exc_info=True)
     bus = get_event_bus()
     bus.subscribe_fn(_collector.ingest, handler_id="api.collector")
     bus.subscribe_fn(_after_publish, handler_id="api.post_publish")
@@ -269,6 +371,7 @@ async def list_sessions(
 @app.post("/api/v1/sessions")
 async def create_session(session: AgentSession) -> dict[str, Any]:
     _collector.register_session(session)
+    await _pg_write_session(session)
     return {"status": "registered", "session": session.model_dump(mode="json")}
 
 

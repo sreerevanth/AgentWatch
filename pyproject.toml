@@ -75,10 +75,9 @@ all = [
 agentwatch = "agentwatch.cli.main:main"
 
 [project.urls]
-Homepage = "https://github.com/agentwatch/agentwatch"
-Documentation = "https://docs.agentwatch.dev"
-Repository = "https://github.com/agentwatch/agentwatch"
-Issues = "https://github.com/agentwatch/agentwatch/issues"
+Homepage = "https://github.com/sreerevanth/AgentWatch"
+Repository = "https://github.com/sreerevanth/AgentWatch"
+Issues = "https://github.com/sreerevanth/AgentWatch/issues"
 
 [tool.hatch.build.targets.wheel]
 packages = ["agentwatch"]

@@ -18,6 +18,8 @@ from pydantic import BaseModel, Field, field_validator
 # ─────────────────────────────────────────────
 
 class EventType(str, Enum):
+    """Normalized event kinds emitted by AgentWatch adapters."""
+
     # Lifecycle
     SESSION_START = "session.start"
     SESSION_END = "session.end"
@@ -69,6 +71,8 @@ class EventType(str, Enum):
 
 
 class RiskLevel(str, Enum):
+    """Severity tier assigned by the safety engine to a tool call or action."""
+
     SAFE = "safe"
     LOW = "low"
     MEDIUM = "medium"
@@ -77,6 +81,8 @@ class RiskLevel(str, Enum):
 
 
 class AgentFramework(str, Enum):
+    """Source framework that produced an event or session."""
+
     CLAUDE_CODE = "claude_code"
     LANGCHAIN = "langchain"
     CREWAI = "crewai"
@@ -88,6 +94,8 @@ class AgentFramework(str, Enum):
 
 
 class ExecutionStatus(str, Enum):
+    """Lifecycle state of an event, session, or task."""
+
     PENDING = "pending"
     RUNNING = "running"
     SUCCESS = "success"
@@ -102,6 +110,8 @@ class ExecutionStatus(str, Enum):
 # ─────────────────────────────────────────────
 
 class TokenUsage(BaseModel):
+    """LLM token counts and optional cost estimate for a single step."""
+
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
@@ -109,6 +119,8 @@ class TokenUsage(BaseModel):
 
 
 class ToolCallData(BaseModel):
+    """Payload for a tool invocation before execution."""
+
     tool_name: str
     tool_id: Optional[str] = None
     arguments: Dict[str, Any] = Field(default_factory=dict)
@@ -117,6 +129,8 @@ class ToolCallData(BaseModel):
 
 
 class ToolResultData(BaseModel):
+    """Payload for a completed or failed tool execution."""
+
     tool_name: str
     tool_id: Optional[str] = None
     output: Any = None
@@ -126,6 +140,8 @@ class ToolResultData(BaseModel):
 
 
 class SafetyCheckData(BaseModel):
+    """Outcome of a safety policy evaluation on a tool call."""
+
     risk_level: RiskLevel
     risk_score: float = Field(ge=0.0, le=1.0)
     blocked: bool = False
@@ -136,6 +152,8 @@ class SafetyCheckData(BaseModel):
 
 
 class MemoryData(BaseModel):
+    """Memory read/write metadata (episodic, semantic, or procedural)."""
+
     memory_type: str  # episodic | semantic | procedural
     key: Optional[str] = None
     content: Optional[str] = None
@@ -145,6 +163,8 @@ class MemoryData(BaseModel):
 
 
 class ConfidenceData(BaseModel):
+    """Confidence and anomaly signals attached to an agent step."""
+
     overall_score: float = Field(ge=0.0, le=1.0)
     goal_alignment: float = Field(ge=0.0, le=1.0, default=1.0)
     consistency_score: float = Field(ge=0.0, le=1.0, default=1.0)
@@ -153,6 +173,8 @@ class ConfidenceData(BaseModel):
 
 
 class AgentMessageData(BaseModel):
+    """Inter-agent message in a multi-agent workflow."""
+
     sender_agent_id: str
     receiver_agent_id: str
     message_type: str  # task | result | query | broadcast
@@ -161,6 +183,8 @@ class AgentMessageData(BaseModel):
 
 
 class CheckpointData(BaseModel):
+    """Rollback checkpoint reference (filesystem, git, memory, or container)."""
+
     checkpoint_id: str
     snapshot_type: str  # filesystem | memory | git | container
     snapshot_path: Optional[str] = None
@@ -229,18 +253,38 @@ class AgentEvent(BaseModel):
     @field_validator("timestamp", mode="before")
     @classmethod
     def ensure_utc(cls, v: Any) -> datetime:
+        """Parse ISO strings and normalize timestamps to UTC-aware datetimes.
+
+        Args:
+            v: Raw timestamp value from JSON or Python.
+
+        Returns:
+            A timezone-aware datetime in UTC.
+        """
         if isinstance(v, str):
-            return datetime.fromisoformat(v)
-        return v
+            parsed = datetime.fromisoformat(v)
+        elif isinstance(v, datetime):
+            parsed = v
+        else:
+            return v
+
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
 
     def model_dump_for_storage(self) -> Dict[str, Any]:
-        """Serializable dict with ISO timestamps."""
+        """Serialize the event for persistence with ISO-8601 timestamps.
+
+        Returns:
+            JSON-compatible dict with ``timestamp`` as an ISO string.
+        """
         data = self.model_dump(exclude_none=True)
         data["timestamp"] = self.timestamp.isoformat()
         return data
 
     @property
     def is_dangerous(self) -> bool:
+        """Return True if safety metadata indicates HIGH or CRITICAL risk."""
         return bool(
             self.safety
             and self.safety.risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL)
@@ -248,6 +292,7 @@ class AgentEvent(BaseModel):
 
     @property
     def is_blocked(self) -> bool:
+        """Return True if the event was blocked by the safety engine."""
         return self.status == ExecutionStatus.BLOCKED
 
 
@@ -256,6 +301,8 @@ class AgentEvent(BaseModel):
 # ─────────────────────────────────────────────
 
 class AgentSession(BaseModel):
+    """Top-level session grouping events from one agent run."""
+
     session_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     agent_id: str
     agent_name: Optional[str] = None
@@ -276,6 +323,8 @@ class AgentSession(BaseModel):
 # ─────────────────────────────────────────────
 
 class TaskNode(BaseModel):
+    """Node in a delegated task graph within a session."""
+
     task_id: str = Field(default_factory=lambda: str(uuid.uuid4()))
     session_id: str
     parent_task_id: Optional[str] = None
@@ -296,6 +345,8 @@ class TaskNode(BaseModel):
 # ─────────────────────────────────────────────
 
 class PluginPermissions(BaseModel):
+    """Capability flags requested by a sandboxed plugin."""
+
     filesystem_read: bool = False
     filesystem_write: bool = False
     network_outbound: bool = False
@@ -307,6 +358,8 @@ class PluginPermissions(BaseModel):
 
 
 class PluginManifest(BaseModel):
+    """Signed manifest describing a plugin and its permissions."""
+
     plugin_id: str
     name: str
     version: str

@@ -32,6 +32,8 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RiskPattern:
+    """A single rule that maps command text to a risk tier."""
+
     pattern: str  # regex or glob
     risk_level: RiskLevel
     reason: str
@@ -159,6 +161,8 @@ BUILTIN_RISK_PATTERNS: list[RiskPattern] = [
 
 @dataclass
 class SafetyPolicy:
+    """Configurable rules for blocking and human approval."""
+
     policy_id: str
     name: str
     enabled: bool = True
@@ -187,6 +191,7 @@ DEFAULT_POLICY = SafetyPolicy(
 
 
 def _score_for_level(level: RiskLevel) -> float:
+    """Map a risk level to a normalized score in ``[0.0, 1.0]``."""
     return {
         RiskLevel.SAFE: 0.0,
         RiskLevel.LOW: 0.2,
@@ -199,14 +204,24 @@ def _score_for_level(level: RiskLevel) -> float:
 class RiskScorer:
     """Evaluates the risk of a tool call against known patterns."""
 
-    def __init__(self, extra_patterns: list[RiskPattern] | None = None):
+    def __init__(self, extra_patterns: list[RiskPattern] | None = None) -> None:
+        """Initialize the scorer with built-in and optional custom patterns.
+
+        Args:
+            extra_patterns: Additional patterns appended to the built-in set.
+        """
         self._patterns = list(BUILTIN_RISK_PATTERNS)
         if extra_patterns:
             self._patterns.extend(extra_patterns)
 
     def score(self, tool_call: ToolCallData) -> tuple[RiskLevel, float, list[str], list[str]]:
-        """
-        Returns (risk_level, risk_score, reasons, matched_policy_ids)
+        """Score a tool call against all registered risk patterns.
+
+        Args:
+            tool_call: Tool invocation to inspect (command, name, arguments).
+
+        Returns:
+            Tuple of ``(risk_level, risk_score, reasons, matched_policy_ids)``.
         """
         candidates: list[str] = []
         if tool_call.raw_command:
@@ -245,6 +260,11 @@ class RiskScorer:
         return matched_level, matched_score, reasons, policies
 
     def add_pattern(self, pattern: RiskPattern) -> None:
+        """Register an additional risk pattern at runtime.
+
+        Args:
+            pattern: Pattern to append to the active rule set.
+        """
         self._patterns.append(pattern)
 
 
@@ -269,7 +289,13 @@ class SafetyEngine:
         self,
         policy: SafetyPolicy | None = None,
         approval_callback: ApprovalCallback | None = None,
-    ):
+    ) -> None:
+        """Create a safety engine with optional policy and approval hook.
+
+        Args:
+            policy: Blocking/approval rules; defaults to :data:`DEFAULT_POLICY`.
+            approval_callback: Async callback for human-in-the-loop approval.
+        """
         self._policy = policy or DEFAULT_POLICY
         self._scorer = RiskScorer(extra_patterns=self._policy.custom_patterns)
         self._approval_callback = approval_callback
@@ -279,6 +305,18 @@ class SafetyEngine:
         self._checked_count = 0
 
     async def check_event(self, event: AgentEvent) -> AgentEvent:
+        """Check an agent event against safety policies.
+
+        Only ``TOOL_CALL`` events with a ``tool_call`` payload are evaluated.
+        Other events are returned unchanged.
+
+        Args:
+            event: The event to evaluate.
+
+        Returns:
+            The event with ``safety`` metadata attached; status may be set to
+            ``BLOCKED`` when policy requires it.
+        """
         if event.event_type != EventType.TOOL_CALL or event.tool_call is None:
             return event
 
@@ -344,6 +382,16 @@ class SafetyEngine:
         return event
 
     async def _request_approval(self, event: AgentEvent, safety_data: SafetyCheckData) -> bool:
+        """Await human approval via the configured callback.
+
+        Args:
+            event: Event under review.
+            safety_data: Risk metadata shown to the approver.
+
+        Returns:
+            True if approved within the timeout. False on ``TimeoutError``
+            (approval timeout). Other exceptions propagate.
+        """
         if self._approval_callback is None:
             logger.warning(
                 "Approval required for event %s but no callback registered. Blocking.",
@@ -359,13 +407,28 @@ class SafetyEngine:
             return False
 
     def set_approval_callback(self, callback: ApprovalCallback) -> None:
+        """Register or replace the human approval callback.
+
+        Args:
+            callback: Async callable returning a future that resolves to bool.
+        """
         self._approval_callback = callback
 
     def update_policy(self, policy: SafetyPolicy) -> None:
+        """Replace the active policy and rebuild the risk scorer.
+
+        Args:
+            policy: New policy including any custom patterns.
+        """
         self._policy = policy
         self._scorer = RiskScorer(extra_patterns=policy.custom_patterns)
 
     def stats(self) -> dict[str, int]:
+        """Return counters for checked, blocked, and approved events.
+
+        Returns:
+            Dict with keys ``checked``, ``blocked``, and ``approved``.
+        """
         return {
             "checked": self._checked_count,
             "blocked": self._blocked_count,
@@ -374,6 +437,7 @@ class SafetyEngine:
 
     @property
     def policy(self) -> SafetyPolicy:
+        """Active :class:`SafetyPolicy` used for enforcement."""
         return self._policy
 
 
@@ -383,7 +447,15 @@ class SafetyEngine:
 
 
 async def cli_approval_handler(event: AgentEvent, safety: SafetyCheckData) -> bool:
-    """Interactive CLI approval prompt for dangerous actions."""
+    """Prompt on the TTY to approve or deny a risky tool call.
+
+    Args:
+        event: Event containing the tool call under review.
+        safety: Risk metadata to display to the operator.
+
+    Returns:
+        True if the user confirms; False in non-interactive mode or on deny.
+    """
     import sys
 
     tool = event.tool_call
