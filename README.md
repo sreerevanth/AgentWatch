@@ -75,7 +75,7 @@ AgentWatch was built for the agent era.
 | 💰 **Cost Tracker** | Per-session token budget with live spend alerts |
 | 🔔 **Alerting** | Slack + PagerDuty when confidence drops or actions are blocked |
 | 📋 **Compliance** | GDPR/HIPAA audit exports, RBAC governance |
-| 🔌 **Universal** | Claude Code, LangChain, AutoGPT, OpenClaw — no rewrites |
+| 🔌 **Universal** | Claude Code, LangChain, AutoGPT, OpenClaw, OpenAI Agents — no rewrites |
 
 ---
 
@@ -106,6 +106,14 @@ from agentwatch.adapters.langchain import AgentWatchCallbackHandler
 
 handler = AgentWatchCallbackHandler()
 agent = AgentExecutor(agent=..., callbacks=[handler])
+```
+
+### OpenAI Agents
+```python
+from agentwatch.adapters.openai_agents import AgentWatchOpenAIAgentsAdapter
+
+adapter = AgentWatchOpenAIAgentsAdapter(session_id="session-1")
+# Pass the adapter to your Agent or Runner hooks
 ```
 
 ### AutoGPT
@@ -215,7 +223,7 @@ WS   /ws/events
 ✅ docker compose up — zero errors
 ✅ API live at localhost:8000
 ✅ Dashboard live at localhost:3000
-✅ Claude Code, LangChain, AutoGPT, OpenClaw adapters working
+✅ Claude Code, LangChain, AutoGPT, OpenClaw, OpenAI Agents adapters working
 ```
 
 ---
