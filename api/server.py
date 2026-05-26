@@ -216,12 +216,24 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Build the origin allowlist from a comma-separated environment variable.
+# Defaults to localhost:3000 for local development.
+# In production set ALLOWED_ORIGINS to the exact frontend URL(s), e.g.:
+#   ALLOWED_ORIGINS=https://agentwatch.example.com
+# Multiple origins are supported:
+#   ALLOWED_ORIGINS=https://app.example.com,https://staging.example.com
+_allowed_origins: List[str] = [
+    o.strip()
+    for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=["Content-Type", "Authorization", "X-Request-ID"],
 )
 
 

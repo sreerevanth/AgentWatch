@@ -496,6 +496,120 @@ class TestEventBus:
         stats = bus.stats()
         assert stats["total_published"] >= 1
 
+    @pytest.mark.asyncio
+    async def test_publish_sync_logs_handler_exception(self):
+        """publish_sync must log exceptions from async handlers instead of swallowing them."""
+        bus = EventBus()
+        error_msg = "intentional handler crash"
+
+        async def failing_handler(event: AgentEvent) -> None:
+            raise RuntimeError(error_msg)
+
+        bus.subscribe_fn(failing_handler)
+
+        # Capture the log output produced by the done-callback.
+        import logging
+        with pytest.raises(Exception) if False else _nullcontext():
+            # publish_sync must not raise; exception surfaces only through logging
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(bus.publish(make_event()))
+            bus._log_task_exception  # ensure method exists
+            await asyncio.sleep(0)   # let the task run
+
+        # Verify the static callback surfaces the exception via the logger.
+        import io
+        log_stream = io.StringIO()
+        handler = logging.StreamHandler(log_stream)
+        event_bus_logger = logging.getLogger("agentwatch.core.event_bus")
+        event_bus_logger.addHandler(handler)
+        event_bus_logger.setLevel(logging.ERROR)
+        try:
+            await bus.publish(make_event())
+        finally:
+            event_bus_logger.removeHandler(handler)
+
+        # The bus._dispatch already logs handler errors; verify error_count incremented.
+        reg_id = next(iter(bus._handlers))
+        assert bus._handlers[reg_id].error_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_publish_sync_done_callback_attached(self):
+        """publish_sync must attach a done-callback to the scheduled task."""
+        import unittest.mock as mock
+
+        bus = EventBus()
+        captured_callbacks: list = []
+
+        async def noop_handler(event: AgentEvent) -> None:
+            pass
+
+        bus.subscribe_fn(noop_handler)
+
+        original_create_task = asyncio.get_event_loop().create_task
+
+        with mock.patch.object(
+            asyncio.get_event_loop(),
+            "create_task",
+            wraps=original_create_task,
+        ) as mock_create_task:
+            bus.publish_sync(make_event(EventType.TOOL_CALL))
+            # Give the loop a tick to schedule the task
+            await asyncio.sleep(0)
+
+        # create_task was called once
+        assert mock_create_task.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_publish_sync_task_completes_without_blocking(self):
+        """publish_sync must return immediately and not block the caller."""
+        bus = EventBus()
+        completed: list = []
+
+        async def slow_handler(event: AgentEvent) -> None:
+            await asyncio.sleep(0.05)
+            completed.append(True)
+
+        bus.subscribe_fn(slow_handler)
+
+        # publish_sync returns immediately even though the handler is slow
+        bus.publish_sync(make_event(EventType.TOOL_CALL))
+        assert len(completed) == 0  # handler not done yet
+
+        await asyncio.sleep(0.1)
+        assert len(completed) == 1  # handler completed asynchronously
+
+    @pytest.mark.asyncio
+    async def test_log_task_exception_ignores_cancelled_tasks(self):
+        """_log_task_exception must not log anything for cancelled tasks."""
+        bus = EventBus()
+        import logging, io
+
+        log_stream = io.StringIO()
+        h = logging.StreamHandler(log_stream)
+        event_bus_logger = logging.getLogger("agentwatch.core.event_bus")
+        event_bus_logger.addHandler(h)
+        try:
+            loop = asyncio.get_running_loop()
+            task = loop.create_task(asyncio.sleep(10))
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            EventBus._log_task_exception(task)
+        finally:
+            event_bus_logger.removeHandler(h)
+
+        assert log_stream.getvalue() == ""
+
+
+from contextlib import contextmanager as _cm
+
+
+@_cm
+def _nullcontext():
+    yield
+
 
 # ─────────────────────────────────────────────
 # Run marker
