@@ -65,11 +65,14 @@ def embed(text: str, dim: int = 128) -> list[float]:
     return _hashed_vector(text, dim=dim)
 
 
+_ST_UNAVAILABLE = object()
 _st_model: Any = None
 
 
 def _get_st_model() -> Any:
     global _st_model
+    if _st_model is _ST_UNAVAILABLE:
+        return None
     if _st_model is not None:
         return _st_model
     try:
@@ -77,7 +80,7 @@ def _get_st_model() -> Any:
 
         _st_model = SentenceTransformer("all-MiniLM-L6-v2")
     except Exception:  # noqa: BLE001
-        _st_model = None
+        _st_model = _ST_UNAVAILABLE
     return _st_model
 
 

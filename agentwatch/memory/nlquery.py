@@ -55,6 +55,24 @@ _TIME_PATTERNS = [
     (re.compile(r"this\s+year", re.I), timedelta(days=365)),
 ]
 
+_TOPIC_ALIASES: dict[str, set[str]] = {
+    "database": {"database", "databases", "db", "postgres", "postgresql", "mysql", "sqlite", "sql"},
+}
+
+
+def _expand_terms(*terms: str) -> set[str]:
+    expanded: set[str] = set()
+    for term in terms:
+        normalized = term.lower().strip()
+        if not normalized:
+            continue
+        expanded.add(normalized)
+        for canonical, aliases in _TOPIC_ALIASES.items():
+            if normalized == canonical or normalized in aliases:
+                expanded.update(aliases)
+                expanded.add(canonical)
+    return expanded
+
 
 def parse(question: str, *, now: datetime | None = None) -> QueryFilter:
     now = now or datetime.now(UTC)
@@ -100,19 +118,24 @@ def query(
 ) -> list[QueryResult]:
     f = parse(question)
     candidates: list[tuple[float, dict[str, Any]]] = []
+    keyword_terms = {keyword: _expand_terms(keyword) for keyword in f.keywords}
+    topic_terms = _expand_terms(f.topic or "")
 
     q_vec = embed(question) if semantic else None
     for m in memories:
         text = " ".join(str(v) for v in m.values() if isinstance(v, (str, int, float)))
+        tokens = set(re.findall(r"[a-z0-9]+", text.lower()))
         score = 0.0
 
         # keyword overlap
-        if f.keywords:
-            tokens = set(re.findall(r"[a-z]+", text.lower()))
-            score += sum(1 for k in f.keywords if k in tokens) / len(f.keywords)
+        if keyword_terms:
+            matched_keywords = sum(
+                1 for term_group in keyword_terms.values() if term_group.intersection(tokens)
+            )
+            score += matched_keywords / len(keyword_terms)
 
         # topic match
-        if f.topic and f.topic.lower() in text.lower():
+        if topic_terms and topic_terms.intersection(tokens):
             score += 0.5
 
         # time filter
