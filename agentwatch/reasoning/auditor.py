@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from statistics import mean
+from typing import Awaitable, Callable, Dict, List, Optional
 
 from agentwatch.core.schema import AgentEvent, EventType
 
-JudgeCallback = Callable[[str, AgentEvent], Awaitable[dict[str, object]]]
+
+JudgeCallback = Callable[[str, AgentEvent], Awaitable[Dict[str, object]]]
 
 
 @dataclass
@@ -18,9 +19,9 @@ class StepAudit:
     score: float
     verdict: str
     rationale: str
-    evidence: list[str] = field(default_factory=list)
+    evidence: List[str] = field(default_factory=list)
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self) -> Dict[str, object]:
         return {
             "step_index": self.step_index,
             "event_id": self.event_id,
@@ -35,11 +36,11 @@ class StepAudit:
 class AuditSummary:
     session_id: str
     average_score: float
-    weakest_step: int | None
-    strongest_step: int | None
-    audits: list[StepAudit]
+    weakest_step: Optional[int]
+    strongest_step: Optional[int]
+    audits: List[StepAudit]
 
-    def to_dict(self) -> dict[str, object]:
+    def to_dict(self) -> Dict[str, object]:
         return {
             "session_id": self.session_id,
             "average_score": round(self.average_score, 3),
@@ -58,16 +59,14 @@ class ReasoningAuditor:
     system remains usable in offline and test environments.
     """
 
-    def __init__(self, judge: JudgeCallback | None = None):
+    def __init__(self, judge: Optional[JudgeCallback] = None):
         self._judge = judge
 
-    async def audit_session(self, events: list[AgentEvent]) -> AuditSummary:
-        audits: list[StepAudit] = []
+    async def audit_session(self, events: List[AgentEvent]) -> AuditSummary:
+        audits: List[StepAudit] = []
         observable = [
-            event
-            for event in events
-            if event.event_type
-            in (EventType.PLANNER_OUTPUT, EventType.TOOL_CALL, EventType.TOOL_RESULT)
+            event for event in events
+            if event.event_type in (EventType.PLANNER_OUTPUT, EventType.TOOL_CALL, EventType.TOOL_RESULT)
         ]
 
         for index, event in enumerate(observable):
@@ -111,7 +110,7 @@ class ReasoningAuditor:
 
     def _heuristic_audit(self, step_index: int, event: AgentEvent) -> StepAudit:
         score = 0.55
-        evidence: list[str] = []
+        evidence: List[str] = []
 
         if event.planner_output_preview:
             score += 0.2
