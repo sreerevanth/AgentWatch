@@ -81,6 +81,7 @@ def _get_st_model() -> Any:
         _st_model = SentenceTransformer("all-MiniLM-L6-v2")
     except Exception:  # noqa: BLE001
         _st_model = _ST_UNAVAILABLE
+        return None
     return _st_model
 
 

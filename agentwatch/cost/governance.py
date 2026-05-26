@@ -126,13 +126,15 @@ class BudgetGovernance:
         self,
         team_b: TeamBudget | None,
         agent_b: AgentBudget,
-        cost: float,
+        action_cost_usd: float,
         action: BudgetAction,
         reason: str,
     ) -> BudgetDecision:
+        if action_cost_usd < 0:
+            raise ValueError("action_cost_usd must be non-negative")
         if team_b:
-            team_b.used_usd += cost
-        agent_b.used_usd += cost
+            team_b.used_usd += action_cost_usd
+        agent_b.used_usd += action_cost_usd
         return BudgetDecision(
             action=action,
             reason=reason,
