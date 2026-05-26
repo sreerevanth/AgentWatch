@@ -6,8 +6,7 @@ Team-level spend limits, per-agent budget caps, auto-approval workflows.
 
 from __future__ import annotations
 
-from collections import defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 

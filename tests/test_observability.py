@@ -10,7 +10,6 @@ import pytest
 from agentwatch.core.event_bus import EventBus
 from agentwatch.core.schema import (
     AgentEvent,
-    AgentFramework,
     AgentSession,
     EventType,
     ExecutionStatus,
@@ -194,8 +193,9 @@ def test_audit_log_records_calls_and_detects_retry_storm():
 
 
 def test_audit_log_detects_hallucinated_args():
+    # /tmp path here is a fixture string passed to the detector, never written to disk.
     flags = detect_hallucinated_arguments(
-        {"path": "/tmp/very_likely_to_not_exist", "key": "fake_key"}
+        {"path": "/tmp/very_likely_to_not_exist", "key": "fake_key"}  # noqa: S108
     )
     assert flags
 

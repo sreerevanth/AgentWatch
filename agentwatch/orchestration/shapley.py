@@ -55,7 +55,7 @@ def shapley_attribution(
         total_perms = math.factorial(n)
         contributions = {a: v / total_perms for a, v in contributions.items()}
     else:
-        rng = random.Random(0)
+        rng = random.Random(0)  # noqa: S311 — sampling, not crypto
         for _ in range(n_samples):
             perm = list(agents)
             rng.shuffle(perm)

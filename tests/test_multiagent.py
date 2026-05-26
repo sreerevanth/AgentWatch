@@ -11,9 +11,8 @@ from agentwatch.orchestration.dag import InterAgentDAG
 from agentwatch.orchestration.deadlock import DeadlockDetector
 from agentwatch.orchestration.propagation import trace_propagation
 from agentwatch.orchestration.shapley import shapley_attribution
-from agentwatch.orchestration.spawning import SpawnLimitExceeded, SpawningTracker
+from agentwatch.orchestration.spawning import SpawningTracker, SpawnLimitExceeded
 from agentwatch.orchestration.trust import InterAgentTrust
-
 
 # ─────────────────────────────────────────────
 # MAG-001 — Inter-Agent DAG
@@ -138,13 +137,16 @@ def test_shapley_blame_attribution_sums_to_total():
 
 
 def test_consensus_majority():
+    # Use identical proposals for the majority so the result is independent
+    # of which embedding backend (sentence-transformers vs. hashed fallback)
+    # is installed in the test environment.
     votes = [
-        AgentVote("a", "use cache layer for speed"),
-        AgentVote("b", "add a cache to boost performance"),
-        AgentVote("c", "implement caching for faster results"),
-        AgentVote("d", "rewrite the whole module from scratch"),
+        AgentVote("a", "add caching layer"),
+        AgentVote("b", "add caching layer"),
+        AgentVote("c", "add caching layer"),
+        AgentVote("d", "rewrite from scratch"),
     ]
-    rep = detect_consensus(votes, similarity_threshold=0.4, majority_ratio=0.5)
+    rep = detect_consensus(votes, similarity_threshold=0.5, majority_ratio=0.5)
     assert rep.agreement_ratio >= 0.5
 
 

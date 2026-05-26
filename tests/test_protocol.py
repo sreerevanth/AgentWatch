@@ -11,7 +11,6 @@ from agentwatch.protocol.schema_v1 import (
     validate_trace,
 )
 
-
 # ─────────────────────────────────────────────
 # PRT-001 — Open trace schema
 # ─────────────────────────────────────────────

@@ -9,7 +9,6 @@ from __future__ import annotations
 import statistics
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime
 from typing import Any
 
 from agentwatch.core.schema import AgentEvent, AgentSession, EventType, ExecutionStatus

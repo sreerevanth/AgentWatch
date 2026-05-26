@@ -10,7 +10,6 @@ import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-
 _PHI_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b(?:patient|MRN|medical record)[:#]?\s*[A-Z0-9-]{4,}\b", re.I), "mrn"),
     (re.compile(r"\b(?:diagnosis|dx)[:\s]+[A-Za-z][\w \-/]{3,}\b", re.I), "diagnosis"),

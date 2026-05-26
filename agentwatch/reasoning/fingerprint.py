@@ -15,7 +15,6 @@ Style features (no chain-of-thought inspection — only observable artifacts):
 from __future__ import annotations
 
 import math
-from collections import Counter
 from dataclasses import dataclass
 
 from agentwatch.core.schema import AgentEvent, EventType

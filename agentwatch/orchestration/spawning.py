@@ -20,7 +20,7 @@ class SpawnNode:
     depth: int = 0
 
 
-class SpawnLimitExceeded(Exception):
+class SpawnLimitExceeded(Exception):  # noqa: N818 — semantic name preserved for API stability
     pass
 
 

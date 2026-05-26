@@ -10,7 +10,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-
 # $ per 1M tokens. Updated to public list prices as of 2025-Q4.
 DEFAULT_PRICING: dict[str, tuple[float, float]] = {
     # model: (input_per_million, output_per_million)

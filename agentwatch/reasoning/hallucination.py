@@ -11,7 +11,6 @@ Heuristically grounds the agent's stated facts against:
 from __future__ import annotations
 
 import re
-from collections import Counter
 from dataclasses import dataclass, field
 from enum import Enum
 
@@ -80,8 +79,7 @@ class HallucinationClassifier:
                 novel = [
                     n
                     for n in novel
-                    if not n.lower()
-                    in {
+                    if n.lower() not in {
                         "true",
                         "false",
                         "none",

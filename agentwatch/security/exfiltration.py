@@ -11,7 +11,6 @@ from dataclasses import dataclass
 
 from agentwatch.core.schema import AgentEvent
 
-
 _EXFIL_PATTERNS = [
     re.compile(r"curl\s+(?:-X\s+POST\s+)?(?:--data\S*\s+)?https?://(?!localhost|127\.|0\.0\.0\.0)", re.I),
     re.compile(r"\bnc\s+-w?\s*\d*\s*[a-z0-9.-]+\s+\d+", re.I),  # netcat

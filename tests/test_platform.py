@@ -24,7 +24,6 @@ from agentwatch.platform.sharing import (
 )
 from agentwatch.plugins.registry import PluginRegistry
 
-
 # ─────────────────────────────────────────────
 # PLT-001 — Session sharing
 # ─────────────────────────────────────────────

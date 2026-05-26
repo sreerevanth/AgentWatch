@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
@@ -52,14 +52,15 @@ def _hashed_vector(text: str, dim: int = 128) -> list[float]:
 def embed(text: str, dim: int = 128) -> list[float]:
     """Public embedding API — uses sentence-transformers if available."""
     try:
-        from sentence_transformers import SentenceTransformer  # noqa: PLC0415
-
         model = _get_st_model()
         if model is not None:
             arr = model.encode([text], normalize_embeddings=True)
             return list(arr[0])
-    except Exception:  # noqa: BLE001
-        pass
+    except Exception as exc:  # noqa: BLE001
+        # Fall back to deterministic hashed vector when ST is unavailable.
+        # Logged at debug to keep the hot path quiet.
+        import logging
+        logging.getLogger(__name__).debug("ST embed failed, using fallback: %s", exc)
     return _hashed_vector(text, dim=dim)
 
 

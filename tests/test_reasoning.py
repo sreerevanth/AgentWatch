@@ -19,7 +19,7 @@ from agentwatch.reasoning.benchmark import run_benchmark
 from agentwatch.reasoning.calibration import CalibrationTracker
 from agentwatch.reasoning.dual_eval import dual_evaluate
 from agentwatch.reasoning.explainer import explain
-from agentwatch.reasoning.fingerprint import detect_mid_session_change, fingerprint
+from agentwatch.reasoning.fingerprint import detect_mid_session_change
 from agentwatch.reasoning.goal_drift import GoalDriftDetector
 from agentwatch.reasoning.hallucination import HallucinationClassifier, HallucinationRisk
 from agentwatch.reasoning.quality import compute_quality

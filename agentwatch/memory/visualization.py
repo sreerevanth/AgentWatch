@@ -14,7 +14,6 @@ from typing import Any
 
 from agentwatch.memory.health import HealthReport
 
-
 _KIND_COLORS = {
     "episodic": "#2563eb",   # blue
     "semantic": "#16a34a",   # green

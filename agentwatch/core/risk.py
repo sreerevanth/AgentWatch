@@ -10,8 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-from agentwatch.core.schema import AgentEvent, EventType, RiskLevel
-
+from agentwatch.core.schema import AgentEvent, RiskLevel
 
 _DANGEROUS_CMD = [
     (re.compile(r"\brm\s+-rf?\s+/(?:\s|$)"), 95),

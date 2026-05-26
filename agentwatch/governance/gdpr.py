@@ -13,7 +13,6 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-
 # Pattern → label
 _PII_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"\b[\w._%+-]+@[\w.-]+\.[A-Za-z]{2,}\b"), "email"),

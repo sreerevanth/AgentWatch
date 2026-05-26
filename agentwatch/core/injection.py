@@ -10,7 +10,6 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
-
 _INJECTION_PATTERNS = [
     (re.compile(r"ignore (all )?previous instructions", re.I), "explicit_override"),
     (re.compile(r"\[SYSTEM\][^]]*\]", re.I), "fake_system_block"),

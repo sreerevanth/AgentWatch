@@ -289,8 +289,8 @@ def _attach_langchain(agent: Any, session_id: str | None, bus: EventBus) -> Any:
                 if hasattr(existing, "add_handler"):
                     try:
                         existing.add_handler(handler)
-                    except Exception:  # noqa: BLE001
-                        pass
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("LangChain add_handler failed: %s", exc)
         # Stash for diagnostics
         try:
             agent._agentwatch_handler = handler

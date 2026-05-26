@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
-from agentwatch.core.schema import AgentEvent, EventType
+from agentwatch.core.schema import AgentEvent
 
 
 class OwaspVector(str, Enum):

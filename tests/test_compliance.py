@@ -6,17 +6,16 @@ from datetime import UTC, datetime
 
 from agentwatch.governance.causal import AdverseOutcome, attribute
 from agentwatch.governance.eu_ai_act import (
-    DecisionLogEntry,
     EUAIActPackage,
     TechnicalDocumentation,
 )
 from agentwatch.governance.gdpr import GDPREngine, detect_pii, redact
-from agentwatch.governance.hipaa import HIPAAEngine, detect_phi, redact_phi
+from agentwatch.governance.hipaa import HIPAAEngine, detect_phi
 from agentwatch.governance.iso42001 import (
+    ISO42001AMS,
     GovernanceDoc,
     Incident,
     IncidentSeverity,
-    ISO42001AMS,
     RiskAssessment,
 )
 from agentwatch.governance.rbac import (
@@ -35,7 +34,6 @@ from agentwatch.governance.residency import (
     eu_only_policy,
 )
 from agentwatch.memory.causal_graph import CausalGraph, CausalNode, EdgeKind
-
 
 # ─────────────────────────────────────────────
 # CMP-001 — GDPR

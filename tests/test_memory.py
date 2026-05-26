@@ -5,7 +5,6 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from agentwatch.memory.causal_graph import (
-    CausalEdge,
     CausalGraph,
     CausalNode,
     EdgeKind,
@@ -25,7 +24,6 @@ from agentwatch.memory.resolver import (
     resolve,
 )
 from agentwatch.memory.visualization import build_payload
-
 
 # ─────────────────────────────────────────────
 # MEM-002 — Causal graph

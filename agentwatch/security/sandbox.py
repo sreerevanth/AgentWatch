@@ -19,9 +19,6 @@ from agentwatch.core.schema import (
     AgentEvent,
     AgentFramework,
     EventType,
-    ExecutionStatus,
-    SafetyCheckData,
-    RiskLevel,
     ToolCallData,
 )
 from agentwatch.security.exfiltration import detect as detect_exfil

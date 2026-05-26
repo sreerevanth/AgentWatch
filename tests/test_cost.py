@@ -11,7 +11,6 @@ from agentwatch.cost.roi import DAMAGE_BY_SEVERITY, ROILedger
 from agentwatch.cost.router import ModelRouter
 from agentwatch.cost.tracker import CostTracker
 
-
 # ─────────────────────────────────────────────
 # CST-001 — Per-session token budget (existing tracker)
 # ─────────────────────────────────────────────

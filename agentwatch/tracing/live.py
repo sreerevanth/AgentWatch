@@ -11,12 +11,12 @@ import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
 from agentwatch.core.event_bus import EventBus, get_event_bus
-from agentwatch.core.schema import AgentEvent, AgentSession, EventType, ExecutionStatus
+from agentwatch.core.schema import AgentEvent, EventType
 
 logger = logging.getLogger(__name__)
 

@@ -11,7 +11,6 @@ from agentwatch import GenericAdapter, detect_framework, detect_framework_label,
 from agentwatch.core.event_bus import EventBus
 from agentwatch.core.schema import AgentFramework, EventType
 
-
 # ─────────────────────────────────────────────
 # Stub agents that look like various frameworks
 # ─────────────────────────────────────────────

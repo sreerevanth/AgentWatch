@@ -17,7 +17,6 @@ from agentwatch.core.schema import (
     EventType,
     ToolCallData,
 )
-from agentwatch.reasoning.auditor import StepAudit  # type: ignore[attr-defined]
 
 
 @dataclass

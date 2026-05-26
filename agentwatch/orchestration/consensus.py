@@ -6,7 +6,6 @@ When agents disagree on approach, surface conflict to the human.
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass
 
 from agentwatch.scoring.drift import cosine, embed

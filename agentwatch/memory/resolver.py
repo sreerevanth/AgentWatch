@@ -41,7 +41,7 @@ def resolve(entries: list[MemoryEntry], *, recency_weight: float = 0.6) -> Resol
     span = max(timestamps) - min(timestamps) or 1.0
 
     def composite(e: MemoryEntry) -> float:
-        recency = 1.0 - ((now - e.timestamp.timestamp()) / max(now - min(timestamps), 1.0))
+        recency = 1.0 - ((now - e.timestamp.timestamp()) / max(span, 1.0))
         return e.trust * (1 - recency_weight) + recency * recency_weight
 
     ranked = sorted(entries, key=composite, reverse=True)

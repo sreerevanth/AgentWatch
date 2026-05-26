@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from agentwatch.core.schema import AgentEvent, EventType, RiskLevel, SafetyCheckData
+from agentwatch.core.schema import AgentEvent, RiskLevel, SafetyCheckData
 
 
 @dataclass
