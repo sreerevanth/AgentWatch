@@ -327,10 +327,50 @@ async def init_db(database_url: str) -> async_sessionmaker:
 
 
 def get_database_url(
-    host: str = "localhost",
-    port: int = 5432,
-    database: str = "agentwatch",
-    user: str = "agentwatch",
-    password: str = "agentwatch",
+    host: Optional[str] = None,
+    port: Optional[int] = None,
+    database: Optional[str] = None,
+    user: Optional[str] = None,
+    password: Optional[str] = None,
 ) -> str:
-    return f"postgresql+asyncpg://{user}:{password}@{host}:{port}/{database}"
+    """Build the asyncpg database URL from explicit arguments or environment variables.
+
+    Explicit arguments take priority over environment variables, which take
+    priority over non-sensitive defaults (host, port, database name, user).
+    The password has no default and must be supplied via an argument or the
+    DB_PASSWORD / PGPASSWORD environment variable; if it is absent the
+    function raises RuntimeError rather than silently connecting with a
+    well-known credential.
+
+    Args:
+        host: Database host. Defaults to DB_HOST env var or 'localhost'.
+        port: Database port. Defaults to DB_PORT env var or 5432.
+        database: Database name. Defaults to DB_NAME env var or 'agentwatch'.
+        user: Database user. Defaults to DB_USER env var or 'agentwatch'.
+        password: Database password. Defaults to DB_PASSWORD or PGPASSWORD
+            env var. No hardcoded fallback.
+
+    Returns:
+        A postgresql+asyncpg:// connection string.
+
+    Raises:
+        RuntimeError: When no password is available from arguments or env.
+    """
+    import os as _os
+
+    resolved_host = host or _os.getenv("DB_HOST", "localhost")
+    resolved_port = port or int(_os.getenv("DB_PORT", "5432"))
+    resolved_database = database or _os.getenv("DB_NAME", "agentwatch")
+    resolved_user = user or _os.getenv("DB_USER", "agentwatch")
+    resolved_password = password or _os.getenv("DB_PASSWORD") or _os.getenv("PGPASSWORD")
+
+    if not resolved_password:
+        raise RuntimeError(
+            "Database password is not configured. "
+            "Set the DB_PASSWORD environment variable before starting AgentWatch."
+        )
+
+    return (
+        f"postgresql+asyncpg://{resolved_user}:{resolved_password}"
+        f"@{resolved_host}:{resolved_port}/{resolved_database}"
+    )
