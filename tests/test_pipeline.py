@@ -90,7 +90,7 @@ class TestEventPipeline:
                 session_id=session_id, agent_id=agent_id,
                 framework=AgentFramework.CLAUDE_CODE,
                 event_type=EventType.TOOL_CALL,
-                tool_call=ToolCallData(tool_name="bash", arguments={"command": "echo test"}),
+                tool_call=ToolCallData(tool_name="bash", raw_command="echo test", arguments={"command": "echo test"}),
             ),
             AgentEvent(
                 session_id=session_id, agent_id=agent_id,
@@ -162,7 +162,7 @@ class TestEventPipeline:
             AgentEvent(session_id=session_id, agent_id="agent",
                        framework=AgentFramework.CLAUDE_CODE,
                        event_type=EventType.TOOL_CALL, step_number=1,
-                       tool_call=ToolCallData(tool_name="bash", arguments={"command": "ls"})),
+                       tool_call=ToolCallData(tool_name="bash", raw_command="ls", arguments={"command": "ls"})),
             AgentEvent(session_id=session_id, agent_id="agent",
                        framework=AgentFramework.CLAUDE_CODE,
                        event_type=EventType.TOOL_RESULT, step_number=2,
@@ -313,7 +313,8 @@ class TestConfidenceReplayIntegration:
                 event_type=EventType.TOOL_CALL, step_number=i * 2,
                 tool_call=ToolCallData(
                     tool_name="bash" if i % 2 == 0 else "file_read",
-                    arguments={"command": "grep error logs/app.log"}
+                    raw_command="grep error logs/app.log",
+                    arguments={"command": "grep error logs/app.log"},
                 ),
             ))
             events.append(AgentEvent(

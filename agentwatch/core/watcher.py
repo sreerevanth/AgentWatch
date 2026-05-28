@@ -31,14 +31,96 @@ import uuid
 from typing import Any
 
 from agentwatch.core.event_bus import EventBus, get_event_bus
+from agentwatch.core.safety import SafetyEngine
 from agentwatch.core.schema import (
     AgentEvent,
     AgentFramework,
     EventType,
     ExecutionStatus,
+    ToolCallData,
 )
 
 logger = logging.getLogger(__name__)
+
+
+# ─────────────────────────────────────────────
+# Public exception
+# ─────────────────────────────────────────────
+
+
+class AgentWatchBlockedError(RuntimeError):
+    """Raised by the generic adapter when the safety engine blocks a tool call.
+
+    Attributes:
+        reason: Human-readable explanation from the safety engine.
+        tool_name: Name of the tool call that was blocked.
+        reasons: Full list of matched policy reasons.
+    """
+
+    def __init__(
+        self,
+        reason: str,
+        *,
+        tool_name: str = "",
+        reasons: list[str] | None = None,
+    ) -> None:
+        super().__init__(reason)
+        self.reason = reason
+        self.tool_name = tool_name
+        self.reasons = reasons or [reason]
+
+
+# ─────────────────────────────────────────────
+# Safety helpers
+# ─────────────────────────────────────────────
+
+#: Method name substrings that indicate a potential tool invocation.
+_TOOL_LIKE_KEYWORDS: frozenset[str] = frozenset(
+    {"execute", "run", "call", "invoke", "tool"}
+)
+
+
+def _is_tool_like(method_name: str) -> bool:
+    """Return True if *method_name* looks like a tool-call entry point."""
+    name = method_name.lower().lstrip("_")
+    return any(kw in name for kw in _TOOL_LIKE_KEYWORDS)
+
+
+def _build_tool_call_data(method_name: str, args: tuple, kwargs: dict) -> ToolCallData:
+    """Build a :class:`ToolCallData` from the raw arguments of a method call.
+
+    Promotes the first string positional argument (or any keyword argument
+    named like a command) to ``raw_command`` so the safety engine can scan it.
+    """
+    _CMD_KEYS = ("command", "cmd", "shell", "exec", "bash", "script",
+                 "query", "input", "task", "prompt", "message")
+    raw_command: str | None = None
+    arguments: dict[str, Any] = {}
+
+    # Keyword args — check for command-like keys first
+    for key in _CMD_KEYS:
+        if key in kwargs and isinstance(kwargs[key], str):
+            raw_command = kwargs[key]
+            break
+
+    # Positional args — use first string arg as fallback
+    if raw_command is None and args:
+        first = args[0]
+        if isinstance(first, str):
+            raw_command = first
+
+    # Populate arguments dict (use arg0/arg1 keys to avoid triggering the
+    # ToolCallData validator that rejects 'command' without raw_command)
+    for i, val in enumerate(args):
+        arguments[f"arg{i}"] = str(val)
+    for k, v in kwargs.items():
+        arguments[str(k)] = str(v)
+
+    return ToolCallData(
+        tool_name=method_name,
+        raw_command=raw_command,
+        arguments=arguments,
+    )
 
 
 # ─────────────────────────────────────────────
@@ -132,6 +214,7 @@ class GenericAdapter:
         event_bus: EventBus | None = None,
         session_id: str | None = None,
         agent_id: str | None = None,
+        safety_engine: SafetyEngine | None = None,
     ):
         self.agent = agent
         self.framework = framework
@@ -141,6 +224,7 @@ class GenericAdapter:
         self.agent_id = agent_id or f"{framework_label}-{uuid.uuid4().hex[:8]}"
         self._step = 0
         self._wrapped_methods: dict[str, Any] = {}
+        self._safety_engine = safety_engine or SafetyEngine()
 
     def attach(self) -> Any:
         """
@@ -188,11 +272,49 @@ class GenericAdapter:
         import asyncio
         import functools
 
+        is_tool_like = _is_tool_like(method_name)
+
         if asyncio.iscoroutinefunction(original):
 
             @functools.wraps(original)
             async def async_wrapped(*args: Any, **kwargs: Any) -> Any:
                 self._step += 1
+
+                # ── Safety gate (async path — full check_event with approval) ──
+                if is_tool_like:
+                    tool_call = _build_tool_call_data(method_name, args, kwargs)
+                    safety_event = AgentEvent(
+                        session_id=self.session_id,
+                        agent_id=self.agent_id,
+                        agent_name=self.framework_label,
+                        framework=self.framework,
+                        event_type=EventType.TOOL_CALL,
+                        step_number=self._step,
+                        tool_call=tool_call,
+                    )
+                    try:
+                        checked = await self._safety_engine.check_event(safety_event)
+                        self._emit_safely(
+                            EventType.TOOL_CALL,
+                            metadata={"method": method_name, "tool": tool_call.tool_name},
+                        )
+                        if checked.is_blocked:
+                            reasons = checked.safety.reasons if checked.safety else []
+                            reason_str = "; ".join(reasons) if reasons else "safety policy"
+                            raise AgentWatchBlockedError(
+                                f"Tool call '{method_name}' blocked by safety engine: "
+                                f"{reason_str}",
+                                tool_name=method_name,
+                                reasons=reasons,
+                            )
+                    except AgentWatchBlockedError:
+                        raise  # propagate intentional blocks
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug(
+                            "Safety check failed (suppressed) for %s: %s",
+                            method_name, exc,
+                        )
+
                 self._emit_safely(
                     EventType.AGENT_START,
                     metadata={"method": method_name, "step": self._step},
@@ -205,6 +327,8 @@ class GenericAdapter:
                         metadata={"method": method_name},
                     )
                     return result
+                except AgentWatchBlockedError:
+                    raise
                 except Exception as exc:
                     self._emit_safely(
                         EventType.AGENT_ERROR,
@@ -218,6 +342,32 @@ class GenericAdapter:
         @functools.wraps(original)
         def sync_wrapped(*args: Any, **kwargs: Any) -> Any:
             self._step += 1
+
+            # ── Safety gate (sync path — pattern match only, no approval) ──
+            if is_tool_like:
+                tool_call = _build_tool_call_data(method_name, args, kwargs)
+                try:
+                    blocked, reasons = self._safety_engine.check_tool_call_sync(tool_call)
+                    self._emit_safely(
+                        EventType.TOOL_CALL,
+                        metadata={"method": method_name, "tool": tool_call.tool_name},
+                    )
+                    if blocked:
+                        reason_str = "; ".join(reasons) if reasons else "safety policy"
+                        raise AgentWatchBlockedError(
+                            f"Tool call '{method_name}' blocked by safety engine: "
+                            f"{reason_str}",
+                            tool_name=method_name,
+                            reasons=reasons,
+                        )
+                except AgentWatchBlockedError:
+                    raise  # propagate intentional blocks
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug(
+                        "Safety check failed (suppressed) for %s: %s",
+                        method_name, exc,
+                    )
+
             self._emit_safely(
                 EventType.AGENT_START,
                 metadata={"method": method_name, "step": self._step},
@@ -230,6 +380,8 @@ class GenericAdapter:
                     metadata={"method": method_name},
                 )
                 return result
+            except AgentWatchBlockedError:
+                raise
             except Exception as exc:
                 self._emit_safely(
                     EventType.AGENT_ERROR,

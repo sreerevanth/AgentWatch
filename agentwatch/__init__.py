@@ -3,6 +3,7 @@
 __version__ = "0.2.0"
 
 from agentwatch.core.watcher import (  # noqa: E402
+    AgentWatchBlockedError,
     GenericAdapter,
     detect_framework,
     detect_framework_label,
@@ -15,4 +16,5 @@ __all__ = [
     "detect_framework",
     "detect_framework_label",
     "GenericAdapter",
+    "AgentWatchBlockedError",
 ]
