@@ -328,10 +328,32 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# CORS configuration.
+#
+# allow_credentials=True requires an explicit origin list -- the CORS spec
+# forbids the combination of Access-Control-Allow-Origin: * with
+# Access-Control-Allow-Credentials: true and browsers reject such responses.
+#
+# Set CORS_ALLOWED_ORIGINS to a comma-separated list of frontend URLs in
+# each deployment environment, e.g.:
+#
+#   CORS_ALLOWED_ORIGINS=https://app.example.com,https://staging.example.com
+#
+# When the variable is absent the API falls back to allowing all origins
+# without credentials (safe for public read-only dashboards and CLI usage;
+# credentialed cross-origin requests will not work in that mode).
+_raw_cors_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+_cors_origins: list[str] = (
+    [o.strip() for o in _raw_cors_origins.split(",") if o.strip()]
+    if _raw_cors_origins.strip()
+    else ["*"]
+)
+_cors_credentials = _cors_origins != ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
