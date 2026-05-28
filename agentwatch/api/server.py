@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import Depends, FastAPI, Header, HTTPException, Query, WebSocket, WebSocketDisconnect, status
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -149,6 +149,33 @@ _alerting = AlertingEngine(
     )
 )
 _ws_clients: list[WebSocket] = []
+
+
+# Optional API key guard.
+#
+# Set AGENTWATCH_API_KEY to a random secret string in the deployment
+# environment to require authentication on all sensitive endpoints.
+# When the variable is absent the guard is a no-op so local development
+# and unauthenticated demo deployments continue to work without changes.
+#
+# Clients must pass the key in the X-Api-Key request header:
+#   curl -H "X-Api-Key: <key>" http://localhost:8000/api/v1/sessions
+_API_KEY: str | None = os.getenv("AGENTWATCH_API_KEY") or None
+
+
+def _require_api_key(x_api_key: str | None = Header(default=None, alias="X-Api-Key")) -> None:
+    """FastAPI dependency that enforces API key authentication.
+
+    When AGENTWATCH_API_KEY is not set in the environment this is a no-op,
+    keeping unauthenticated local development working. When the variable is
+    set every request to a protected endpoint must supply the matching key
+    in the X-Api-Key header; a missing or wrong key returns HTTP 401.
+    """
+    if _API_KEY is not None and x_api_key != _API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid API key. Supply the key in the X-Api-Key header.",
+        )
 
 
 class SessionListResponse(BaseModel):
@@ -356,6 +383,7 @@ async def list_sessions(
     framework: str | None = Query(default=None),
     status: str | None = Query(default=None),
     since_hours: int | None = Query(default=None),
+    _auth: None = Depends(_require_api_key),
 ) -> SessionListResponse:
     since = None
     if since_hours is not None:
@@ -369,14 +397,14 @@ async def list_sessions(
 
 
 @app.post("/api/v1/sessions")
-async def create_session(session: AgentSession) -> dict[str, Any]:
+async def create_session(session: AgentSession, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     _collector.register_session(session)
     await _pg_write_session(session)
     return {"status": "registered", "session": session.model_dump(mode="json")}
 
 
 @app.get("/api/v1/sessions/{session_id}")
-async def get_session(session_id: str) -> dict[str, Any]:
+async def get_session(session_id: str, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     trace = _collector.get_trace(session_id)
     if not trace:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -388,6 +416,7 @@ async def get_events(
     session_id: str,
     event_type: str | None = Query(default=None),
     limit: int = Query(default=500, le=2000),
+    _auth: None = Depends(_require_api_key),
 ) -> TraceResponse:
     events = _collector.get_events(session_id, event_type=event_type, limit=limit)
     return TraceResponse(
@@ -398,13 +427,13 @@ async def get_events(
 
 
 @app.post("/api/v1/events")
-async def ingest_event(event: AgentEvent) -> dict[str, Any]:
+async def ingest_event(event: AgentEvent, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     await get_event_bus().publish(event)
     return {"status": "accepted", "event_id": event.event_id}
 
 
 @app.get("/api/v1/sessions/{session_id}/trace")
-async def get_trace(session_id: str) -> dict[str, Any]:
+async def get_trace(session_id: str, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     trace = _collector.get_trace(session_id)
     if not trace:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -412,7 +441,7 @@ async def get_trace(session_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/v1/sessions/{session_id}/confidence", response_model=ConfidenceResponse)
-async def get_confidence(session_id: str) -> ConfidenceResponse:
+async def get_confidence(session_id: str, _auth: None = Depends(_require_api_key)) -> ConfidenceResponse:
     events = _collector.get_events(session_id, limit=2000)
     if not events:
         raise HTTPException(status_code=404, detail=f"No events for session {session_id}")
@@ -430,7 +459,7 @@ async def get_confidence(session_id: str) -> ConfidenceResponse:
 
 
 @app.get("/api/v1/sessions/{session_id}/reasoning")
-async def get_reasoning_audit(session_id: str) -> dict[str, Any]:
+async def get_reasoning_audit(session_id: str, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     events = _collector.get_events(session_id, limit=5000)
     if not events:
         raise HTTPException(status_code=404, detail=f"No events for session {session_id}")
@@ -438,7 +467,7 @@ async def get_reasoning_audit(session_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/v1/sessions/{session_id}/cost")
-async def get_cost_budget(session_id: str) -> dict[str, Any]:
+async def get_cost_budget(session_id: str, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     budget = _cost_tracker.get_session(session_id)
     if not budget:
         events = _collector.get_events(session_id, limit=5000)
@@ -451,7 +480,7 @@ async def get_cost_budget(session_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/v1/sessions/{session_id}/replay")
-async def get_replay(session_id: str) -> dict[str, Any]:
+async def get_replay(session_id: str, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     events = _collector.get_events(session_id, limit=5000)
     trace = _collector.get_trace(session_id)
     if not events or not trace:
@@ -460,7 +489,7 @@ async def get_replay(session_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/v1/sessions/{session_id}/checkpoints")
-async def list_checkpoints(session_id: str) -> dict[str, Any]:
+async def list_checkpoints(session_id: str, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     checkpoints = _rollback_engine.list_checkpoints(session_id)
     return {
         "session_id": session_id,
@@ -469,7 +498,7 @@ async def list_checkpoints(session_id: str) -> dict[str, Any]:
 
 
 @app.post("/api/v1/sessions/{session_id}/rollback")
-async def rollback_session(session_id: str, request: RollbackRequest) -> dict[str, Any]:
+async def rollback_session(session_id: str, request: RollbackRequest, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     if request.checkpoint_id:
         result = await _rollback_engine.rollback(
             request.checkpoint_id,
@@ -499,7 +528,7 @@ async def rollback_session(session_id: str, request: RollbackRequest) -> dict[st
 
 
 @app.get("/api/v1/safety/policy")
-async def get_safety_policy() -> dict[str, Any]:
+async def get_safety_policy(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     policy = _safety_engine.policy
     return {
         "policy_id": policy.policy_id,
@@ -513,7 +542,7 @@ async def get_safety_policy() -> dict[str, Any]:
 
 
 @app.put("/api/v1/safety/policy")
-async def update_safety_policy(update: SafetyPolicyUpdate) -> dict[str, Any]:
+async def update_safety_policy(update: SafetyPolicyUpdate, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     policy = SafetyPolicy(
         policy_id="api-configured",
         name="API-configured policy",
@@ -538,6 +567,7 @@ async def update_safety_policy(update: SafetyPolicyUpdate) -> dict[str, Any]:
 async def get_blocked_events(
     limit: int = Query(default=50, le=200),
     since_hours: int = Query(default=24),
+    _auth: None = Depends(_require_api_key),
 ) -> dict[str, Any]:
     threshold = datetime.now(UTC) - timedelta(hours=since_hours)
     events = [
@@ -552,7 +582,7 @@ async def get_blocked_events(
 
 
 @app.get("/api/v1/dashboard/summary")
-async def dashboard_summary() -> dict[str, Any]:
+async def dashboard_summary(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     sessions = _collector.list_sessions(limit=200)
     stats = _collector.get_stats()
     return {
@@ -572,12 +602,12 @@ async def dashboard_summary() -> dict[str, Any]:
 
 
 @app.get("/api/v1/governance/compliance-report")
-async def compliance_report() -> dict[str, Any]:
+async def compliance_report(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     return _compliance_reporter.generate().to_dict()
 
 
 @app.post("/api/v1/demo/seed")
-async def seed_demo() -> dict[str, Any]:
+async def seed_demo(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     _seed_demo_data()
     return {"status": "seeded"}
 
