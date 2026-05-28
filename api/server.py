@@ -8,8 +8,8 @@ from __future__ import annotations
 import logging
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
@@ -25,9 +25,9 @@ from agentwatch.core.schema import (
     EventType,
     ExecutionStatus,
     SafetyCheckData,
+    TokenUsage,
     ToolCallData,
     ToolResultData,
-    TokenUsage,
 )
 from agentwatch.cost.tracker import CostTracker
 from agentwatch.governance.compliance_reporter import ComplianceReporter
@@ -55,17 +55,17 @@ _alerting = AlertingEngine(
         pagerduty_webhook_url=os.getenv("PAGERDUTY_WEBHOOK_URL"),
     )
 )
-_ws_clients: List[WebSocket] = []
+_ws_clients: list[WebSocket] = []
 
 
 class SessionListResponse(BaseModel):
-    sessions: List[Dict[str, Any]]
+    sessions: list[dict[str, Any]]
     total: int
 
 
 class TraceResponse(BaseModel):
     session_id: str
-    events: List[Dict[str, Any]]
+    events: list[dict[str, Any]]
     total: int
 
 
@@ -74,14 +74,14 @@ class ConfidenceResponse(BaseModel):
     overall_score: float
     goal_alignment: float
     consistency_score: float
-    anomaly_flags: List[str]
+    anomaly_flags: list[str]
     explanation: str
-    component_scores: Dict[str, float]
+    component_scores: dict[str, float]
 
 
 class RollbackRequest(BaseModel):
-    checkpoint_id: Optional[str] = None
-    to_step: Optional[int] = None
+    checkpoint_id: str | None = None
+    to_step: int | None = None
     restore_filesystem: bool = True
     restore_git: bool = True
 
@@ -124,7 +124,7 @@ def _seed_demo_data() -> None:
     )
     _collector.register_session(session)
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     demo_events = [
         AgentEvent(
             session_id=session_id,
@@ -222,7 +222,7 @@ app = FastAPI(
 #   ALLOWED_ORIGINS=https://agentwatch.example.com
 # Multiple origins are supported:
 #   ALLOWED_ORIGINS=https://app.example.com,https://staging.example.com
-_allowed_origins: List[str] = [
+_allowed_origins: list[str] = [
     o.strip()
     for o in os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
     if o.strip()
@@ -238,11 +238,11 @@ app.add_middleware(
 
 
 @app.get("/health")
-async def health() -> Dict[str, Any]:
+async def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "version": "0.1.0",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "traces": _collector.get_stats(),
         "event_bus": get_event_bus().stats(),
         "safety": _safety_engine.stats(),
@@ -253,25 +253,25 @@ async def health() -> Dict[str, Any]:
 @app.get("/api/v1/sessions", response_model=SessionListResponse)
 async def list_sessions(
     limit: int = Query(default=50, le=200),
-    framework: Optional[str] = Query(default=None),
-    status: Optional[str] = Query(default=None),
-    since_hours: Optional[int] = Query(default=None),
+    framework: str | None = Query(default=None),
+    status: str | None = Query(default=None),
+    since_hours: int | None = Query(default=None),
 ) -> SessionListResponse:
     since = None
     if since_hours is not None:
-        since = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+        since = datetime.now(UTC) - timedelta(hours=since_hours)
     sessions = _collector.list_sessions(limit=limit, framework=framework, status=status, since=since)
     return SessionListResponse(sessions=[session.model_dump(mode="json") for session in sessions], total=len(sessions))
 
 
 @app.post("/api/v1/sessions")
-async def create_session(session: AgentSession) -> Dict[str, Any]:
+async def create_session(session: AgentSession) -> dict[str, Any]:
     _collector.register_session(session)
     return {"status": "registered", "session": session.model_dump(mode="json")}
 
 
 @app.get("/api/v1/sessions/{session_id}")
-async def get_session(session_id: str) -> Dict[str, Any]:
+async def get_session(session_id: str) -> dict[str, Any]:
     trace = _collector.get_trace(session_id)
     if not trace:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -281,7 +281,7 @@ async def get_session(session_id: str) -> Dict[str, Any]:
 @app.get("/api/v1/sessions/{session_id}/events", response_model=TraceResponse)
 async def get_events(
     session_id: str,
-    event_type: Optional[str] = Query(default=None),
+    event_type: str | None = Query(default=None),
     limit: int = Query(default=500, le=2000),
 ) -> TraceResponse:
     events = _collector.get_events(session_id, event_type=event_type, limit=limit)
@@ -289,13 +289,13 @@ async def get_events(
 
 
 @app.post("/api/v1/events")
-async def ingest_event(event: AgentEvent) -> Dict[str, Any]:
+async def ingest_event(event: AgentEvent) -> dict[str, Any]:
     await get_event_bus().publish(event)
     return {"status": "accepted", "event_id": event.event_id}
 
 
 @app.get("/api/v1/sessions/{session_id}/trace")
-async def get_trace(session_id: str) -> Dict[str, Any]:
+async def get_trace(session_id: str) -> dict[str, Any]:
     trace = _collector.get_trace(session_id)
     if not trace:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -321,7 +321,7 @@ async def get_confidence(session_id: str) -> ConfidenceResponse:
 
 
 @app.get("/api/v1/sessions/{session_id}/reasoning")
-async def get_reasoning_audit(session_id: str) -> Dict[str, Any]:
+async def get_reasoning_audit(session_id: str) -> dict[str, Any]:
     events = _collector.get_events(session_id, limit=5000)
     if not events:
         raise HTTPException(status_code=404, detail=f"No events for session {session_id}")
@@ -329,7 +329,7 @@ async def get_reasoning_audit(session_id: str) -> Dict[str, Any]:
 
 
 @app.get("/api/v1/sessions/{session_id}/cost")
-async def get_cost_budget(session_id: str) -> Dict[str, Any]:
+async def get_cost_budget(session_id: str) -> dict[str, Any]:
     budget = _cost_tracker.get_session(session_id)
     if not budget:
         events = _collector.get_events(session_id, limit=5000)
@@ -342,7 +342,7 @@ async def get_cost_budget(session_id: str) -> Dict[str, Any]:
 
 
 @app.get("/api/v1/sessions/{session_id}/replay")
-async def get_replay(session_id: str) -> Dict[str, Any]:
+async def get_replay(session_id: str) -> dict[str, Any]:
     events = _collector.get_events(session_id, limit=5000)
     trace = _collector.get_trace(session_id)
     if not events or not trace:
@@ -351,13 +351,13 @@ async def get_replay(session_id: str) -> Dict[str, Any]:
 
 
 @app.get("/api/v1/sessions/{session_id}/checkpoints")
-async def list_checkpoints(session_id: str) -> Dict[str, Any]:
+async def list_checkpoints(session_id: str) -> dict[str, Any]:
     checkpoints = _rollback_engine.list_checkpoints(session_id)
     return {"session_id": session_id, "checkpoints": [checkpoint.to_dict() for checkpoint in checkpoints]}
 
 
 @app.post("/api/v1/sessions/{session_id}/rollback")
-async def rollback_session(session_id: str, request: RollbackRequest) -> Dict[str, Any]:
+async def rollback_session(session_id: str, request: RollbackRequest) -> dict[str, Any]:
     if request.checkpoint_id:
         result = await _rollback_engine.rollback(
             request.checkpoint_id,
@@ -387,7 +387,7 @@ async def rollback_session(session_id: str, request: RollbackRequest) -> Dict[st
 
 
 @app.get("/api/v1/safety/policy")
-async def get_safety_policy() -> Dict[str, Any]:
+async def get_safety_policy() -> dict[str, Any]:
     policy = _safety_engine.policy
     return {
         "policy_id": policy.policy_id,
@@ -401,7 +401,7 @@ async def get_safety_policy() -> Dict[str, Any]:
 
 
 @app.put("/api/v1/safety/policy")
-async def update_safety_policy(update: SafetyPolicyUpdate) -> Dict[str, Any]:
+async def update_safety_policy(update: SafetyPolicyUpdate) -> dict[str, Any]:
     policy = SafetyPolicy(
         policy_id="api-configured",
         name="API-configured policy",
@@ -426,8 +426,8 @@ async def update_safety_policy(update: SafetyPolicyUpdate) -> Dict[str, Any]:
 async def get_blocked_events(
     limit: int = Query(default=50, le=200),
     since_hours: int = Query(default=24),
-) -> Dict[str, Any]:
-    threshold = datetime.now(timezone.utc) - timedelta(hours=since_hours)
+) -> dict[str, Any]:
+    threshold = datetime.now(UTC) - timedelta(hours=since_hours)
     events = [
         event
         for event in get_event_bus().get_recent_events(limit=5000)
@@ -437,7 +437,7 @@ async def get_blocked_events(
 
 
 @app.get("/api/v1/dashboard/summary")
-async def dashboard_summary() -> Dict[str, Any]:
+async def dashboard_summary() -> dict[str, Any]:
     sessions = _collector.list_sessions(limit=200)
     stats = _collector.get_stats()
     return {
@@ -453,12 +453,12 @@ async def dashboard_summary() -> Dict[str, Any]:
 
 
 @app.get("/api/v1/governance/compliance-report")
-async def compliance_report() -> Dict[str, Any]:
+async def compliance_report() -> dict[str, Any]:
     return _compliance_reporter.generate().to_dict()
 
 
 @app.post("/api/v1/demo/seed")
-async def seed_demo() -> Dict[str, Any]:
+async def seed_demo() -> dict[str, Any]:
     _seed_demo_data()
     return {"status": "seeded"}
 
