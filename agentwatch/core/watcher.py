@@ -31,12 +31,15 @@ import uuid
 from typing import Any
 
 from agentwatch.core.event_bus import EventBus, get_event_bus
+from agentwatch.core.http_forwarder import register_http_forwarder
 from agentwatch.core.safety import SafetyEngine
 from agentwatch.core.schema import (
     AgentEvent,
     AgentFramework,
     EventType,
     ExecutionStatus,
+    RiskLevel,
+    SafetyCheckData,
     ToolCallData,
 )
 
@@ -303,10 +306,10 @@ class GenericAdapter:
                     )
                     try:
                         checked = await self._safety_engine.check_event(safety_event)
-                        self._emit_safely(
-                            EventType.TOOL_CALL,
-                            metadata={"method": method_name, "tool": tool_call.tool_name},
-                        )
+                        # Publish the checked event directly — it carries the full
+                        # safety metadata (risk_level, blocked status, reasons).
+                        # Await so the HTTP forwarder completes before we proceed.
+                        await self.bus.publish(checked)
                         if checked.is_blocked:
                             reasons = checked.safety.reasons if checked.safety else []
                             reason_str = "; ".join(reasons) if reasons else "safety policy"
@@ -324,13 +327,14 @@ class GenericAdapter:
                             exc,
                         )
 
-                self._emit_safely(
+                # Use await so HTTP forwarding completes before the caller returns.
+                await self._async_emit(
                     EventType.AGENT_START,
                     metadata={"method": method_name, "step": self._step},
                 )
                 try:
                     result = await original(*args, **kwargs)
-                    self._emit_safely(
+                    await self._async_emit(
                         EventType.AGENT_END,
                         status=ExecutionStatus.SUCCESS,
                         metadata={"method": method_name},
@@ -339,7 +343,7 @@ class GenericAdapter:
                 except AgentWatchBlockedError:
                     raise
                 except Exception as exc:
-                    self._emit_safely(
+                    await self._async_emit(
                         EventType.AGENT_ERROR,
                         status=ExecutionStatus.FAILURE,
                         metadata={"method": method_name, "error": str(exc)},
@@ -357,10 +361,25 @@ class GenericAdapter:
                 tool_call = _build_tool_call_data(method_name, args, kwargs)
                 try:
                     blocked, reasons = self._safety_engine.check_tool_call_sync(tool_call)
-                    self._emit_safely(
-                        EventType.TOOL_CALL,
-                        metadata={"method": method_name, "tool": tool_call.tool_name},
+                    # Build and publish a TOOL_CALL event with safety data so the
+                    # dashboard shows the correct blocked/safe state.
+                    tc_event = AgentEvent(
+                        session_id=self.session_id,
+                        agent_id=self.agent_id,
+                        agent_name=self.framework_label,
+                        framework=self.framework,
+                        event_type=EventType.TOOL_CALL,
+                        step_number=self._step,
+                        tool_call=tool_call,
+                        status=ExecutionStatus.BLOCKED if blocked else ExecutionStatus.RUNNING,
+                        safety=SafetyCheckData(
+                            risk_level=RiskLevel.CRITICAL if blocked else RiskLevel.SAFE,
+                            risk_score=1.0 if blocked else 0.0,
+                            blocked=blocked,
+                            reasons=reasons,
+                        ),
                     )
+                    self.bus.publish_sync(tc_event)
                     if blocked:
                         reason_str = "; ".join(reasons) if reasons else "safety policy"
                         raise AgentWatchBlockedError(
@@ -408,7 +427,7 @@ class GenericAdapter:
         status: ExecutionStatus = ExecutionStatus.RUNNING,
         metadata: dict[str, Any] | None = None,
     ) -> None:
-        """Emit an event without ever raising into the host agent."""
+        """Emit an event without ever raising into the host agent (sync context)."""
         try:
             event = AgentEvent(
                 session_id=self.session_id,
@@ -423,6 +442,29 @@ class GenericAdapter:
             self.bus.publish_sync(event)
         except Exception as exc:  # noqa: BLE001 — invisible-when-healthy contract
             logger.debug("AgentWatch emit failed (suppressed): %s", exc)
+
+    async def _async_emit(
+        self,
+        event_type: EventType,
+        *,
+        status: ExecutionStatus = ExecutionStatus.RUNNING,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
+        """Emit an event in async context, awaiting all handlers so none are dropped."""
+        try:
+            event = AgentEvent(
+                session_id=self.session_id,
+                agent_id=self.agent_id,
+                agent_name=self.framework_label,
+                framework=self.framework,
+                event_type=event_type,
+                status=status,
+                step_number=self._step,
+                metadata=metadata or {},
+            )
+            await self.bus.publish(event)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("AgentWatch async emit failed (suppressed): %s", exc)
 
 
 # ─────────────────────────────────────────────
@@ -524,6 +566,7 @@ def watch(
         return agent
 
     bus = event_bus or get_event_bus()
+    register_http_forwarder(bus, api_url=None)
     label = detect_framework_label(agent)
 
     try:
