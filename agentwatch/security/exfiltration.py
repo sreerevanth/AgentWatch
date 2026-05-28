@@ -39,7 +39,8 @@ def detect(event: AgentEvent) -> list[ExfilFinding]:
     findings: list[ExfilFinding] = []
     if not event.tool_call:
         return findings
-    raw = event.tool_call.raw_command or repr(event.tool_call.arguments)
+    # Use raw_command exclusively for pattern matching.
+    raw = event.tool_call.raw_command or ""
     for pat in _EXFIL_PATTERNS:
         m = pat.search(raw)
         if m:

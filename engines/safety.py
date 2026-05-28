@@ -214,10 +214,10 @@ class RiskScorer:
             candidates.append(tool_call.raw_command)
         if tool_call.tool_name:
             candidates.append(tool_call.tool_name)
-        for v in tool_call.arguments.values():
-            if isinstance(v, str):
-                candidates.append(v)
 
+        # We no longer scan all arguments by default to avoid "greedy" false positives
+        # on non-command data. The ToolCallData validator now ensures raw_command
+        # is populated for tools that take a command-like argument.
         full_text = " ".join(candidates)
 
         matched_level = RiskLevel.SAFE
@@ -296,8 +296,7 @@ class SafetyEngine:
         for pat in self._scorer._patterns:
             if pat.block_by_default:
                 full_text = " ".join(
-                    list(filter(None, [tool_call.raw_command, tool_call.tool_name]))
-                    + [str(v) for v in tool_call.arguments.values() if isinstance(v, str)]
+                    filter(None, [tool_call.raw_command, tool_call.tool_name])
                 )
                 if re.search(pat.pattern, full_text, re.IGNORECASE):
                     block_immediate = True

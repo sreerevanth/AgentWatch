@@ -146,7 +146,8 @@ class OwaspScanner:
         if event.tool_call:
             if event.tool_call.raw_command:
                 parts.append(event.tool_call.raw_command)
-            parts.append(repr(event.tool_call.arguments))
+            # We no longer scan repr(arguments) to avoid noise and enforce
+            # that sensitive actions must use the raw_command field.
         if event.tool_result and event.tool_result.output:
             parts.append(str(event.tool_result.output))
         if event.planner_output_preview:

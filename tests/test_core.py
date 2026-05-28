@@ -180,6 +180,7 @@ class TestRiskScorer:
         tool = ToolCallData(
             tool_name="database_query",
             arguments={"query": "DROP TABLE users;"},
+            raw_command="DROP TABLE users;",
         )
         level, score, _, _ = self.scorer.score(tool)
         assert level == RiskLevel.HIGH
@@ -196,7 +197,11 @@ class TestRiskScorer:
             policy_id="DEPLOY_FORCE",
         )
         scorer = RiskScorer(extra_patterns=[custom])
-        tool = ToolCallData(tool_name="deploy", arguments={"args": "deploy --force"})
+        tool = ToolCallData(
+            tool_name="deploy",
+            arguments={"args": "deploy --force"},
+            raw_command="deploy --force",
+        )
         level, score, _, _ = scorer.score(tool)
         assert level == RiskLevel.HIGH
 

@@ -61,7 +61,8 @@ class BlastRadiusEstimator:
         radius = BlastRadius()
         raw = ""
         if event.tool_call:
-            raw = event.tool_call.raw_command or repr(event.tool_call.arguments)
+            # Use raw_command exclusively for blast radius estimation.
+            raw = event.tool_call.raw_command or ""
             radius.affected_resources = list(event.tool_call.affected_resources)
 
         for pat, service, reversibility, score in _BLAST_PATTERNS:

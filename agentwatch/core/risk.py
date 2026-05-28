@@ -72,9 +72,9 @@ def _goal_alignment(event: AgentEvent) -> int:
 def score_event(event: AgentEvent) -> RiskScore:
     raw = ""
     if event.tool_call:
-        raw = event.tool_call.raw_command or " ".join(
-            f"{k}={v}" for k, v in event.tool_call.arguments.items()
-        )
+        # Use raw_command exclusively for pattern matching. The ToolCallData
+        # validator ensures it is populated for command-like tools.
+        raw = event.tool_call.raw_command or ""
 
     cmd_danger, matched = _command_danger(raw)
     ctx = _context_risk(event)
