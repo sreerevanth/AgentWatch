@@ -1,7 +1,19 @@
 import timeit
 import json
+import asyncio
 from agentwatch.core.watcher import watch, GenericAdapter
 from agentwatch.core.safety import SafetyEngine
+from agentwatch.core.event_bus import EventBus
+from agentwatch.core.schema import AgentEvent, EventType
+
+# Shared benchmark objects for full_api_round_trip
+_bench_bus = EventBus()
+_bench_event = AgentEvent(
+    session_id="bench",
+    agent_id="bench",
+    event_type=EventType.TOOL_CALL,
+)
+_bench_loop = asyncio.new_event_loop()
 
 # Simple dummy agent function for baseline
 def dummy_agent_sync():
@@ -12,18 +24,18 @@ def dummy_agent_sync():
     return "ok"
 
 # Instrumented call without safety engine
+watched_no_safety = watch(dummy_agent_sync)  # pre‑instrumented call without safety
+
 def dummy_agent_watch_no_safety():
-    watched = watch(dummy_agent_sync)  # watch without safety
-    return watched()
+    return watched_no_safety()
 
 # Instrumented call with safety engine
 safety_engine = SafetyEngine()
 
+attached_with_safety = GenericAdapter(dummy_agent_sync, safety_engine=safety_engine).attach()  # pre‑instrumented call with safety
+
 def dummy_agent_watch_with_safety():
-    # Use GenericAdapter directly because watch() does not expose a safety_engine argument.
-    adapter = GenericAdapter(dummy_agent_sync, safety_engine=safety_engine)
-    watched = adapter.attach()
-    return watched()
+    return attached_with_safety()
 
 # Full API round‑trip (starts the FastAPI server and posts an event)
 # For the benchmark we mock the server call to avoid external services.
@@ -31,22 +43,8 @@ def full_api_round_trip():
     # Simulate a full API round‑trip by invoking the async EventBus.publish
     # with a minimal, correctly‑typed AgentEvent. This exercises the async
     # dispatch path without starting the FastAPI server.
-    import asyncio
-    from agentwatch.core.event_bus import EventBus
-    from agentwatch.core.schema import AgentEvent, EventType
-
-    async def _publish():
-        bus = EventBus()
-        # Minimal event – only required fields are provided.
-        event = AgentEvent(
-            session_id="bench",
-            agent_id="bench",
-            event_type=EventType.TOOL_CALL,
-        )
-        await bus.publish(event)
-
-    # Run the coroutine synchronously for the benchmark.
-    asyncio.run(_publish())
+    # We use the pre-initialized _bench_loop and _bench_bus to avoid setup overhead.
+    _bench_loop.run_until_complete(_bench_bus.publish(_bench_event))
 
 
 def run_benchmarks():
@@ -56,6 +54,7 @@ def run_benchmarks():
     # Using a larger repeat count gives a robust distribution for p95/p99.
     sample_count = 1000
     results = {}
+    raw_means = {}
     for name, func in [
         ("baseline", dummy_agent_sync),
         ("watch_no_safety", dummy_agent_watch_no_safety),
@@ -69,16 +68,19 @@ def run_benchmarks():
         mean = sum(raw) / len(raw)
         p95 = sorted(raw)[int(0.95 * len(raw))]
         p99 = sorted(raw)[int(0.99 * len(raw))]
+        
+        mean_ms = mean * 1000
+        raw_means[name] = mean_ms
         results[name] = {
-            "mean_ms": round(mean * 1000, 3),
+            "mean_ms": round(mean_ms, 3),
             "p95_ms": round(p95 * 1000, 3),
             "p99_ms": round(p99 * 1000, 3),
         }
     # calculate overhead percentages vs baseline
-    base = results["baseline"]["mean_ms"]
+    base_raw = raw_means["baseline"]
     for name, data in results.items():
         if name != "baseline":
-            data["overhead_%"] = round(((data["mean_ms"] - base) / base) * 100, 2)
+            data["overhead_%"] = round(((raw_means[name] - base_raw) / base_raw) * 100, 2)
     print(json.dumps(results, indent=2))
 
 if __name__ == "__main__":
