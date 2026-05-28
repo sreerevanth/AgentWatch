@@ -1,0 +1,47 @@
+# Default values for agentwatch chart.
+replicaCount: 2
+
+image:
+  repository: ghcr.io/sreerevanth/agentwatch
+  tag: "0.2.0"
+  pullPolicy: IfNotPresent
+
+service:
+  type: ClusterIP
+  port: 8000
+
+ingress:
+  enabled: false
+  className: nginx
+  hosts:
+    - host: agentwatch.local
+      paths:
+        - path: /
+          pathType: Prefix
+
+postgres:
+  enabled: true
+  database: agentwatch
+  username: agentwatch
+  password: agentwatch
+  size: 10Gi
+
+redis:
+  enabled: true
+
+resources:
+  limits:
+    cpu: 2000m
+    memory: 2Gi
+  requests:
+    cpu: 500m
+    memory: 512Mi
+
+env:
+  AGENTWATCH_ENV: production
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 75

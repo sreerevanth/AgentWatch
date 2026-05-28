@@ -6,50 +6,40 @@ Comprehensive tests for schema, safety, scoring, replay, and memory.
 from __future__ import annotations
 
 import asyncio
-import uuid
-from datetime import datetime, timezone
-from pathlib import Path
-from typing import List
 
 import pytest
 
+from agentwatch.core.event_bus import EventBus
+from agentwatch.core.safety import (
+    RiskPattern,
+    RiskScorer,
+    SafetyEngine,
+)
 from agentwatch.core.schema import (
     AgentEvent,
+    AgentFramework,
     AgentSession,
     EventType,
     ExecutionStatus,
     PluginManifest,
-    PluginPermissions,
     RiskLevel,
     SafetyCheckData,
+    TokenUsage,
     ToolCallData,
     ToolResultData,
-    TokenUsage,
-    AgentFramework,
-)
-from agentwatch.core.safety import (
-    DEFAULT_POLICY,
-    RiskPattern,
-    RiskScorer,
-    SafetyEngine,
-    SafetyPolicy,
-)
-from agentwatch.scoring.confidence import (
-    ConfidenceScorer,
-    ANOMALY_TOOL_LOOP,
-    ANOMALY_REPEATED_FAILURES,
-    ANOMALY_HALLUCINATED_SUCCESS,
-    ANOMALY_GOAL_DRIFT,
 )
 from agentwatch.replay.engine import (
     FailureCause,
     ReplayEngine,
-    ReplaySession,
     ReplaySpeed,
-    _analyze_failures,
 )
-from agentwatch.core.event_bus import EventBus
-
+from agentwatch.scoring.confidence import (
+    ANOMALY_GOAL_DRIFT,
+    ANOMALY_HALLUCINATED_SUCCESS,
+    ANOMALY_REPEATED_FAILURES,
+    ANOMALY_TOOL_LOOP,
+    ConfidenceScorer,
+)
 
 # ─────────────────────────────────────────────
 # Fixtures

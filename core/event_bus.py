@@ -262,18 +262,44 @@ class EventBus:
                 exc_info=True,
             )
 
+    @staticmethod
+    def _log_task_exception(task: asyncio.Task) -> None:
+        """Done-callback attached to fire-and-forget tasks created by publish_sync.
+
+        Retrieves the task result so that any unhandled exception is surfaced to
+        the logger rather than silently discarded. CancelledError is ignored
+        because task cancellation is a normal lifecycle event, not a bug.
+
+        Args:
+            task: The completed asyncio.Task whose result we inspect.
+        """
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error(
+                "publish_sync task raised an unhandled exception: %s",
+                exc,
+                exc_info=exc,
+            )
+
     def publish_sync(self, event: AgentEvent) -> None:
         """Publish from synchronous code without awaiting.
 
         Schedules on the running loop when one exists; otherwise runs
         :meth:`publish` via :func:`asyncio.run`.
 
+        When a running loop is present the created Task has a done-callback
+        attached so that any exception raised inside an async handler is
+        logged instead of being silently swallowed.
+
         Args:
             event: The event to publish.
         """
         try:
             loop = asyncio.get_running_loop()
-            loop.create_task(self.publish(event))
+            task = loop.create_task(self.publish(event))
+            task.add_done_callback(self._log_task_exception)
         except RuntimeError:
             asyncio.run(self.publish(event))
 

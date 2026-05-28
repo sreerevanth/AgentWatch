@@ -1,0 +1,129 @@
+"""
+CST-003 — Model Degradation Auto-Router.
+
+When the primary model's observed confidence or latency degrades, route
+traffic to backup models without context loss. Configurable priority order.
+"""
+
+from __future__ import annotations
+
+import logging
+import statistics
+from collections import deque
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class ModelHealth:
+    model: str
+    samples: deque[float] = field(default_factory=lambda: deque(maxlen=50))
+    latencies_ms: deque[float] = field(default_factory=lambda: deque(maxlen=50))
+    error_count: int = 0
+    last_seen: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+    @property
+    def mean_confidence(self) -> float:
+        return statistics.mean(self.samples) if self.samples else 1.0
+
+    @property
+    def mean_latency_ms(self) -> float:
+        return statistics.mean(self.latencies_ms) if self.latencies_ms else 0.0
+
+
+@dataclass
+class RouteDecision:
+    chosen: str
+    reason: str
+    bypassed: list[str] = field(default_factory=list)
+
+
+class ModelRouter:
+    """
+    Track per-model health (confidence + latency + error rate).
+    Pick the highest-priority model whose health is above threshold.
+    """
+
+    def __init__(
+        self,
+        priority: list[str],
+        *,
+        confidence_floor: float = 0.55,
+        latency_ceiling_ms: float = 6000.0,
+        error_ceiling: int = 5,
+    ):
+        if not priority:
+            raise ValueError("priority list must be non-empty")
+        self.priority = priority
+        self.confidence_floor = confidence_floor
+        self.latency_ceiling_ms = latency_ceiling_ms
+        self.error_ceiling = error_ceiling
+        self._health: dict[str, ModelHealth] = {m: ModelHealth(model=m) for m in priority}
+
+    def observe(
+        self,
+        model: str,
+        *,
+        confidence: float | None = None,
+        latency_ms: float | None = None,
+        error: bool = False,
+    ) -> None:
+        h = self._health.setdefault(model, ModelHealth(model=model))
+        h.last_seen = datetime.now(UTC)
+        if confidence is not None:
+            h.samples.append(float(confidence))
+        if latency_ms is not None:
+            h.latencies_ms.append(float(latency_ms))
+        if error:
+            h.error_count += 1
+
+    def reset_errors(self, model: str) -> None:
+        h = self._health.get(model)
+        if h:
+            h.error_count = 0
+
+    def is_healthy(self, model: str) -> bool:
+        h = self._health.get(model)
+        if h is None:
+            return False
+        if h.error_count >= self.error_ceiling:
+            return False
+        if h.samples and h.mean_confidence < self.confidence_floor:
+            return False
+        if h.latencies_ms and h.mean_latency_ms > self.latency_ceiling_ms:
+            return False
+        return True
+
+    def choose(self) -> RouteDecision:
+        bypassed: list[str] = []
+        for model in self.priority:
+            if self.is_healthy(model):
+                reason = (
+                    f"primary={model}"
+                    if not bypassed
+                    else f"failover_to={model} after {len(bypassed)} unhealthy"
+                )
+                return RouteDecision(chosen=model, reason=reason, bypassed=bypassed)
+            bypassed.append(model)
+        # All unhealthy — fall back to the head of priority list anyway
+        return RouteDecision(
+            chosen=self.priority[0],
+            reason="all_models_unhealthy_falling_back_to_primary",
+            bypassed=bypassed[1:],
+        )
+
+    def health_snapshot(self) -> dict[str, dict[str, float]]:
+        return {
+            m: {
+                "mean_confidence": h.mean_confidence,
+                "mean_latency_ms": h.mean_latency_ms,
+                "error_count": h.error_count,
+                "healthy": float(self.is_healthy(m)),
+            }
+            for m, h in self._health.items()
+        }
+
+
+__all__ = ["ModelRouter", "ModelHealth", "RouteDecision"]

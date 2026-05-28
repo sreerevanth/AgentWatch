@@ -423,6 +423,52 @@ class SafetyEngine:
         self._policy = policy
         self._scorer = RiskScorer(extra_patterns=policy.custom_patterns)
 
+    def check_tool_call_sync(self, tool_call: ToolCallData) -> tuple[bool, list[str]]:
+        """Synchronous risk check — pattern matching only, no approval flow.
+
+        Safe to call from synchronous code where an event loop may not be
+        running (e.g. :class:`agentwatch.core.watcher.GenericAdapter` sync
+        wrappers).  Approval callbacks are never triggered; calls that would
+        require human approval are *allowed* with a warning rather than
+        blocked.  Use :meth:`check_event` from async code to get the full
+        approval flow.
+
+        Args:
+            tool_call: Tool invocation to evaluate.
+
+        Returns:
+            ``(blocked, reasons)`` — ``blocked`` is ``True`` when the call
+            must be prevented immediately.
+        """
+        risk_level, _, reasons, _ = self._scorer.score(tool_call)
+
+        block = risk_level == RiskLevel.CRITICAL or (
+            risk_level == RiskLevel.HIGH and self._policy.block_on_high
+        )
+
+        # Honour block_by_default patterns even when general policy is lenient
+        if not block:
+            full_text = " ".join(
+                [x for x in [tool_call.raw_command, tool_call.tool_name] if x]
+                + [str(v) for v in tool_call.arguments.values() if isinstance(v, str)]
+            )
+            for pat in self._scorer._patterns:
+                if pat.block_by_default and re.search(pat.pattern, full_text, re.IGNORECASE):
+                    block = True
+                    break
+
+        self._checked_count += 1
+        if block:
+            self._blocked_count += 1
+            logger.warning(
+                "BLOCKED (sync) [%s] risk=%s: %s",
+                tool_call.tool_name,
+                risk_level.value,
+                reasons,
+            )
+
+        return block, reasons
+
     def stats(self) -> dict[str, int]:
         """Return counters for checked, blocked, and approved events.
 

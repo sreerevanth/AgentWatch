@@ -1,0 +1,16 @@
+apiVersion: v2
+name: agentwatch
+description: AgentWatch — Reliability, Safety, and Observability Layer for AI Agents
+type: application
+version: 0.2.0
+appVersion: "0.2.0"
+keywords:
+  - ai
+  - agents
+  - observability
+  - safety
+home: https://github.com/sreerevanth/AgentWatch
+sources:
+  - https://github.com/sreerevanth/AgentWatch
+maintainers:
+  - name: AgentWatch Contributors

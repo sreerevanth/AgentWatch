@@ -10,12 +10,13 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ─────────────────────────────────────────────
 # Enumerations
 # ─────────────────────────────────────────────
+
 
 class EventType(str, Enum):
     """Normalized event kinds emitted by AgentWatch adapters."""
@@ -109,6 +110,7 @@ class ExecutionStatus(str, Enum):
 # Core sub-models
 # ─────────────────────────────────────────────
 
+
 class TokenUsage(BaseModel):
     """LLM token counts and optional cost estimate for a single step."""
 
@@ -126,6 +128,72 @@ class ToolCallData(BaseModel):
     arguments: Dict[str, Any] = Field(default_factory=dict)
     raw_command: Optional[str] = None
     affected_resources: List[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _validate_command_fields(self) -> "ToolCallData":
+        """Catch the silent-risk footgun: command-like argument key without raw_command.
+
+        When a caller puts the shell command in ``arguments['command']`` but leaves
+        ``raw_command`` unset, the safety engine sees an empty scorer input and
+        classifies the call as SAFE — even for ``rm -rf /``.  Raising early here
+        surfaces the mistake at construction time rather than silently neutering
+        safety checks at runtime.
+
+        Raises:
+            ValueError: If a command-like argument key holds a non-empty value and
+                ``raw_command`` is not set.  Use ``raw_command=<value>`` or call
+                :meth:`ToolCallData.from_dict` to auto-populate it.
+        """
+        _cmd_keys = frozenset({"command", "cmd", "shell", "exec", "bash", "script"})
+        offending = next(
+            (
+                k
+                for k in _cmd_keys
+                if k in self.arguments
+                and isinstance(self.arguments[k], str)
+                and self.arguments[k].strip()
+            ),
+            None,
+        )
+        if offending and not (self.raw_command and self.raw_command.strip()):
+            val = self.arguments[offending]
+            raise ValueError(
+                f"ToolCallData has '{offending}' in arguments (value: {val!r}) "
+                f"but raw_command is not set. "
+                f"The safety engine reads raw_command for pattern matching — "
+                f"set raw_command='{val}' or use ToolCallData.from_dict() "
+                f"to auto-populate it."
+            )
+        return self
+
+    @classmethod
+    def from_dict(cls, tool_name: str, params_dict: Dict[str, Any]) -> "ToolCallData":
+        """Convenience constructor that auto-maps common parameter names to raw_command.
+
+        Searches ``params_dict`` for a command-like key (``command``, ``cmd``,
+        ``shell``, ``exec``, ``bash``, ``script``) and promotes its value to
+        ``raw_command`` so the safety engine can scan it.
+
+        Args:
+            tool_name: Name of the tool being called.
+            params_dict: Arbitrary parameters dict from the tool caller.
+
+        Returns:
+            A :class:`ToolCallData` with ``raw_command`` set when a command key
+            is found, or ``None`` when no recognizable command key is present.
+        """
+        _PROMOTE_KEYS = ("command", "cmd", "shell", "exec", "bash", "script")
+        raw_command: Optional[str] = None
+        for key in _PROMOTE_KEYS:
+            val = params_dict.get(key)
+            if isinstance(val, str) and val.strip():
+                raw_command = val
+                break
+        return cls(
+            tool_name=tool_name,
+            arguments=dict(params_dict),
+            raw_command=raw_command,
+        )
 
 
 class ToolResultData(BaseModel):
@@ -196,6 +264,7 @@ class CheckpointData(BaseModel):
 # Universal Event
 # ─────────────────────────────────────────────
 
+
 class AgentEvent(BaseModel):
     """
     Universal event emitted by any AgentWatch adapter.
@@ -236,7 +305,7 @@ class AgentEvent(BaseModel):
     checkpoint: Optional[CheckpointData] = None
 
     # Prompt/planner data (non-hidden, observable artifacts only)
-    prompt_preview: Optional[str] = None       # first 500 chars of prompt
+    prompt_preview: Optional[str] = None  # first 500 chars of prompt
     planner_output_preview: Optional[str] = None  # observable planner text
 
     # Token / cost
@@ -285,10 +354,7 @@ class AgentEvent(BaseModel):
     @property
     def is_dangerous(self) -> bool:
         """Return True if safety metadata indicates HIGH or CRITICAL risk."""
-        return bool(
-            self.safety
-            and self.safety.risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL)
-        )
+        return bool(self.safety and self.safety.risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL))
 
     @property
     def is_blocked(self) -> bool:
@@ -299,6 +365,7 @@ class AgentEvent(BaseModel):
 # ─────────────────────────────────────────────
 # Session model
 # ─────────────────────────────────────────────
+
 
 class AgentSession(BaseModel):
     """Top-level session grouping events from one agent run."""
@@ -322,6 +389,7 @@ class AgentSession(BaseModel):
 # Task graph node
 # ─────────────────────────────────────────────
 
+
 class TaskNode(BaseModel):
     """Node in a delegated task graph within a session."""
 
@@ -343,6 +411,7 @@ class TaskNode(BaseModel):
 # ─────────────────────────────────────────────
 # Plugin manifest
 # ─────────────────────────────────────────────
+
 
 class PluginPermissions(BaseModel):
     """Capability flags requested by a sandboxed plugin."""

@@ -7,27 +7,31 @@ from __future__ import annotations
 
 import asyncio
 import uuid
-from datetime import datetime, timezone
-from typing import List
 
 import pytest
-import pytest_asyncio
 
 from agentwatch.core.event_bus import EventBus
-from agentwatch.core.safety import SafetyEngine, SafetyPolicy
+from agentwatch.core.safety import SafetyEngine
 from agentwatch.core.schema import (
-    AgentEvent, AgentFramework, AgentSession,
-    EventType, ExecutionStatus, RiskLevel,
-    ToolCallData, ToolResultData,
+    AgentEvent,
+    AgentFramework,
+    AgentSession,
+    EventType,
+    ExecutionStatus,
+    ToolCallData,
+    ToolResultData,
 )
-from agentwatch.replay.engine import ReplayEngine, ReplaySpeed, FailureCause
+from agentwatch.memory.engine import ImportanceLevel, MemoryEngine, MemoryType
+from agentwatch.orchestration.engine import (
+    AgentRole,
+    MessageType,
+    OrchestrationEngine,
+    SubAgent,
+    TaskGraph,
+)
+from agentwatch.replay.engine import FailureCause, ReplayEngine, ReplaySpeed
 from agentwatch.scoring.confidence import ConfidenceScorer
 from agentwatch.tracing.collector import TraceCollector
-from agentwatch.memory.engine import MemoryEngine, MemoryType, ImportanceLevel
-from agentwatch.orchestration.engine import (
-    OrchestrationEngine, SubAgent, AgentRole, TaskGraph, MessageType
-)
-
 
 # ─────────────────────────────────────────────
 # Fixtures
@@ -86,7 +90,7 @@ class TestEventPipeline:
                 session_id=session_id, agent_id=agent_id,
                 framework=AgentFramework.CLAUDE_CODE,
                 event_type=EventType.TOOL_CALL,
-                tool_call=ToolCallData(tool_name="bash", arguments={"command": "echo test"}),
+                tool_call=ToolCallData(tool_name="bash", raw_command="echo test", arguments={"command": "echo test"}),
             ),
             AgentEvent(
                 session_id=session_id, agent_id=agent_id,
@@ -110,7 +114,7 @@ class TestEventPipeline:
     async def test_safety_engine_blocks_before_bus(self, bus, collector):
         """Safety engine blocks critical events; blocked events still emitted."""
         bus.subscribe_fn(collector.ingest, handler_id="test.collector")
-        safety = SafetyEngine()
+        safety = SafetyEngine()  # noqa: F841 — kept for fixture lifecycle
 
         session_id = str(uuid.uuid4())
         dangerous = AgentEvent(
@@ -141,7 +145,7 @@ class TestEventPipeline:
     async def test_full_pipeline_with_replay(self, bus, collector, replay_engine):
         """Complete pipeline: ingest → collect → replay → analyze."""
         bus.subscribe_fn(collector.ingest, handler_id="test.collector")
-        safety = SafetyEngine()
+        safety = SafetyEngine()  # noqa: F841 — kept for fixture lifecycle
 
         session_id = str(uuid.uuid4())
         session = AgentSession(
@@ -158,7 +162,7 @@ class TestEventPipeline:
             AgentEvent(session_id=session_id, agent_id="agent",
                        framework=AgentFramework.CLAUDE_CODE,
                        event_type=EventType.TOOL_CALL, step_number=1,
-                       tool_call=ToolCallData(tool_name="bash", arguments={"command": "ls"})),
+                       tool_call=ToolCallData(tool_name="bash", raw_command="ls", arguments={"command": "ls"})),
             AgentEvent(session_id=session_id, agent_id="agent",
                        framework=AgentFramework.CLAUDE_CODE,
                        event_type=EventType.TOOL_RESULT, step_number=2,
@@ -243,7 +247,7 @@ class TestOrchestrationIntegration:
         bus = EventBus()
         orch = OrchestrationEngine(session_id="test-orch", event_bus=bus)
 
-        executed_tasks: List[str] = []
+        executed_tasks: list[str] = []
 
         async def exec_handler(msg):
             if msg.message_type == MessageType.TASK_ASSIGN:
@@ -263,7 +267,7 @@ class TestOrchestrationIntegration:
         graph = TaskGraph("test-orch", "Run three parallel tasks")
         t1 = graph.add_task("Task A")
         t2 = graph.add_task("Task B")
-        t3 = graph.add_task("Task C", depends_on=[t1.task_id, t2.task_id])
+        t3 = graph.add_task("Task C", depends_on=[t1.task_id, t2.task_id])  # noqa: F841 — task registered with graph side-effect
 
         result = await asyncio.wait_for(orch.run_graph(graph), timeout=5.0)
         await orch.stop()
@@ -309,7 +313,8 @@ class TestConfidenceReplayIntegration:
                 event_type=EventType.TOOL_CALL, step_number=i * 2,
                 tool_call=ToolCallData(
                     tool_name="bash" if i % 2 == 0 else "file_read",
-                    arguments={"command": "grep error logs/app.log"}
+                    raw_command="grep error logs/app.log",
+                    arguments={"command": "grep error logs/app.log"},
                 ),
             ))
             events.append(AgentEvent(
