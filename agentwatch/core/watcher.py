@@ -92,13 +92,13 @@ def _build_tool_call_data(method_name: str, args: tuple, kwargs: dict) -> ToolCa
     Promotes the first string positional argument (or any keyword argument
     named like a command) to ``raw_command`` so the safety engine can scan it.
     """
-    _CMD_KEYS = ("command", "cmd", "shell", "exec", "bash", "script",
+    _cmd_keys = ("command", "cmd", "shell", "exec", "bash", "script",
                  "query", "input", "task", "prompt", "message")
     raw_command: str | None = None
     arguments: dict[str, Any] = {}
 
     # Keyword args — check for command-like keys first
-    for key in _CMD_KEYS:
+    for key in _cmd_keys:
         if key in kwargs and isinstance(kwargs[key], str):
             raw_command = kwargs[key]
             break
