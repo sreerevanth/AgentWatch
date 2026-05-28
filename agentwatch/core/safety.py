@@ -453,9 +453,7 @@ class SafetyEngine:
                 + [str(v) for v in tool_call.arguments.values() if isinstance(v, str)]
             )
             for pat in self._scorer._patterns:
-                if pat.block_by_default and re.search(
-                    pat.pattern, full_text, re.IGNORECASE
-                ):
+                if pat.block_by_default and re.search(pat.pattern, full_text, re.IGNORECASE):
                     block = True
                     break
 

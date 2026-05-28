@@ -75,9 +75,7 @@ class AgentWatchBlockedError(RuntimeError):
 # ─────────────────────────────────────────────
 
 #: Method name substrings that indicate a potential tool invocation.
-_TOOL_LIKE_KEYWORDS: frozenset[str] = frozenset(
-    {"execute", "run", "call", "invoke", "tool"}
-)
+_TOOL_LIKE_KEYWORDS: frozenset[str] = frozenset({"execute", "run", "call", "invoke", "tool"})
 
 
 def _is_tool_like(method_name: str) -> bool:
@@ -92,8 +90,19 @@ def _build_tool_call_data(method_name: str, args: tuple, kwargs: dict) -> ToolCa
     Promotes the first string positional argument (or any keyword argument
     named like a command) to ``raw_command`` so the safety engine can scan it.
     """
-    _cmd_keys = ("command", "cmd", "shell", "exec", "bash", "script",
-                 "query", "input", "task", "prompt", "message")
+    _cmd_keys = (
+        "command",
+        "cmd",
+        "shell",
+        "exec",
+        "bash",
+        "script",
+        "query",
+        "input",
+        "task",
+        "prompt",
+        "message",
+    )
     raw_command: str | None = None
     arguments: dict[str, Any] = {}
 
@@ -302,8 +311,7 @@ class GenericAdapter:
                             reasons = checked.safety.reasons if checked.safety else []
                             reason_str = "; ".join(reasons) if reasons else "safety policy"
                             raise AgentWatchBlockedError(
-                                f"Tool call '{method_name}' blocked by safety engine: "
-                                f"{reason_str}",
+                                f"Tool call '{method_name}' blocked by safety engine: {reason_str}",
                                 tool_name=method_name,
                                 reasons=reasons,
                             )
@@ -312,7 +320,8 @@ class GenericAdapter:
                     except Exception as exc:  # noqa: BLE001
                         logger.debug(
                             "Safety check failed (suppressed) for %s: %s",
-                            method_name, exc,
+                            method_name,
+                            exc,
                         )
 
                 self._emit_safely(
@@ -355,8 +364,7 @@ class GenericAdapter:
                     if blocked:
                         reason_str = "; ".join(reasons) if reasons else "safety policy"
                         raise AgentWatchBlockedError(
-                            f"Tool call '{method_name}' blocked by safety engine: "
-                            f"{reason_str}",
+                            f"Tool call '{method_name}' blocked by safety engine: {reason_str}",
                             tool_name=method_name,
                             reasons=reasons,
                         )
@@ -365,7 +373,8 @@ class GenericAdapter:
                 except Exception as exc:  # noqa: BLE001
                     logger.debug(
                         "Safety check failed (suppressed) for %s: %s",
-                        method_name, exc,
+                        method_name,
+                        exc,
                     )
 
             self._emit_safely(
