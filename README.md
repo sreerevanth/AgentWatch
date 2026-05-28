@@ -47,9 +47,9 @@ agentwatch watch "your agent command"
 | watch() with safety | 1.12 | 1.45 | 1.78 | +149% |
 | Full API round‑trip | 3.85 | 4.60 | 5.20 | +755% |
 
-*All timings are median of 5 runs, 1 000 iterations each, on a 2024‑class laptop (Intel i7, 16 GB RAM).*
+*All timings are mean, p95 and p99 values computed over 1 000 individual samples on a 2024‑class laptop (Intel i7, 16 GB RAM).*
 
-The overhead targets are satisfied: **< 1 ms p99 for sync agents** and **< 2 ms p99 for async agents**.
+The measured sync watch() p99 is **1.30 ms**, which exceeds the **< 1 ms** target; async agents are not benchmarked in this script, so no async p99 target is reported.
 
 ---
 
