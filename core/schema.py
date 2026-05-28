@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 # Enumerations
 # ─────────────────────────────────────────────
 
+
 class EventType(str, Enum):
     """Normalized event kinds emitted by AgentWatch adapters."""
 
@@ -109,6 +110,7 @@ class ExecutionStatus(str, Enum):
 # Core sub-models
 # ─────────────────────────────────────────────
 
+
 class TokenUsage(BaseModel):
     """LLM token counts and optional cost estimate for a single step."""
 
@@ -142,17 +144,18 @@ class ToolCallData(BaseModel):
                 ``raw_command`` is not set.  Use ``raw_command=<value>`` or call
                 :meth:`ToolCallData.from_dict` to auto-populate it.
         """
-        _CMD_KEYS = frozenset({"command", "cmd", "shell", "exec"})
+        _cmd_keys = frozenset({"command", "cmd", "shell", "exec", "bash", "script"})
         offending = next(
             (
-                k for k in _CMD_KEYS
+                k
+                for k in _cmd_keys
                 if k in self.arguments
                 and isinstance(self.arguments[k], str)
                 and self.arguments[k].strip()
             ),
             None,
         )
-        if offending and not self.raw_command:
+        if offending and not (self.raw_command and self.raw_command.strip()):
             val = self.arguments[offending]
             raise ValueError(
                 f"ToolCallData has '{offending}' in arguments (value: {val!r}) "
@@ -261,6 +264,7 @@ class CheckpointData(BaseModel):
 # Universal Event
 # ─────────────────────────────────────────────
 
+
 class AgentEvent(BaseModel):
     """
     Universal event emitted by any AgentWatch adapter.
@@ -301,7 +305,7 @@ class AgentEvent(BaseModel):
     checkpoint: Optional[CheckpointData] = None
 
     # Prompt/planner data (non-hidden, observable artifacts only)
-    prompt_preview: Optional[str] = None       # first 500 chars of prompt
+    prompt_preview: Optional[str] = None  # first 500 chars of prompt
     planner_output_preview: Optional[str] = None  # observable planner text
 
     # Token / cost
@@ -350,10 +354,7 @@ class AgentEvent(BaseModel):
     @property
     def is_dangerous(self) -> bool:
         """Return True if safety metadata indicates HIGH or CRITICAL risk."""
-        return bool(
-            self.safety
-            and self.safety.risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL)
-        )
+        return bool(self.safety and self.safety.risk_level in (RiskLevel.HIGH, RiskLevel.CRITICAL))
 
     @property
     def is_blocked(self) -> bool:
@@ -364,6 +365,7 @@ class AgentEvent(BaseModel):
 # ─────────────────────────────────────────────
 # Session model
 # ─────────────────────────────────────────────
+
 
 class AgentSession(BaseModel):
     """Top-level session grouping events from one agent run."""
@@ -387,6 +389,7 @@ class AgentSession(BaseModel):
 # Task graph node
 # ─────────────────────────────────────────────
 
+
 class TaskNode(BaseModel):
     """Node in a delegated task graph within a session."""
 
@@ -408,6 +411,7 @@ class TaskNode(BaseModel):
 # ─────────────────────────────────────────────
 # Plugin manifest
 # ─────────────────────────────────────────────
+
 
 class PluginPermissions(BaseModel):
     """Capability flags requested by a sandboxed plugin."""

@@ -100,10 +100,10 @@ class RBACEngine:
         if user.role == Role.OWNER:
             return True
         if user.team_id is None:
-            return True
+            return False  # deny-by-default: no team → no policy → no access
         policy = self._team_policies.get(user.team_id)
         if policy is None:
-            return True
+            return False  # deny-by-default: missing policy → no access
         if tool in policy.blocked_tools:
             return False
         if policy.allowed_tools and tool not in policy.allowed_tools:

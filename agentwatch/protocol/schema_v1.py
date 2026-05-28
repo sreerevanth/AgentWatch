@@ -111,10 +111,13 @@ def validate_trace(trace: dict[str, Any]) -> tuple[bool, list[str]]:
     if isinstance(spans, list):
         kinds = {"reasoning", "tool_call", "memory_read", "model_call", "generic"}
         for idx, span in enumerate(spans):
+            if not isinstance(span, dict):
+                errors.append(f"spans[{idx}]: must be an object")
+                continue
             for field in ("span_id", "kind", "name", "start_time"):
                 if field not in span:
                     errors.append(f"spans[{idx}]: missing '{field}'")
-            if isinstance(span, dict) and span.get("kind") not in kinds:
+            if span.get("kind") not in kinds:
                 errors.append(f"spans[{idx}]: invalid kind '{span.get('kind')}'")
     elif spans is not None:
         errors.append("spans: must be an array")
