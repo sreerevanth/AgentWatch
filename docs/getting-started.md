@@ -221,13 +221,19 @@ PAGERDUTY_WEBHOOK_URL=https://events.pagerduty.com/v2/enqueue
 
 ### Example `.env`
 
-If you are running outside Docker Compose, create a `.env` file at the repository root:
+If you are running outside Docker Compose, copy the [.env.example](../.env.example) template file at the repository root to `.env` and fill in the values:
 
 ```bash
-DATABASE_URL=postgresql+asyncpg://agentwatch:agentwatch@localhost:5432/agentwatch
+cp .env.example .env
+```
+
+The template includes standard defaults:
+
+```bash
+DATABASE_URL=postgresql+asyncpg://postgres:your_password_here@localhost:5432/agentwatch
 REDIS_URL=redis://localhost:6379/0
 CELERY_BROKER_URL=redis://localhost:6379/1
-AGENTWATCH_ENV=production
+AGENTWATCH_ENV=development
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx/yyy/zzz
 PAGERDUTY_WEBHOOK_URL=https://events.pagerduty.com/v2/enqueue
 ```

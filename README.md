@@ -108,6 +108,10 @@ AgentWatch deploys a second model, architecturally separate, with no access to t
 # Install
 pip install agentwatch
 
+# Configure environment variables (optional)
+# Copy the template and edit it to set custom DB passwords, API keys, etc.
+cp .env.example .env
+
 # Start the dashboard
 docker compose up -d
 
@@ -118,7 +122,7 @@ agentwatch watch "Build me a REST API"
 **Dashboard** → http://localhost:3000  
 **API Docs** → http://localhost:8000/docs
 
-That's it. Zero config. Real data immediately.
+That's it. Zero config for default settings, or customize via the [.env.example](.env.example) file. Real data immediately.
 
 ---
 
