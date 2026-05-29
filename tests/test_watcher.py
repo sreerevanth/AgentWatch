@@ -66,6 +66,15 @@ class _UnknownAgent:
     def run(self, prompt: str) -> str:
         return "ok"
 
+    def kickoff(self, prompt: str) -> str:
+        return "ok"
+
+    def step(self, prompt: str) -> str:
+        return "ok"
+
+    def stream(self, prompt: str):
+        yield "ok"
+
 
 # ─────────────────────────────────────────────
 # Framework detection
@@ -220,3 +229,81 @@ def test_generic_adapter_propagates_exceptions():
     GenericAdapter(agent, event_bus=bus).attach()
     with pytest.raises(ValueError, match="boom"):
         agent.run()
+
+
+# ─────────────────────────────────────────────
+# Safety Checks
+# ─────────────────────────────────────────────
+
+
+def test_watch_blocks_dangerous_command():
+    from agentwatch import AgentWatchBlockedError
+
+    bus = EventBus()
+    agent = _UnknownAgent()
+    watch(agent, event_bus=bus)
+
+    with pytest.raises(AgentWatchBlockedError) as excinfo:
+        agent.run("rm -rf /")
+
+    assert "blocked by safety engine" in str(excinfo.value)
+    assert excinfo.value.tool_name == "run"
+
+
+def test_watch_allows_safe_command():
+    bus = EventBus()
+    agent = _UnknownAgent()
+    watch(agent, event_bus=bus)
+
+    assert agent.run("echo hello") == "ok"
+
+
+def test_watch_blocks_multiple_entry_points():
+    from agentwatch import AgentWatchBlockedError
+
+    bus = EventBus()
+    agent = _UnknownAgent()
+    watch(agent, event_bus=bus)
+
+    with pytest.raises(AgentWatchBlockedError):
+        agent.kickoff("rm -rf /")
+
+    with pytest.raises(AgentWatchBlockedError):
+        agent.step("rm -rf /")
+
+    with pytest.raises(AgentWatchBlockedError):
+        list(agent.stream("rm -rf /"))
+
+
+def test_watch_blocks_dangerous_command_async():
+    from agentwatch import AgentWatchBlockedError
+
+    class AsyncAgent:
+        async def arun(self, cmd: str) -> str:
+            return f"executed {cmd}"
+
+    bus = EventBus()
+    agent = AsyncAgent()
+    watch(agent, event_bus=bus)
+
+    async def run_test():
+        with pytest.raises(AgentWatchBlockedError):
+            await agent.arun("rm -rf /")
+
+    asyncio.run(run_test())
+
+
+def test_watch_allows_safe_command_async():
+    class AsyncAgent:
+        async def arun(self, cmd: str) -> str:
+            return f"executed {cmd}"
+
+    bus = EventBus()
+    agent = AsyncAgent()
+    watch(agent, event_bus=bus)
+
+    async def run_test():
+        res = await agent.arun("echo hello")
+        assert res == "executed echo hello"
+
+    asyncio.run(run_test())
