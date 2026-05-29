@@ -121,6 +121,18 @@ def test_policy_dsl_pause_on_low_confidence():
     assert decision.action == PolicyAction.PAUSE_AND_ALERT
 
 
+def test_policy_dsl_parenthesized_short_circuit():
+    engine = PolicyEngine([
+        Rule(condition="(true or tool == 'bash') and confidence < 0.5", action=PolicyAction.PAUSE_AND_ALERT),
+    ])
+    ev = _tool_event("read", "x")
+    from agentwatch.core.schema import ConfidenceData
+
+    ev.confidence = ConfidenceData(overall_score=0.3)
+    decision = engine.evaluate(ev)
+    assert decision.action == PolicyAction.PAUSE_AND_ALERT
+
+
 def test_policy_dsl_yaml_loading():
     yaml = """
 rules:

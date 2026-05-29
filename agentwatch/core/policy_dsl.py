@@ -105,14 +105,16 @@ class _Eval:
         v = self._and()
         while (t := self._peek()) and t[0] == "ID" and t[1] == "or":
             self._next()
-            v = v or self._and()
+            right = self._and()
+            v = v or right
         return v
 
     def _and(self) -> Any:
         v = self._not()
         while (t := self._peek()) and t[0] == "ID" and t[1] == "and":
             self._next()
-            v = v and self._not()
+            right = self._not()
+            v = v and right
         return v
 
     def _not(self) -> Any:
