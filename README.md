@@ -10,6 +10,7 @@
 <br/>
 
 [![Tests](https://img.shields.io/badge/tests-47_passing-brightgreen?style=flat-square)](https://github.com/sreerevanth/AgentWatch)
+[![Coverage](https://img.shields.io/codecov/c/github/sreerevanth/AgentWatch?style=flat-square)](https://codecov.io/gh/sreerevanth/AgentWatch)
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat-square)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.10+-blue?style=flat-square&logo=python)](https://python.org)
 [![Discord](https://img.shields.io/badge/Discord-Join_Community-5865F2?style=flat-square&logo=discord)](https://discord.gg/n2RzUmZ4)
