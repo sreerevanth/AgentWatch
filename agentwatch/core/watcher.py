@@ -78,7 +78,9 @@ class AgentWatchBlockedError(RuntimeError):
 # ─────────────────────────────────────────────
 
 #: Method name substrings that indicate a potential tool invocation.
-_TOOL_LIKE_KEYWORDS: frozenset[str] = frozenset({"execute", "run", "call", "invoke", "tool"})
+_TOOL_LIKE_KEYWORDS: frozenset[str] = frozenset(
+    {"execute", "run", "call", "invoke", "tool", "kickoff", "step", "stream"}
+)
 
 
 def _is_tool_like(method_name: str) -> bool:
