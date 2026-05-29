@@ -340,3 +340,60 @@ async def test_safety_engine_sync_check_honors_block_by_default():
     )
     assert blocked is True
     assert any("Recursive deletion" in r for r in reasons)
+
+
+@pytest.mark.asyncio
+async def test_cli_approval_handler_does_not_block_loop(monkeypatch):
+    import time
+    import sys
+    import builtins
+    import asyncio
+    from agentwatch.core.safety import cli_approval_handler, SafetyCheckData
+    from agentwatch.core.schema import AgentEvent, RiskLevel
+
+    # 1. Start a concurrent async task that ticks every 0.05s
+    ticks = 0
+    async def ticker():
+        nonlocal ticks
+        try:
+            while True:
+                await asyncio.sleep(0.05)
+                ticks += 1
+        except asyncio.CancelledError:
+            pass
+
+    ticker_task = asyncio.create_task(ticker())
+
+    # 2. Mock sys.stdin.isatty() to return True so the handler runs interactively
+    monkeypatch.setattr(sys.stdin, "isatty", lambda: True)
+
+    # 3. Mock builtins.input with a function that blocks the thread for 0.2 seconds
+    # (running time.sleep inside the worker thread simulating human delay)
+    def slow_input(prompt):
+        time.sleep(0.2)
+        return "y"
+    
+    monkeypatch.setattr(builtins, "input", slow_input)
+
+    # 4. Invoke the async handler
+    event = _tool_event("bash", "rm -rf /")
+    safety = SafetyCheckData(
+        risk_level=RiskLevel.HIGH,
+        risk_score=0.8,
+        reasons=["risky"],
+        approval_timeout_seconds=5
+    )
+
+    result = await cli_approval_handler(event, safety)
+
+    # 5. Clean up the ticker task
+    ticker_task.cancel()
+    try:
+        await ticker_task
+    except asyncio.CancelledError:
+        pass
+
+    # 6. Assertions
+    assert result is True
+    # The event loop must have run concurrently, allowing ticks to increment
+    assert ticks >= 2, f"Event loop was blocked! Ticks: {ticks}"

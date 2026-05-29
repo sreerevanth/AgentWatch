@@ -566,5 +566,6 @@ async def cli_approval_handler(event: AgentEvent, safety: SafetyCheckData) -> bo
         print("Non-interactive session detected. Blocking action.")
         return False
 
-    response = input("Allow this action? [y/N]: ").strip().lower()
+    response = await asyncio.to_thread(input, "Allow this action? [y/N]: ")
+    response = response.strip().lower()
     return response in ("y", "yes")
