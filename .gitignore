@@ -10,6 +10,12 @@ venv/
 dist/
 build/
 
+# Coverage (pytest --cov)
+.coverage
+coverage.json
+coverage.xml
+htmlcov/
+
 # Frontend
 frontend/node_modules/
 frontend/.next/
