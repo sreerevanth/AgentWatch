@@ -35,6 +35,7 @@ dependencies = [
   "typer[all]>=0.12.0",
   "rich>=13.8.0",
   "python-multipart>=0.0.12",
+  "slowapi>=0.1.9",
 ]
 
 [project.optional-dependencies]
