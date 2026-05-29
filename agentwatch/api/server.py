@@ -17,12 +17,18 @@ from fastapi import (
     Header,
     HTTPException,
     Query,
+    Request,
     WebSocket,
     WebSocketDisconnect,
     status,
 )
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from slowapi import Limiter
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from slowapi.util import get_remote_address
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
 from agentwatch.core.event_bus import get_event_bus
@@ -49,6 +55,36 @@ from agentwatch.scoring.confidence import ConfidenceScorer
 from agentwatch.tracing.collector import TraceCollector
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Rate limiting
+# ---------------------------------------------------------------------------
+
+_RATE_READ  = os.getenv("API_RATE_LIMIT_READ",  "1000/minute")
+_RATE_WRITE = os.getenv("API_RATE_LIMIT_WRITE", "200/minute")
+
+limiter = Limiter(key_func=get_remote_address, default_limits=[_RATE_READ])
+
+
+def _rate_limit_exceeded_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
+    """Return a JSON 429 with standard rate-limit headers."""
+    retry_after = getattr(exc, "retry_after", 60)
+    limit       = getattr(exc, "limit", None)
+    limit_value = str(limit.limit) if limit else _RATE_READ
+
+    response = JSONResponse(
+        status_code=429,
+        content={"error": "rate_limit_exceeded"},
+    )
+    response.headers["Retry-After"]           = str(retry_after)
+    response.headers["X-RateLimit-Limit"]     = limit_value
+    response.headers["X-RateLimit-Remaining"] = "0"
+    return response
+
+
+# ---------------------------------------------------------------------------
+# Database helpers
+# ---------------------------------------------------------------------------
 
 _db_session_factory = None
 
@@ -142,6 +178,10 @@ async def _pg_write_event(event: AgentEvent) -> None:
         logger.warning("PG event write failed", exc_info=True)
 
 
+# ---------------------------------------------------------------------------
+# Shared singletons
+# ---------------------------------------------------------------------------
+
 _collector = TraceCollector()
 _replay_engine = ReplayEngine()
 _rollback_engine = RollbackEngine()
@@ -159,6 +199,10 @@ _alerting = AlertingEngine(
 )
 _ws_clients: list[WebSocket] = []
 
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
 
 # Optional API key guard.
 #
@@ -186,6 +230,10 @@ def _require_api_key(x_api_key: str | None = Header(default=None, alias="X-Api-K
             detail="Missing or invalid API key. Supply the key in the X-Api-Key header.",
         )
 
+
+# ---------------------------------------------------------------------------
+# Request / response models
+# ---------------------------------------------------------------------------
 
 class SessionListResponse(BaseModel):
     sessions: list[dict[str, Any]]
@@ -222,6 +270,10 @@ class SafetyPolicyUpdate(BaseModel):
     require_approval_on_medium: bool = False
     approval_timeout_seconds: int = 120
 
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
 def _record_budget(event: AgentEvent) -> None:
     _cost_tracker.ingest_event(event)
@@ -338,6 +390,10 @@ def _seed_demo_data() -> None:
         _record_budget(event)
 
 
+# ---------------------------------------------------------------------------
+# App factory
+# ---------------------------------------------------------------------------
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _db_session_factory
@@ -363,11 +419,11 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
-limiter = Limiter(key_func=get_remote_address)
+# Rate limiting middleware + handler
 app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_middleware(SlowAPIMiddleware)
 
 # CORS configuration.
 #
@@ -400,8 +456,13 @@ app.add_middleware(
 )
 
 
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
 @app.get("/health")
-async def health() -> dict[str, Any]:
+@limiter.limit(_RATE_READ)
+async def health(request: Request) -> dict[str, Any]:
     return {
         "status": "ok",
         "version": "0.1.0",
@@ -433,7 +494,8 @@ async def list_sessions(
 
 
 @app.post("/api/v1/sessions")
-async def create_session(session: AgentSession, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+@limiter.limit(_RATE_WRITE)
+async def create_session(request: Request, session: AgentSession, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     _collector.register_session(session)
     await _pg_write_session(session)
     return {"status": "registered", "session": session.model_dump(mode="json")}
@@ -463,7 +525,8 @@ async def get_events(
 
 
 @app.post("/api/v1/events")
-async def ingest_event(event: AgentEvent, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+@limiter.limit(_RATE_WRITE)
+async def ingest_event(request: Request, event: AgentEvent, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     await get_event_bus().publish(event)
     return {"status": "accepted", "event_id": event.event_id}
 
@@ -534,7 +597,8 @@ async def list_checkpoints(session_id: str, _auth: None = Depends(_require_api_k
 
 
 @app.post("/api/v1/sessions/{session_id}/rollback")
-async def rollback_session(session_id: str, request: RollbackRequest, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+@limiter.limit(_RATE_WRITE)
+async def rollback_session(http_request: Request, session_id: str, request: RollbackRequest, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     if request.checkpoint_id:
         result = await _rollback_engine.rollback(
             request.checkpoint_id,
