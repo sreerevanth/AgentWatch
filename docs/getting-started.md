@@ -161,6 +161,23 @@ If you are calling a runnable or model directly, pass `callbacks=[handler]` to t
 
 For the least setup possible, keep your current LangChain code and only add the callback handler.
 
+### OpenAI Agents
+
+If you are using the OpenAI Agents SDK, install the package:
+
+```bash
+python -m pip install openai-agents
+```
+
+Then add the adapter to your setup:
+
+```python
+from agentwatch.adapters.openai_agents import AgentWatchOpenAIAgentsAdapter
+
+adapter = AgentWatchOpenAIAgentsAdapter(session_id="my-first-session")
+# Pass the adapter to your Agent or Runner hooks
+```
+
 ## 4. Understanding the Dashboard
 
 Open http://localhost:3000 after running the demo or your own agent. The main dashboard is split into five parts:

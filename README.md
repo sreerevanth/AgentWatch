@@ -99,7 +99,17 @@ Your Agent
 
 The key insight: **an agent scoring its own reasoning is structurally biased toward overconfidence.** It almost always thinks it did well — even when it didn't.
 
-AgentWatch deploys a second model, architecturally separate, with no access to the agent's own reasoning trace. Its only job: find failure before the next action fires.
+| | |
+|---|---|
+| 🧠 **Reasoning Auditor** | Independent LLM scores every reasoning step — not just the output |
+| 🛡️ **Safety Engine** | Blocks dangerous commands before they execute |
+| 📊 **Live Dashboard** | Real-time trace of every action your agent takes |
+| ⏪ **One-Click Rollback** | Git-backed checkpoints at every step |
+| 💾 **Persistent Memory** | Cross-session episodic, semantic, and procedural memory |
+| 💰 **Cost Tracker** | Per-session token budget with live spend alerts |
+| 🔔 **Alerting** | Slack + PagerDuty when confidence drops or actions are blocked |
+| 📋 **Compliance** | GDPR/HIPAA audit exports, RBAC governance |
+| 🔌 **Universal** | Claude Code, LangChain, AutoGPT, OpenClaw, OpenAI Agents — no rewrites |
 
 ---
 
