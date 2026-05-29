@@ -69,9 +69,7 @@ def test_telemetry_flush_on_initialize():
     provider.initialize()
     assert len(provider._buffer) == 0
     # exporter.export should have been called (via provider.export in flush)
-    assert (
-        mock_exporter.export.called or True
-    )  # If _OTEL_AVAILABLE is false, it uses fallback logger
+    assert mock_exporter.export.called
 
 
 def test_telemetry_record_methods():

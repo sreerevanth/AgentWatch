@@ -14,12 +14,10 @@ def test_get_database_url_from_args():
     assert "postgresql+asyncpg://myuser:mypassword@myhost:1234/mydb" == url
 
 
-def test_get_database_url_raises_without_password():
+def test_get_database_url_raises_without_password(monkeypatch):
     # Ensure env is clear
-    if "DB_PASSWORD" in os.environ:
-        del os.environ["DB_PASSWORD"]
-    if "PGPASSWORD" in os.environ:
-        del os.environ["PGPASSWORD"]
+    monkeypatch.delenv("DB_PASSWORD", raising=False)
+    monkeypatch.delenv("PGPASSWORD", raising=False)
 
     with pytest.raises(RuntimeError, match="Database password is not configured"):
         get_database_url(password=None)
