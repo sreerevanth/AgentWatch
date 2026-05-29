@@ -360,7 +360,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="AgentWatch API",
     description="Reliability, Safety, and Observability Layer for AI Agents",
-    version="0.1.0",
+    version="0.2.0",
     lifespan=lifespan,
 )
 
@@ -399,7 +399,7 @@ app.add_middleware(
 async def health() -> dict[str, Any]:
     return {
         "status": "ok",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "timestamp": datetime.now(UTC).isoformat(),
         "traces": _collector.get_stats(),
         "event_bus": get_event_bus().stats(),

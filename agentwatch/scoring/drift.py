@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import math
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
 try:
@@ -114,7 +114,7 @@ class DriftHeatmap:
     def add(self, label: str, text: str, timestamp: datetime | None = None) -> DriftPoint:
         vec = embed(text, dim=self.dim) if not _HAS_NUMPY else embed(text, dim=self.dim)
         pt = DriftPoint(
-            timestamp=timestamp or datetime.utcnow(),  # noqa: DTZ003 — analytic only
+            timestamp=timestamp or datetime.now(UTC),  # noqa: DTZ003 — analytic only
             label=label,
             vector=vec,
         )
