@@ -43,10 +43,15 @@ class TelemetryConfig:
         export_to_console: bool = False,
         enable_metrics: bool = True,
         endpoint: str | None = None,  # Compatibility alias
+        insecure: bool | None = None,  # Legacy
+        headers: dict[str, str] | None = None,  # Legacy
     ):
         self.service_name = service_name
         self.service_version = service_version
         self.otlp_endpoint = endpoint or otlp_endpoint
+        self.endpoint = self.otlp_endpoint  # Original OTELConfig attribute
+        self.insecure = insecure
+        self.headers = headers
         self.export_to_console = export_to_console
         self.enable_metrics = enable_metrics
 
@@ -67,6 +72,8 @@ class TelemetryProvider:
         self._meter = None
         self._initialized = False
         self._buffer: list[Any] = []
+        self._max_buffer_size = 1000
+        self._exporter: Any = None
 
         # Metric instruments (created after init)
         self._event_counter = None
@@ -77,10 +84,31 @@ class TelemetryProvider:
     def export(self, span: Any) -> None:
         """Export a span to the configured backend (or buffer if failing)."""
         if not self._initialized:
+            if len(self._buffer) >= self._max_buffer_size:
+                self._buffer.pop(0)
+                logger.warning("Telemetry buffer overflow — dropping oldest span")
             self._buffer.append(span)
             return
-        # Real OTel export would happen here if SDK is available
-        logger.debug("Exported span: %s", span.name)
+
+        if self._exporter and hasattr(self._exporter, "export"):
+            try:
+                # OTel exporters usually expect a sequence of spans
+                self._exporter.export([span])
+            except Exception as exc:
+                logger.debug("Manual span export failed: %s", exc)
+        else:
+            # Real OTel export would happen here if SDK is available
+            logger.debug("Exported span: %s", span.name)
+
+    def _flush_buffer(self) -> None:
+        """Flush the internal span buffer to the active exporter."""
+        if not self._buffer:
+            return
+
+        logger.debug("Flushing %d buffered spans", len(self._buffer))
+        for span in self._buffer:
+            self.export(span)
+        self._buffer.clear()
 
     def grafana_dashboard_template(self) -> dict[str, Any]:
         """Return a basic Grafana dashboard template for AgentWatch."""
@@ -96,7 +124,9 @@ class TelemetryProvider:
 
     def initialize(self) -> None:
         if not _OTEL_AVAILABLE:
-            logger.info("OpenTelemetry not available — skipping telemetry init")
+            self._initialized = True
+            logger.info("OpenTelemetry not available — using no-op telemetry fallback")
+            self._flush_buffer()
             return
 
         resource = Resource.create(
@@ -113,14 +143,17 @@ class TelemetryProvider:
             try:
                 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
-                otlp_exporter = OTLPSpanExporter(endpoint=self._config.otlp_endpoint)
-                tracer_provider.add_span_processor(BatchSpanProcessor(otlp_exporter))
+                self._exporter = OTLPSpanExporter(endpoint=self._config.otlp_endpoint)
+                tracer_provider.add_span_processor(BatchSpanProcessor(self._exporter))
                 logger.info("OTLP span exporter configured: %s", self._config.otlp_endpoint)
             except ImportError:
                 logger.warning("opentelemetry-exporter-otlp not installed")
 
         if self._config.export_to_console:
-            tracer_provider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
+            console_exporter = ConsoleSpanExporter()
+            if not self._exporter:
+                self._exporter = console_exporter
+            tracer_provider.add_span_processor(BatchSpanProcessor(console_exporter))
 
         trace.set_tracer_provider(tracer_provider)
         self._tracer = trace.get_tracer(
@@ -155,6 +188,7 @@ class TelemetryProvider:
             self._create_instruments()
 
         self._initialized = True
+        self._flush_buffer()
         logger.info("Telemetry initialized (service=%s)", self._config.service_name)
 
     def _create_instruments(self) -> None:

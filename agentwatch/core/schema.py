@@ -358,7 +358,9 @@ class AgentEvent(BaseModel):
     @property
     def is_blocked(self) -> bool:
         """Return True if the event was blocked by the safety engine."""
-        return self.status == ExecutionStatus.BLOCKED
+        return self.status == ExecutionStatus.BLOCKED or (
+            self.safety is not None and self.safety.blocked
+        )
 
 
 # ─────────────────────────────────────────────
