@@ -504,6 +504,29 @@ class TestEventBus:
         stats = bus.stats()
         assert stats["total_published"] >= 1
 
+    def test_handler_cleanup_on_reregister(self):
+        bus = EventBus()
+        call_counts = {"a": 0, "b": 0}
+
+        def handler_a(ev):
+            call_counts["a"] += 1
+
+        def handler_b(ev):
+            call_counts["b"] += 1
+
+        # Register A with ID "h1"
+        bus.subscribe_fn(handler_a, handler_id="h1")
+        # Register B with same ID "h1"
+        bus.subscribe_fn(handler_b, handler_id="h1")
+
+        # Publish
+        bus.publish_sync(make_event())
+
+        # Only B should have been called
+        assert call_counts["a"] == 0
+        assert call_counts["b"] == 1
+        assert bus.handler_count() == 1
+
 
 # ─────────────────────────────────────────────
 # Run marker

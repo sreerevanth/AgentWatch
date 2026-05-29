@@ -413,6 +413,7 @@ class SafetyEngine:
                 )
                 event.status = ExecutionStatus.BLOCKED
                 safety_data.blocked = True
+                safety_data.requires_approval = False
                 self._blocked_count += 1
                 return event
 

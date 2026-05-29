@@ -16,6 +16,14 @@ from agentwatch.cost.tracker import CostTracker
 # ─────────────────────────────────────────────
 
 
+def test_tracker_explicit_zero_budget():
+    tracker = CostTracker(default_token_budget=1000, default_usd_budget=10.0)
+    # Testing that 0 is preserved and not replaced by default
+    budget = tracker.configure_session("zero-session", token_budget=0, usd_budget=0.0)
+    assert budget.token_budget == 0
+    assert budget.usd_budget == 0.0
+
+
 def test_tracker_warns_at_80_percent():
     tracker = CostTracker(default_token_budget=1000, default_usd_budget=10.0)
     tracker.configure_session("S", token_budget=1000, usd_budget=10.0)

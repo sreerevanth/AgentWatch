@@ -10,13 +10,17 @@ from agentwatch.core.loop_detector import LoopDetector
 from agentwatch.core.policy_dsl import PolicyAction, PolicyEngine, Rule
 from agentwatch.core.risk import score_event
 from agentwatch.core.safety import (
+    RiskPattern,
+    RiskScorer,
     SafetyEngine,
+    SafetyPolicy,
 )
 from agentwatch.core.schema import (
     AgentEvent,
     AgentFramework,
     EventType,
     ExecutionStatus,
+    RiskLevel,
     ToolCallData,
 )
 from agentwatch.security.exfiltration import detect as detect_exfil
@@ -278,3 +282,56 @@ async def test_safety_engine_blocks_on_low_confidence_via_dsl():
     assert result.safety.blocked
     assert any("rule_matched:confidence < 0.5" in r for r in result.safety.reasons)
     assert result.confidence.overall_score == 0.1
+
+
+@pytest.mark.asyncio
+async def test_safety_engine_auto_blocks_if_no_callback_registered():
+    # Setup a policy that requires approval on medium risk
+    policy = SafetyPolicy(
+        policy_id="p1", name="n1", require_approval_on_medium=True, block_on_high=False
+    )
+    # No approval_callback provided
+    engine = SafetyEngine(policy=policy)
+
+    # Medium risk command
+    event = _tool_event("git", "git push origin main")
+    # Verify it matches medium
+    scorer = RiskScorer()
+    level, _, _, _ = scorer.score(event.tool_call)
+    assert level == RiskLevel.MEDIUM
+
+    result = await engine.check_event(event)
+
+    # Should be auto-blocked because no callback was registered
+    assert result.status == ExecutionStatus.BLOCKED
+    assert result.safety.blocked
+    assert result.safety.requires_approval is False
+
+
+@pytest.mark.asyncio
+async def test_safety_engine_preserves_pattern_block_when_dsl_allows():
+    from agentwatch.core.policy_dsl import PolicyAction, PolicyEngine, Rule
+
+    # Critical command that matches pattern-based block
+    event = _tool_event("bash", "rm -rf /")
+
+    # DSL rule that explicitly ALLOWS everything (lenient)
+    dsl = PolicyEngine([Rule(condition="True", action=PolicyAction.ALLOW)])
+
+    engine = SafetyEngine(policy_engine=dsl)
+    result = await engine.check_event(event)
+
+    # Should STILL be blocked because the pattern-based block is preserved
+    assert result.status == ExecutionStatus.BLOCKED
+    assert result.safety.blocked
+
+
+@pytest.mark.asyncio
+async def test_safety_engine_sync_check_honors_block_by_default():
+    engine = SafetyEngine()
+    # rm -rf / is a block_by_default pattern
+    blocked, reasons = engine.check_tool_call_sync(
+        ToolCallData(tool_name="bash", raw_command="rm -rf /", arguments={})
+    )
+    assert blocked is True
+    assert any("Recursive deletion" in r for r in reasons)
