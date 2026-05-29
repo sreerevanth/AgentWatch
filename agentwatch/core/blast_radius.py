@@ -126,7 +126,7 @@ class BlastRadiusEstimator:
         # Check for critical table names
         critical_tables = {"users", "billing", "orders", "credentials", "audit_log", "config"}
         for table in critical_tables:
-            if re.search(fr"\b{table}\b", raw, re.I):
+            if re.search(rf"\b{table}\b", raw, re.I):
                 radius.is_critical_resource = True
                 radius.score = max(radius.score, 75)
 
