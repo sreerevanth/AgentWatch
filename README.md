@@ -3,6 +3,7 @@
 <img src="https://img.shields.io/badge/AgentWatch-v0.1.0-black?style=for-the-badge" />
 
 # AgentWatch
+<img width="130" height="130" alt="ChatGPT Image May 29, 2026, 10_52_17 PM" src="https://github.com/user-attachments/assets/4e6fd818-2458-4ac2-bb9c-25542622dd00" />
 
 ### Your AI agent is lying to you.
 ### AgentWatch catches it — before it deletes your database.
