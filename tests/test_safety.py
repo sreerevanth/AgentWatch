@@ -397,3 +397,15 @@ async def test_cli_approval_handler_does_not_block_loop(monkeypatch):
     assert result is True
     # The event loop must have run concurrently, allowing ticks to increment
     assert ticks >= 2, f"Event loop was blocked! Ticks: {ticks}"
+
+
+def test_loop_detector_default_min_cycle_finds_1_cycle():
+    det = LoopDetector(min_reps=3)
+    for _ in range(2):
+        report = det.observe(_tool_event("bash", "ls", args={"command": "ls"}))
+        assert not report.detected
+
+    report = det.observe(_tool_event("bash", "ls", args={"command": "ls"}))
+    assert report.detected
+    assert report.cycle_length == 1
+    assert report.repetitions == 3
