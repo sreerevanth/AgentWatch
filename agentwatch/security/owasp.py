@@ -141,13 +141,28 @@ class OwaspScanner:
                         )
         return scan
 
+    def _flatten_values(self, data: Any) -> list[str]:
+        """Recursively extract all string-like values from a data structure."""
+        parts: list[str] = []
+        if isinstance(data, str):
+            parts.append(data)
+        elif isinstance(data, dict):
+            for v in data.values():
+                parts.extend(self._flatten_values(v))
+        elif isinstance(data, (list, tuple, set)):
+            for item in data:
+                parts.extend(self._flatten_values(item))
+        elif data is not None:
+            parts.append(str(data))
+        return parts
+
     def _blob_of(self, event: AgentEvent) -> str:
         parts: list[str] = []
         if event.tool_call:
             if event.tool_call.raw_command:
                 parts.append(event.tool_call.raw_command)
-            # We no longer scan repr(arguments) to avoid noise and enforce
-            # that sensitive actions must use the raw_command field.
+            if event.tool_call.arguments:
+                parts.extend(self._flatten_values(event.tool_call.arguments))
         if event.tool_result and event.tool_result.output:
             parts.append(str(event.tool_result.output))
         if event.planner_output_preview:
