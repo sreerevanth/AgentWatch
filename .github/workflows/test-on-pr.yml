@@ -1,0 +1,97 @@
+name: PR Tests
+
+on:
+  pull_request:
+    branches: [main]
+
+# Read code + write a status comment back to the PR.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  test:
+    name: Test & lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install package
+        run: pip install -e ".[dev]"
+
+      - name: Run tests with coverage
+        id: pytest
+        continue-on-error: true
+        run: |
+          pytest tests/ -v --tb=short \
+            --cov=agentwatch \
+            --cov-report=term-missing \
+            --cov-report=json
+
+      - name: Ruff lint
+        id: ruff
+        continue-on-error: true
+        run: ruff check .
+
+      - name: Comment results on PR
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const marker = '<!-- agentwatch-pr-tests -->';
+            const testOutcome = '${{ steps.pytest.outcome }}';
+            const ruffOutcome = '${{ steps.ruff.outcome }}';
+
+            let coverage = 'n/a';
+            try {
+              const cov = JSON.parse(fs.readFileSync('coverage.json', 'utf8'));
+              coverage = `${cov.totals.percent_covered.toFixed(2)}%`;
+            } catch (e) {
+              core.warning(`Could not read coverage.json: ${e}`);
+            }
+
+            const icon = (o) => (o === 'success' ? '✅' : '❌');
+            const body = [
+              marker,
+              '## 🧪 PR Test Results',
+              '',
+              '| Check | Result |',
+              '| --- | --- |',
+              `| Tests (\`pytest tests/\`) | ${icon(testOutcome)} ${testOutcome} |`,
+              `| Lint (\`ruff check .\`) | ${icon(ruffOutcome)} ${ruffOutcome} |`,
+              `| Coverage (\`agentwatch\`) | **${coverage}** |`,
+              '',
+              `<sub>Python 3.12 · commit ${context.sha.substring(0, 7)}</sub>`,
+            ].join('\n');
+
+            const { owner, repo } = context.repo;
+            const issue_number = context.issue.number;
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo, issue_number,
+            });
+            const existing = comments.find((c) => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner, repo, comment_id: existing.id, body,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo, issue_number, body,
+              });
+            }
+
+      # Tests gate the PR. Lint runs and is reported above but is not a hard
+      # blocker (the repo carries pre-existing lint debt outside the package).
+      - name: Fail if tests failed
+        if: steps.pytest.outcome != 'success'
+        run: |
+          echo "::error::pytest reported failures — see the test step log above."
+          exit 1
