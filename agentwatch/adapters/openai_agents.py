@@ -50,36 +50,36 @@ class AgentWatchOpenAIAgentsAdapter:
         self._step += 1
         return self._step
 
-    def _base(self, event_type: EventType, run_id: str | None = None) -> AgentEvent:
+    def _base(self, event_type: EventType, run_id: str | None = None, agent: Any = None) -> AgentEvent:
         event = AgentEvent(
             session_id=self.session_id,
             agent_id=self.agent_id,
-            agent_name="openai_agents",
+            agent_name=getattr(agent, 'name', None) or 'openai_agents',
             framework=AgentFramework.OPENAI_AGENTS,
             event_type=event_type,
             step_number=self._step_up(),
         )
         if run_id:
-            self._run_map[str(run_id)] = event.event_id
+            self._run_map[run_id] = event.event_id
         return event
 
     def _emit_sync(self, event: AgentEvent) -> None:
         self._bus.publish_sync(event)
 
     async def on_agent_start(self, context: Any, agent: Any, **kwargs: Any) -> None:
-        event = self._base(EventType.SESSION_START)
+        event = self._base(EventType.SESSION_START, agent=agent)
         event.metadata["agent_name"] = getattr(agent, "name", "unknown")
         self._emit_sync(event)
 
     async def on_agent_end(self, context: Any, agent: Any, **kwargs: Any) -> None:
-        event = self._base(EventType.SESSION_END)
+        event = self._base(EventType.SESSION_END, agent=agent)
         event.status = ExecutionStatus.SUCCESS
         event.metadata["agent_name"] = getattr(agent, "name", "unknown")
         self._emit_sync(event)
 
     async def on_tool_call(self, context: Any, agent: Any, tool_call: Any, **kwargs: Any) -> None:
-        event = self._base(EventType.TOOL_CALL)
-        tool_name = getattr(tool_call, "name", getattr(tool_call, "function", {}).get("name", "unknown"))
+        event = self._base(EventType.TOOL_CALL, agent=agent)
+        tool_name = str(getattr(tool_call, "name", getattr(tool_call, "function", {}).get("name", "unknown")))
         args = getattr(tool_call, "arguments", getattr(tool_call, "function", {}).get("arguments", {}))
         
         if isinstance(args, str):
@@ -96,9 +96,9 @@ class AgentWatchOpenAIAgentsAdapter:
         self._emit_sync(event)
 
     async def on_tool_result(self, context: Any, agent: Any, tool_call: Any, result: Any, **kwargs: Any) -> None:
-        event = self._base(EventType.TOOL_RESULT)
+        event = self._base(EventType.TOOL_RESULT, agent=agent)
         event.status = ExecutionStatus.SUCCESS
-        tool_name = getattr(tool_call, "name", getattr(tool_call, "function", {}).get("name", "unknown"))
+        tool_name = str(getattr(tool_call, "name", getattr(tool_call, "function", {}).get("name", "unknown")))
         
         event.tool_result = ToolResultData(
             tool_name=tool_name,
@@ -107,7 +107,7 @@ class AgentWatchOpenAIAgentsAdapter:
         self._emit_sync(event)
 
     async def on_handoff(self, context: Any, agent: Any, target: Any, **kwargs: Any) -> None:
-        event = self._base(EventType.PLANNER_OUTPUT)
+        event = self._base(EventType.PLANNER_OUTPUT, agent=agent)
         event.status = ExecutionStatus.SUCCESS
         event.metadata["handoff_source"] = getattr(agent, "name", "unknown")
         event.metadata["handoff_target"] = getattr(target, "name", "unknown") if hasattr(target, "name") else str(target)
