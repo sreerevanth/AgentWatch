@@ -1,49 +1,35 @@
 FROM node:20-alpine AS builder
 WORKDIR /app
 
-# Install deps first (separate layer so it caches unless lockfile changes)
-COPY package.json package-lock.json ./
+# Cache dependencies unless package metadata changes.
+COPY package*.json ./
 RUN npm ci
 
-# Copy source — .dockerignore excludes node_modules/.next so we never
-# overwrite the just-installed Linux-native packages with Windows ones
+# Copy app sources after installing deps.
 COPY . .
 
-# NEXT_PUBLIC_* vars are inlined at build time, not available at runtime.
-# Pass them as build args so they are baked into the JS bundle correctly.
 ARG NEXT_PUBLIC_API_HOST
 ARG NEXT_PUBLIC_WS_URL
-ENV NEXT_PUBLIC_API_HOST=$NEXT_PUBLIC_API_HOST
-ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
+ENV NEXT_PUBLIC_API_HOST=$NEXT_PUBLIC_API_HOST \
+    NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL \
+    NEXT_TELEMETRY_DISABLED=1
 
-ENV NEXT_TELEMETRY_DISABLED=1
 RUN npm run build
 
-# ── Runtime ────────────────────────────────────────────────────────────
 FROM node:20-alpine AS runner
 WORKDIR /app
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
 
 RUN addgroup --system --gid 1001 nodejs \
- && adduser  --system --uid 1001 nextjs
+ && adduser --system --uid 1001 nextjs
 
-# Standalone output: server.js + minimal node_modules + .next/ build artefacts
 COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-# Static assets must live at .next/static relative to server.js
 COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-# Public assets (favicon, etc.)
 COPY --from=builder --chown=nextjs:nodejs /app/public ./public
 
 USER nextjs
-
-# Render (and every other cloud) sets $PORT at runtime.
-ENV PORT=3000
-# Docker sets HOSTNAME to the container ID; Next.js passes that to server.listen(),
-# which binds only to the container's bridge IP rather than 0.0.0.0. Render's reverse
-# proxy can't reach a bridge-only binding, causing 502 on every request.
-ENV HOSTNAME=0.0.0.0
 EXPOSE 3000
-
-# Exec form (no shell wrapper): SIGTERM goes directly to node, not sh.
 CMD ["node", "server.js"]

@@ -1,0 +1,10 @@
+.git
+.github
+**/.env*
+**/node_modules
+**/build
+**/.next
+**/dist
+**/.cache
+*.local
+*.log

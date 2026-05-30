@@ -2,27 +2,15 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    curl \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends build-essential curl git \
+ && rm -rf /var/lib/apt/lists/*
 
 COPY pyproject.toml README.md ./
-COPY agentwatch ./agentwatch
-COPY adapters ./adapters
-COPY alerting ./alerting
-COPY api ./api
-COPY cli ./cli
-COPY core ./core
-COPY cost ./cost
-COPY engines ./engines
-COPY governance ./governance
-COPY plugins ./plugins
-COPY reasoning ./reasoning
-COPY telemetry ./telemetry
+COPY . .
 
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir --upgrade pip \
+ && pip install --no-cache-dir -e .
 
 EXPOSE ${PORT:-8000}
 
