@@ -171,15 +171,25 @@ _ws_clients: list[WebSocket] = []
 #   curl -H "X-Api-Key: <key>" http://localhost:8000/api/v1/sessions
 _API_KEY: str | None = os.getenv("AGENTWATCH_API_KEY") or None
 
+# Environment detection for fail-closed logic
+_ENV = os.getenv("AGENTWATCH_ENV") or os.getenv("ENVIRONMENT") or "development"
+_IS_PROD = _ENV.lower() == "production"
+
 
 def _require_api_key(x_api_key: str | None = Header(default=None, alias="X-Api-Key")) -> None:
     """FastAPI dependency that enforces API key authentication.
 
-    When AGENTWATCH_API_KEY is not set in the environment this is a no-op,
-    keeping unauthenticated local development working. When the variable is
-    set every request to a protected endpoint must supply the matching key
-    in the X-Api-Key header; a missing or wrong key returns HTTP 401.
+    In production mode, if AGENTWATCH_API_KEY is not set, all requests to
+    protected endpoints are rejected (fail-closed). In non-production
+    environments, authentication is only enforced if the key is provided.
     """
+    if _IS_PROD and not _API_KEY:
+        logger.error("AGENTWATCH_API_KEY is missing in production environment")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server misconfiguration: API key is required in production.",
+        )
+
     if _API_KEY is not None and x_api_key != _API_KEY:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -341,6 +351,14 @@ def _seed_demo_data() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _db_session_factory
+
+    if _IS_PROD and not _API_KEY:
+        error_msg = (
+            "AGENTWATCH_API_KEY is not set in production! For security, the server will not start."
+        )
+        logger.critical(error_msg)
+        raise RuntimeError(error_msg)
+
     db_url = os.getenv("DATABASE_URL", "")
     if db_url:
         try:
