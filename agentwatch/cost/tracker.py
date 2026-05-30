@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 from agentwatch.core.schema import AgentEvent
+
+# Maximum number of sessions held in memory at once.
+# Keeps heap usage bounded on long-running deployments that process
+# thousands of unique sessions per day.
+_MAX_BUDGET_ENTRIES: int = 50_000
+
+# Sessions with no activity for this many seconds are eligible for eviction.
+_SESSION_TTL_SECONDS: float = 7_200  # 2 hours
 
 
 @dataclass
@@ -16,6 +25,7 @@ class SessionBudget:
     usd_used: float = 0.0
     exceeded: bool = False
     warnings: list[str] = field(default_factory=list)
+    last_active: float = field(default_factory=time.monotonic)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -54,7 +64,9 @@ class CostTracker:
         if event.token_usage:
             budget.tokens_used += event.token_usage.total_tokens
             budget.usd_used += float(event.token_usage.estimated_cost_usd or 0.0)
+        budget.last_active = time.monotonic()
         self._evaluate(budget)
+        self._maybe_evict()
         return budget
 
     def get_session(self, session_id: str) -> SessionBudget | None:
@@ -65,6 +77,20 @@ class CostTracker:
             "tracked_sessions": len(self._budgets),
             "sessions_over_budget": sum(1 for budget in self._budgets.values() if budget.exceeded),
         }
+
+    def _maybe_evict(self) -> None:
+        """Remove stale sessions when the store grows beyond its cap.
+
+        Scans for entries whose last_active timestamp is older than
+        _SESSION_TTL_SECONDS. Eviction only runs when the dict is at or
+        above _MAX_BUDGET_ENTRIES so the cost is paid only when necessary.
+        """
+        if len(self._budgets) < _MAX_BUDGET_ENTRIES:
+            return
+        cutoff = time.monotonic() - _SESSION_TTL_SECONDS
+        stale = [sid for sid, b in self._budgets.items() if b.last_active < cutoff]
+        for sid in stale:
+            del self._budgets[sid]
 
     def _evaluate(self, budget: SessionBudget) -> None:
         budget.warnings = []
