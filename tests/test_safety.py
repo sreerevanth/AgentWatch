@@ -10,7 +10,6 @@ from agentwatch.core.loop_detector import LoopDetector
 from agentwatch.core.policy_dsl import PolicyAction, PolicyEngine, Rule
 from agentwatch.core.risk import score_event
 from agentwatch.core.safety import (
-    RiskPattern,
     RiskScorer,
     SafetyEngine,
     SafetyPolicy,
@@ -344,15 +343,17 @@ async def test_safety_engine_sync_check_honors_block_by_default():
 
 @pytest.mark.asyncio
 async def test_cli_approval_handler_does_not_block_loop(monkeypatch):
-    import time
-    import sys
-    import builtins
     import asyncio
-    from agentwatch.core.safety import cli_approval_handler, SafetyCheckData
-    from agentwatch.core.schema import AgentEvent, RiskLevel
+    import builtins
+    import sys
+    import time
+
+    from agentwatch.core.safety import SafetyCheckData, cli_approval_handler
+    from agentwatch.core.schema import RiskLevel
 
     # 1. Start a concurrent async task that ticks every 0.05s
     ticks = 0
+
     async def ticker():
         nonlocal ticks
         try:
@@ -372,16 +373,13 @@ async def test_cli_approval_handler_does_not_block_loop(monkeypatch):
     def slow_input(prompt):
         time.sleep(0.2)
         return "y"
-    
+
     monkeypatch.setattr(builtins, "input", slow_input)
 
     # 4. Invoke the async handler
     event = _tool_event("bash", "rm -rf /")
     safety = SafetyCheckData(
-        risk_level=RiskLevel.HIGH,
-        risk_score=0.8,
-        reasons=["risky"],
-        approval_timeout_seconds=5
+        risk_level=RiskLevel.HIGH, risk_score=0.8, reasons=["risky"], approval_timeout_seconds=5
     )
 
     result = await cli_approval_handler(event, safety)
@@ -397,3 +395,62 @@ async def test_cli_approval_handler_does_not_block_loop(monkeypatch):
     assert result is True
     # The event loop must have run concurrently, allowing ticks to increment
     assert ticks >= 2, f"Event loop was blocked! Ticks: {ticks}"
+
+
+@pytest.mark.asyncio
+async def test_safety_engine_submit_and_resolve_pending_approval():
+    engine = SafetyEngine()
+    event_id = "test-event-123"
+
+    future = engine.submit_pending_approval(event_id)
+    assert event_id in engine._pending_approvals
+    assert not future.done()
+
+    # Resolve as approved
+    resolved = engine.resolve_pending_approval(event_id, approved=True)
+    assert resolved is True
+    assert future.done()
+    assert await future is True
+    assert event_id not in engine._pending_approvals
+
+
+@pytest.mark.asyncio
+async def test_http_approval_handler_behavior(monkeypatch):
+    import httpx
+
+    from agentwatch.core.safety import SafetyCheckData, http_approval_handler
+    from agentwatch.core.schema import RiskLevel
+
+    # 1. Test missing AGENTWATCH_APPROVAL_URL env var
+    monkeypatch.delenv("AGENTWATCH_APPROVAL_URL", raising=False)
+    event = _tool_event("bash", "rm -rf /")
+    safety = SafetyCheckData(
+        risk_level=RiskLevel.CRITICAL,
+        risk_score=1.0,
+        reasons=["critical delete"],
+    )
+    result = await http_approval_handler(event, safety)
+    assert result is False
+
+    # 2. Test successful approval with mocked httpx
+    monkeypatch.setenv("AGENTWATCH_APPROVAL_URL", "http://mock-server/approve")
+
+    mock_response = httpx.Response(200, json={"approved": True})
+
+    async def mock_post(*args, **kwargs):
+        return mock_response
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
+
+    result = await http_approval_handler(event, safety)
+    assert result is True
+
+    # 3. Test denial with mocked httpx
+    mock_response_denied = httpx.Response(200, json={"approved": False})
+
+    async def mock_post_denied(*args, **kwargs):
+        return mock_response_denied
+
+    monkeypatch.setattr(httpx.AsyncClient, "post", mock_post_denied)
+    result = await http_approval_handler(event, safety)
+    assert result is False

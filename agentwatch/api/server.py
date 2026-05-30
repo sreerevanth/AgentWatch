@@ -223,6 +223,20 @@ class SafetyPolicyUpdate(BaseModel):
     approval_timeout_seconds: int = 120
 
 
+class SafetyApprovalRequest(BaseModel):
+    event_id: str
+    session_id: str
+    agent_id: str
+    agent_name: str | None = None
+    tool_call: dict[str, Any] | None = None
+    safety: dict[str, Any]
+    approval_timeout_seconds: int = 120
+
+
+class SafetyApprovalResolution(BaseModel):
+    approved: bool
+
+
 def _record_budget(event: AgentEvent) -> None:
     _cost_tracker.ingest_event(event)
 
@@ -608,6 +622,52 @@ async def update_safety_policy(
         details=update.model_dump(),
     )
     return {"status": "updated", "policy_id": policy.policy_id}
+
+
+@app.post("/api/v1/safety/request")
+async def request_safety_approval(
+    request: SafetyApprovalRequest, _auth: None = Depends(_require_api_key)
+) -> dict[str, Any]:
+    """Endpoint called by http_approval_handler to request human approval.
+
+    This blocks asynchronously (non-blocking to the server) until the human
+    resolves the check or the timeout expires.
+    """
+    import asyncio
+
+    event_id = request.event_id
+    future = _safety_engine.submit_pending_approval(event_id)
+
+    timeout = float(request.approval_timeout_seconds or 120)
+    try:
+        approved = await asyncio.wait_for(future, timeout=timeout)
+        return {"approved": approved, "status": "approved" if approved else "denied"}
+    except TimeoutError:
+        _safety_engine.resolve_pending_approval(event_id, approved=False)
+        return {"approved": False, "status": "timeout"}
+
+
+@app.get("/api/v1/safety/pending")
+async def list_pending_approvals(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+    """List all safety check IDs currently awaiting human approval."""
+    pending_ids = list(_safety_engine._pending_approvals.keys())
+    return {"pending_event_ids": pending_ids, "total": len(pending_ids)}
+
+
+@app.post("/api/v1/safety/pending/{event_id}/resolve")
+async def resolve_safety_approval(
+    event_id: str,
+    resolution: SafetyApprovalResolution,
+    _auth: None = Depends(_require_api_key),
+) -> dict[str, Any]:
+    """Approve or deny a pending safety check by ID."""
+    success = _safety_engine.resolve_pending_approval(event_id, approved=resolution.approved)
+    if not success:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Pending safety approval for event {event_id} not found or already resolved.",
+        )
+    return {"status": "resolved", "event_id": event_id, "approved": resolution.approved}
 
 
 @app.get("/api/v1/safety/blocked")
