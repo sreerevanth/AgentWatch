@@ -527,6 +527,39 @@ class SafetyEngine:
         """Active :class:`SafetyPolicy` used for enforcement."""
         return self._policy
 
+    def submit_pending_approval(self, event_id: str) -> asyncio.Future[bool]:
+        """Submit a pending safety check for asynchronous approval.
+
+        Args:
+            event_id: The unique ID of the event requiring approval.
+
+        Returns:
+            An asyncio.Future that resolves to True if approved, False if denied.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = asyncio.get_event_loop_policy().get_event_loop()
+        future = loop.create_future()
+        self._pending_approvals[event_id] = future
+        return future
+
+    def resolve_pending_approval(self, event_id: str, approved: bool) -> bool:
+        """Resolve a pending safety check by ID.
+
+        Args:
+            event_id: Unique ID of the event.
+            approved: True if approved, False if denied.
+
+        Returns:
+            True if the pending approval was found and resolved; False otherwise.
+        """
+        future = self._pending_approvals.pop(event_id, None)
+        if future and not future.done():
+            future.set_result(approved)
+            return True
+        return False
+
 
 # ─────────────────────────────────────────────
 # CLI approval handler (TTY interactive)
@@ -569,3 +602,63 @@ async def cli_approval_handler(event: AgentEvent, safety: SafetyCheckData) -> bo
     response = await asyncio.to_thread(input, "Allow this action? [y/N]: ")
     response = response.strip().lower()
     return response in ("y", "yes")
+
+
+# ─────────────────────────────────────────────
+# HTTP approval handler (Production non-blocking)
+# ─────────────────────────────────────────────
+
+
+async def http_approval_handler(event: AgentEvent, safety: SafetyCheckData) -> bool:
+    """Non-blocking approval callback that forwards safety checks to an HTTP endpoint.
+
+    Reads the target endpoint from the `AGENTWATCH_APPROVAL_URL` environment variable.
+    Sends a POST request and awaits the result asynchronously without blocking threads.
+    """
+    import os
+
+    import httpx
+
+    url = os.getenv("AGENTWATCH_APPROVAL_URL")
+    if not url:
+        logger.warning(
+            "AGENTWATCH_APPROVAL_URL not configured. Automatically blocking risky action."
+        )
+        return False
+
+    payload = {
+        "event_id": event.event_id,
+        "session_id": event.session_id,
+        "agent_id": event.agent_id,
+        "agent_name": event.agent_name or event.agent_id,
+        "tool_call": {
+            "tool_name": event.tool_call.tool_name,
+            "raw_command": event.tool_call.raw_command,
+            "arguments": event.tool_call.arguments,
+        }
+        if event.tool_call
+        else None,
+        "safety": {
+            "risk_level": safety.risk_level.value,
+            "risk_score": safety.risk_score,
+            "reasons": safety.reasons,
+        },
+        "approval_timeout_seconds": safety.approval_timeout_seconds,
+    }
+
+    timeout = float(safety.approval_timeout_seconds or 120.0)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(
+                url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                return data.get("approved") is True or data.get("status") == "approved"
+            logger.warning("HTTP approval callback returned status code %d", resp.status_code)
+            return False
+    except Exception as exc:
+        logger.error("HTTP approval callback failed: %s", exc)
+        return False
