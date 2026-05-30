@@ -219,32 +219,40 @@ class EventBus:
     async def publish(self, event: AgentEvent) -> None:
         """Publish an event to all matching handlers.
 
+        The lock guards all mutations to _event_log, _stats, and the
+        handler index snapshots. Handler dispatch runs outside the lock
+        so that I/O-bound or slow handlers do not block concurrent
+        publish calls.
+
         Args:
             event: The normalized event to fan out and log.
         """
-        # Log to in-memory buffer
-        self._event_log.append(event)
-        if len(self._event_log) > self._max_log_size:
-            self._event_log = self._event_log[-self._max_log_size :]
+        async with self._lock:
+            # Log to in-memory buffer
+            self._event_log.append(event)
+            if len(self._event_log) > self._max_log_size:
+                self._event_log = self._event_log[-self._max_log_size :]
 
-        self._stats["total_published"] += 1
-        self._stats[f"type.{event.event_type.value}"] += 1
+            self._stats["total_published"] += 1
+            self._stats[f"type.{event.event_type.value}"] += 1
 
-        # Gather relevant handler IDs
-        handler_ids: set[str] = set()
-        handler_ids.update(self._global_handlers)
-        handler_ids.update(self._type_index.get(event.event_type, set()))
+            # Snapshot handler IDs under the lock so subscribe/unsubscribe
+            # that happens concurrently does not mutate the set mid-iteration.
+            handler_ids: set[str] = set()
+            handler_ids.update(self._global_handlers)
+            handler_ids.update(self._type_index.get(event.event_type, set()))
+            handlers_to_dispatch = [
+                self._handlers[hid]
+                for hid in handler_ids
+                if hid in self._handlers
+                and not (
+                    self._handlers[hid].event_filter
+                    and not self._handlers[hid].event_filter.matches(event)
+                )
+            ]
 
-        # Dispatch
-        tasks = []
-        for hid in handler_ids:
-            reg = self._handlers.get(hid)
-            if reg is None:
-                continue
-            if reg.event_filter and not reg.event_filter.matches(event):
-                continue
-            tasks.append(self._dispatch(reg, event))
-
+        # Dispatch outside the lock to avoid holding it during handler I/O
+        tasks = [self._dispatch(reg, event) for reg in handlers_to_dispatch]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
