@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 class AlertingConfig:
     slack_webhook_url: str | None = None
     pagerduty_webhook_url: str | None = None
+    pagerduty_routing_key: str | None = None
     min_risk_for_pagerduty: RiskLevel = RiskLevel.HIGH
 
 
@@ -76,7 +77,7 @@ class AlertingEngine:
                 ],
             },
             "pagerduty": {
-                "routing_key": "agentwatch",
+                "routing_key": self._config.pagerduty_routing_key or "",
                 "event_action": "trigger",
                 "payload": {
                     "summary": summary,
