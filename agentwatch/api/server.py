@@ -359,9 +359,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AgentWatch API",
-    description="Reliability, Safety, and Observability Layer for AI Agents",
+    description="REST API for the AgentWatch observability platform. "
+    "Handles reasoning trace ingestion, session management, safety policy enforcement, and real-time dashboard updates.",
     version="0.2.0",
     lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
 # CORS configuration.
@@ -395,12 +398,26 @@ app.add_middleware(
 )
 
 
+@app.get("/api/v1/system/status")
+async def system_status(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+    """Returns detailed infrastructure status, including database connectivity."""
+    return {
+        "database": {
+            "connected": _db_session_factory is not None,
+            "mode": "persistent" if _db_session_factory else "in-memory",
+        },
+        "environment": os.getenv("ENVIRONMENT", "unknown"),
+        "version": "0.2.0",
+    }
+
+
 @app.get("/health")
 async def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "version": "0.2.0",
         "timestamp": datetime.now(UTC).isoformat(),
+        "database_connected": _db_session_factory is not None,
         "traces": _collector.get_stats(),
         "event_bus": get_event_bus().stats(),
         "safety": _safety_engine.stats(),

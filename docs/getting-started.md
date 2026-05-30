@@ -113,6 +113,20 @@ The demo also confirms the dashboard can receive events through the WebSocket st
 
 ## 3. Connect Your First Agent
 
+### Universal One-Liner (Any Framework)
+
+If you don't want to use a specific adapter, or if you're using a custom agent, use the `watch()` wrapper. It auto-detects the framework and attaches the correct instrumentation:
+
+```python
+from agentwatch import watch
+
+# Wrap your existing agent object
+agent = watch(your_agent)
+
+# Use your agent as normal
+result = agent.run("your task")
+```
+
 ### Claude Code
 
 The smallest working setup is to install AgentWatch and wrap your Claude Code command with the AgentWatch CLI:

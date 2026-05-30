@@ -26,7 +26,7 @@ class LoopDetector:
     appears N times back-to-back, flag a loop.
     """
 
-    def __init__(self, window: int = 50, min_cycle: int = 2, min_reps: int = 3):
+    def __init__(self, window: int = 50, min_cycle: int = 1, min_reps: int = 3):
         self.window = window
         self.min_cycle = min_cycle
         self.min_reps = min_reps
