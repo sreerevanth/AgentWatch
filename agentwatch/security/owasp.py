@@ -146,8 +146,8 @@ class OwaspScanner:
         if event.tool_call:
             if event.tool_call.raw_command:
                 parts.append(event.tool_call.raw_command)
-            # We no longer scan repr(arguments) to avoid noise and enforce
-            # that sensitive actions must use the raw_command field.
+            if event.tool_call.arguments:
+                parts.extend(self._extract_strings(event.tool_call.arguments))
         if event.tool_result and event.tool_result.output:
             parts.append(str(event.tool_result.output))
         if event.planner_output_preview:
@@ -155,6 +155,18 @@ class OwaspScanner:
         if event.prompt_preview:
             parts.append(event.prompt_preview)
         return "\n".join(parts)
+
+    def _extract_strings(self, data: Any) -> list[str]:
+        strings = []
+        if isinstance(data, str):
+            strings.append(data)
+        elif isinstance(data, dict):
+            for value in data.values():
+                strings.extend(self._extract_strings(value))
+        elif isinstance(data, list):
+            for item in data:
+                strings.extend(self._extract_strings(item))
+        return strings
 
 
 __all__ = ["OwaspVector", "OwaspFinding", "OwaspScan", "OwaspScanner"]
