@@ -1,65 +1,142 @@
 # Contributing to AgentWatch
 
-First off — thank you for contributing to AgentWatch 🚀
+Thank you for your interest in contributing to AgentWatch 🚀
 
-We welcome:
-- bug fixes
-- new features
-- documentation improvements
-- integrations
-- performance optimizations
-- developer tooling improvements
+AgentWatch is an open-source reliability, safety, and observability platform for AI agents.
 
-Whether this is your first open-source contribution or your hundredth, you're welcome here.
+We welcome contributors of all experience levels, from first-time open-source contributors to experienced engineers.
+
+---
+
+# Ways to Contribute
+
+You can contribute through:
+
+- Bug fixes
+- New features
+- Documentation improvements
+- Performance optimizations
+- Testing and quality improvements
+- Developer tooling
+- Integrations
+- Security improvements
+- Design and user experience enhancements
+
+Every contribution matters.
+
+---
+
+# Community First
+
+We want AgentWatch to be a collaborative and welcoming project.
+
+Please:
+
+- Be respectful
+- Be constructive
+- Be open to feedback
+- Help other contributors when possible
+
+We're building this together.
+
+---
+
+# Community & Support
+
+Join the AgentWatch community:
+
+💬 Discord:
+https://discord.com/invite/ZbQ9m9HtnE
+
+The Discord server is the best place for:
+
+- Asking development questions
+- Discussing features before building them
+- Getting help with setup issues
+- Coordinating large contributions
+- Following project updates
+- Connecting with other contributors
+
+If you're planning a larger feature or architectural change, we strongly recommend discussing it in Discord first.
+
+Open-source works best when contributors communicate early.
 
 ---
 
 # Before You Start
 
-## 1. Fork the Repository
+## Check Existing Work
 
-Click the **Fork** button on GitHub and clone your fork locally.
+Before creating an issue or pull request:
+
+- Search existing issues
+- Search existing pull requests
+- Check project discussions
+- Verify the issue has not already been reported
+
+Duplicate reports create unnecessary review overhead.
+
+---
+
+## Discuss Large Changes First
+
+For significant features, architectural changes, or major refactors:
+
+Please open an issue first.
+
+This helps ensure:
+
+- The feature aligns with project goals
+- Development effort is not wasted
+- Maintainers can provide guidance early
+
+---
+
+# Local Development Setup
+
+## Clone Your Fork
 
 ```bash
 git clone https://github.com/YOUR_USERNAME/AgentWatch.git
 cd AgentWatch
 ```
 
----
-
-## 2. Create a New Branch
-
-Please create a dedicated branch for your changes.
+## Create a Branch
 
 ```bash
 git checkout -b feature/my-feature
 ```
 
 Examples:
-- `fix/session-memory-bug`
-- `docs/getting-started-guide`
-- `feature/slack-alerts`
 
-Avoid committing directly to `main`.
+```text
+fix/session-memory-bug
+feat/slack-alerts
+docs/api-guide
+```
+
+Do not commit directly to `main`.
 
 ---
 
-# Local Development Setup
-
-## Backend Setup
+# Backend Setup
 
 ```bash
 python -m pip install -e ".[dev]"
 ```
 
-## Frontend Setup
+---
+
+# Frontend Setup
 
 ```bash
 cd frontend
 npm install
 ```
 
-## Start Development Environment
+---
+
+# Start Development Environment
 
 ```bash
 docker compose up -d
@@ -71,7 +148,7 @@ Run backend:
 python demo.py
 ```
 
-Frontend dashboard:
+Frontend:
 
 ```text
 http://localhost:3000
@@ -85,157 +162,234 @@ http://localhost:3000
 AgentWatch/
 ├── agentwatch/
 ├── frontend/
-├── docs/
 ├── tests/
-├── demo.py
+├── docs/
 ├── docker-compose.yml
+├── pyproject.toml
 └── README.md
 ```
 
 ---
 
-# Contribution Guidelines
+# Issue Guidelines
 
-## Keep Pull Requests Focused
+## High Quality Issues
 
-Please keep PRs limited to a single logical change.
+Good issues include:
 
-Good:
-- fix one bug
-- improve one feature
-- add one documentation section
+- Clear problem description
+- Reproduction steps
+- Expected behavior
+- Actual behavior
+- Relevant logs or screenshots
+- Environment information
 
-Avoid:
-- unrelated refactors
-- multiple large features in one PR
+Example:
+
+```text
+Expected:
+Session should reconnect automatically
+
+Actual:
+Connection remains disconnected after network recovery
+```
 
 ---
 
-## Write Clear Commit Messages
+## Enhancement Requests
+
+Enhancement requests should answer:
+
+### What problem exists?
+
+Explain the current limitation.
+
+### Why is it valuable?
+
+Describe the impact.
+
+### What is the proposed solution?
+
+Provide a reasonable implementation direction.
+
+---
+
+## Low Quality Issues
+
+Issues may be closed if they:
+
+- Cannot be reproduced
+- Lack sufficient details
+- Duplicate existing reports
+- Are generated from automated scans without verification
+- Are speculative without evidence
+
+Quality matters more than quantity.
+
+---
+
+# Pull Request Guidelines
+
+## Keep PRs Focused
+
+A pull request should solve one logical problem.
+
+Good examples:
+
+- Fix one bug
+- Add one feature
+- Improve one documentation area
+
+Avoid:
+
+- Massive unrelated refactors
+- Multiple independent features
+- Formatting-only changes mixed with functional changes
+
+---
+
+## Pull Request Requirements
+
+Before opening a PR:
+
+- Code builds successfully
+- Tests pass
+- New tests are added when appropriate
+- Documentation is updated when needed
+- No unrelated files are modified
+
+---
+
+## Pull Request Title Format
+
+Use conventional commits.
 
 Examples:
 
 ```text
 fix: resolve websocket reconnect issue
-docs: add getting started tutorial
-feat: add confidence trend visualization
+
+feat: add reasoning confidence dashboard
+
+docs: improve installation guide
+
+test: add safety engine integration coverage
 ```
 
 ---
 
-## Run Checks Before Submitting
+## Pull Request Description
 
-### Python
+Use:
+
+```md
+## Summary
+
+Short explanation of the change.
+
+## Changes
+
+- Change 1
+- Change 2
+
+## Validation
+
+- Ran tests
+- Tested locally
+- Verified frontend build
+```
+
+---
+
+# Code Quality Standards
+
+## Python
+
+- Follow PEP8
+- Prefer type hints
+- Write readable code
+- Keep functions focused
+- Avoid unnecessary abstractions
+
+---
+
+## Frontend
+
+- Keep components modular
+- Minimize dependencies
+- Maintain UI consistency
+- Avoid unnecessary complexity
+
+---
+
+# Testing
+
+Run before submitting:
 
 ```bash
 ruff check .
 pytest
 ```
 
-### Frontend
+Frontend:
 
 ```bash
 cd frontend
 npm run build
 ```
 
----
-
-# Pull Request Process
-
-## Before Opening a PR
-
-Please ensure:
-- code builds successfully
-- tests pass
-- no unrelated files are modified
-- documentation is updated if needed
-
----
-
-## PR Title Format
-
-Use conventional-style titles:
-
-```text
-fix: resolve memory leak in session tracker
-docs: improve installation instructions
-feat: add PagerDuty alert support
-```
-
----
-
-## PR Description Template
-
-```md
-## Summary
-Brief explanation of changes
-
-## What Changed
-- item 1
-- item 2
-
-## Validation
-- tested locally
-- ran frontend build
-- ran tests
-```
+Pull requests with failing checks will not be merged.
 
 ---
 
 # Documentation Contributions
 
-Documentation improvements are highly appreciated ❤️
+Documentation contributions are highly encouraged.
 
-You can contribute:
-- tutorials
-- examples
-- architecture explanations
-- setup fixes
-- troubleshooting guides
+Examples:
 
-Docs-only PRs are welcome.
+- Tutorials
+- Architecture explanations
+- Troubleshooting guides
+- Integration examples
+- Setup improvements
 
----
-
-# Reporting Issues
-
-When opening an issue, include:
-- expected behavior
-- actual behavior
-- logs/screenshots if applicable
-- reproduction steps
-- environment details
+Documentation-only contributions are welcome.
 
 ---
 
-# Coding Style
+# Security Issues
 
-## Python
-- follow PEP8
-- prefer type hints
-- keep functions focused and readable
+Please do not open public issues for security vulnerabilities.
 
-## Frontend
-- keep components modular
-- avoid unnecessary dependencies
-- maintain consistent UI patterns
+Instead, contact the maintainers privately through GitHub Security Advisories or project contact channels.
 
 ---
 
-# Need Help?
+# Review Process
 
-If you're stuck:
-- open a discussion
-- comment on an issue
-- ask questions in your PR
+All pull requests are reviewed by maintainers.
 
-We'd rather help early than review a huge broken PR later 😄
+Reviews may request:
+
+- Additional tests
+- Documentation updates
+- Code improvements
+- Architectural adjustments
+
+Review feedback is a normal part of the process.
 
 ---
 
 # Recognition
 
-All contributors matter — whether you fixed a typo, improved docs, or shipped a major feature.
+Whether you:
 
-Thanks for helping improve AgentWatch 🚀
+- Fix a typo
+- Improve documentation
+- Add a test
+- Ship a major feature
+
+your contribution is appreciated.
+
+Thank you for helping build AgentWatch ❤️
