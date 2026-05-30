@@ -7,7 +7,7 @@ from agentwatch.core.schema import AgentEvent, AgentFramework, EventType, ToolCa
 
 def test_sync_vs_async_parity():
     """
-    Demonstrates the bypass by showing a DSL rule that blocks in async but is ignored in sync.
+    Verifies that DSL rules are enforced the same in sync and async contexts.
     """
     dsl = """
     rules:
@@ -32,6 +32,11 @@ def test_sync_vs_async_parity():
     blocked_sync, reasons_sync = engine.check_tool_call_sync(tool_call)
 
     # 2. Test Async
+    try:
+        old_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        old_loop = None
+
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
     try:
@@ -40,13 +45,15 @@ def test_sync_vs_async_parity():
         reasons_async = checked_event.safety.reasons
     finally:
         loop.close()
+        asyncio.set_event_loop(old_loop)
 
     print("\n[PARITY CHECK - DSL BYPASS]")
     print(f"Command: {tool_call.raw_command}")
     print(f"Sync:  blocked={blocked_sync}, reasons={reasons_sync}")
     print(f"Async: blocked={blocked_async}, reasons={reasons_async}")
 
-    assert blocked_sync == blocked_async, f"Sync/async discrepancy: {blocked_sync} != {blocked_async}"
+    assert blocked_sync == blocked_async, f"Sync/async block discrepancy: {blocked_sync} != {blocked_async}"
+    assert reasons_sync == reasons_async, f"Sync/async reasons discrepancy: {reasons_sync} != {reasons_async}"
 
 
 if __name__ == "__main__":
