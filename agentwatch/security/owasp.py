@@ -146,8 +146,8 @@ class OwaspScanner:
         if event.tool_call:
             if event.tool_call.raw_command:
                 parts.append(event.tool_call.raw_command)
-            # We no longer scan repr(arguments) to avoid noise and enforce
-            # that sensitive actions must use the raw_command field.
+            if event.tool_call.arguments:
+                parts.extend(self._flatten_values(event.tool_call.arguments))
         if event.tool_result and event.tool_result.output:
             parts.append(str(event.tool_result.output))
         if event.planner_output_preview:
@@ -155,6 +155,31 @@ class OwaspScanner:
         if event.prompt_preview:
             parts.append(event.prompt_preview)
         return "\n".join(parts)
+
+    def _flatten_values(self, data: Any, visited: set[int] | None = None) -> list[str]:
+        """Recursively extract all string-like values from a data structure."""
+        if visited is None:
+            visited = set()
+
+        parts: list[str] = []
+
+        # Track containers to avoid infinite recursion
+        if isinstance(data, (dict, list, tuple, set)):
+            if id(data) in visited:
+                return []
+            visited.add(id(data))
+
+        if isinstance(data, str):
+            parts.append(data)
+        elif isinstance(data, dict):
+            for v in data.values():
+                parts.extend(self._flatten_values(v, visited))
+        elif isinstance(data, (list, tuple, set)):
+            for item in data:
+                parts.extend(self._flatten_values(item, visited))
+        elif data is not None:
+            parts.append(str(data))
+        return parts
 
 
 __all__ = ["OwaspVector", "OwaspFinding", "OwaspScan", "OwaspScanner"]

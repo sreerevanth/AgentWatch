@@ -58,7 +58,7 @@ SAFE_TOOL_CALLS = [
     },
     {
         "tool_name": "write_file",
-        "arguments": {"path": "/tmp/report.json", "content": "{\"ok\": true}"},
+        "arguments": {"path": "/tmp/report.json", "content": '{"ok": true}'},  # noqa: S108
     },
     {
         "tool_name": "send_report",
@@ -97,7 +97,7 @@ class AgentUser(HttpUser):
         """Open a session by posting a SESSION_START event."""
         self.session_id = f"load-{uuid.uuid4()}"
         self.agent_id = f"agent-{uuid.uuid4().hex[:8]}"
-        self.framework = random.choice(FRAMEWORKS)
+        self.framework = random.choice(FRAMEWORKS)  # noqa: S311
 
         event = {
             "session_id": self.session_id,
@@ -123,17 +123,17 @@ class AgentUser(HttpUser):
     @task(70)
     def post_tool_call(self) -> None:
         """Post a tool-call event — 80% safe, 20% dangerous."""
-        if random.random() < 0.8:
-            tool_call = random.choice(SAFE_TOOL_CALLS)
+        if random.random() < 0.8:  # noqa: S311
+            tool_call = random.choice(SAFE_TOOL_CALLS)  # noqa: S311
         else:
-            tool_call = random.choice(DANGEROUS_TOOL_CALLS)
+            tool_call = random.choice(DANGEROUS_TOOL_CALLS)  # noqa: S311
 
         event = {
             "session_id": self.session_id,
             "agent_id": self.agent_id,
             "framework": self.framework,
             "event_type": "tool.call",
-            "step_number": random.randint(1, 50),
+            "step_number": random.randint(1, 50),  # noqa: S311
             "tool_call": tool_call,
         }
         with self.client.post(
