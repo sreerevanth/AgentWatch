@@ -359,9 +359,12 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AgentWatch API",
-    description="Reliability, Safety, and Observability Layer for AI Agents",
+    description="REST API for the AgentWatch observability platform. "
+    "Handles reasoning trace ingestion, session management, safety policy enforcement, and real-time dashboard updates.",
     version="0.2.0",
     lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
 # CORS configuration.

@@ -49,7 +49,7 @@ Avoid committing directly to `main`.
 ## Backend Setup
 
 ```bash
-pip install -r requirements.txt
+python -m pip install -e ".[dev]"
 ```
 
 ## Frontend Setup
