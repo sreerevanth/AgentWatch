@@ -340,3 +340,47 @@ async def test_safety_engine_sync_check_honors_block_by_default():
     )
     assert blocked is True
     assert any("Recursive deletion" in r for r in reasons)
+
+
+def test_owasp_scanner_handles_cycles():
+    scanner = OwaspScanner()
+
+    # Create a self-referential dictionary
+    data = {"name": "malicious"}
+    data["cycle"] = data
+
+    event = AgentEvent(
+        session_id="S1",
+        agent_id="A1",
+        framework=AgentFramework.CUSTOM,
+        event_type=EventType.TOOL_CALL,
+        tool_call=ToolCallData(
+            tool_name="test_tool",
+            arguments=data,
+            raw_command="test",
+        ),
+    )
+
+    # Should not raise RecursionError
+    scanner.scan([event])
+
+
+def test_flatten_values_cycle_detection():
+    scanner = OwaspScanner()
+
+    # Simple cycle
+    a: dict[str, Any] = {"x": "1"}
+    a["self"] = a
+
+    vals = scanner._flatten_values(a)
+    assert "1" in vals
+    # "self" is skipped, no infinite recursion
+
+    # Nested cycle
+    b: list[Any] = ["2"]
+    c: list[Any] = [b]
+    b.append(c)
+
+    vals = scanner._flatten_values(b)
+    assert "2" in vals
+

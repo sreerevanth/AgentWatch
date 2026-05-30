@@ -141,17 +141,27 @@ class OwaspScanner:
                         )
         return scan
 
-    def _flatten_values(self, data: Any) -> list[str]:
+    def _flatten_values(self, data: Any, visited: set[int] | None = None) -> list[str]:
         """Recursively extract all string-like values from a data structure."""
+        if visited is None:
+            visited = set()
+
         parts: list[str] = []
+
+        # Track containers to avoid infinite recursion
+        if isinstance(data, (dict, list, tuple, set)):
+            if id(data) in visited:
+                return []
+            visited.add(id(data))
+
         if isinstance(data, str):
             parts.append(data)
         elif isinstance(data, dict):
             for v in data.values():
-                parts.extend(self._flatten_values(v))
+                parts.extend(self._flatten_values(v, visited))
         elif isinstance(data, (list, tuple, set)):
             for item in data:
-                parts.extend(self._flatten_values(item))
+                parts.extend(self._flatten_values(item, visited))
         elif data is not None:
             parts.append(str(data))
         return parts
