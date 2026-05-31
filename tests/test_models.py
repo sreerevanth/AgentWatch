@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import pytest
-import os
-from agentwatch.core.models import SessionRecord, EventRecord, get_database_url
+
+from agentwatch.core.models import EventRecord, SessionRecord, get_database_url
 
 
 def test_get_database_url_from_args():
