@@ -52,7 +52,7 @@ _BLAST_PATTERNS: list[tuple[re.Pattern, str, Reversibility, int]] = [
     (re.compile(r"\brm\s+-rf?\s+/"), "filesystem", Reversibility.IRREVERSIBLE, 95),
     (re.compile(r"\bDROP\s+TABLE\b", re.I), "database", Reversibility.IRREVERSIBLE, 85),
     (re.compile(r"\bDROP\s+DATABASE\b", re.I), "database", Reversibility.IRREVERSIBLE, 95),
-    (re.compile(r"\bDELETE\s+FROM\b", re.I), "database", Reversibility.PARTIALLY_REVERSIBLE, 60),
+    (re.compile(r"\bDELETE\s+FROM\b", re.I), "database", Reversibility.PARTIALLY_REVERSIBLE, 50),
     (re.compile(r"\bUPDATE\b.*\bSET\b", re.I), "database", Reversibility.PARTIALLY_REVERSIBLE, 50),
     (re.compile(r"\bgit\s+push\s+(--force|-f)\b"), "git", Reversibility.IRREVERSIBLE, 70),
     (re.compile(r"\bkubectl\s+delete\b"), "k8s", Reversibility.PARTIALLY_REVERSIBLE, 70),
