@@ -130,7 +130,7 @@ That's it. Zero config for default settings, or customize via the [.env.example]
 
 ## Supported Frameworks
 
-AgentWatch wraps your existing agent. **You change nothing.**
+AgentWatch wraps your existing agent. **You change nothing.** Detailed guides for each framework are available in the [docs/adapters/](./docs/adapters/) directory.
 
 <details>
 <summary><b>Claude Code</b></summary>
@@ -138,6 +138,8 @@ AgentWatch wraps your existing agent. **You change nothing.**
 ```bash
 agentwatch watch "Build me a REST API"
 ```
+
+[Read the detailed Claude Code guide](./docs/adapters/claude-code.md)
 </details>
 
 <details>
@@ -149,6 +151,8 @@ from agentwatch.adapters.langchain import AgentWatchCallbackHandler
 handler = AgentWatchCallbackHandler()
 agent = AgentExecutor(agent=..., callbacks=[handler])
 ```
+
+[Read the detailed LangChain guide](./docs/adapters/langchain.md)
 </details>
 
 <details>

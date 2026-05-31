@@ -58,7 +58,7 @@ SAFE_TOOL_CALLS = [
     },
     {
         "tool_name": "write_file",
-        "arguments": {"path": "/tmp/report.json", "content": "{\"ok\": true}"},  # noqa: S108
+        "arguments": {"path": "/tmp/report.json", "content": '{"ok": true}'},  # noqa: S108
     },
     {
         "tool_name": "send_report",
