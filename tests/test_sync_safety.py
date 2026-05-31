@@ -1,3 +1,5 @@
+"""Verifies that DSL rules are enforced the same in sync and async contexts."""
+
 import asyncio
 
 from agentwatch.core.policy_dsl import PolicyEngine
@@ -7,7 +9,7 @@ from agentwatch.core.schema import AgentEvent, AgentFramework, EventType, ToolCa
 
 def test_sync_vs_async_parity():
     """
-    Verifies that DSL rules are enforced the same in sync and async contexts.
+    Verifies parity between synchronous and asynchronous execution.
     """
     dsl = """
     rules:
@@ -33,8 +35,8 @@ def test_sync_vs_async_parity():
 
     # 2. Test Async
     try:
-        old_loop = asyncio.get_running_loop()
-    except RuntimeError:
+        old_loop = asyncio.get_event_loop_policy().get_event_loop()
+    except (RuntimeError, AssertionError):
         old_loop = None
 
     loop = asyncio.new_event_loop()
@@ -45,15 +47,26 @@ def test_sync_vs_async_parity():
         reasons_async = checked_event.safety.reasons
     finally:
         loop.close()
-        asyncio.set_event_loop(old_loop)
+        if old_loop:
+            asyncio.set_event_loop(old_loop)
+        else:
+            asyncio.set_event_loop(None)
 
     print("\n[PARITY CHECK - DSL BYPASS]")
     print(f"Command: {tool_call.raw_command}")
     print(f"Sync:  blocked={blocked_sync}, reasons={reasons_sync}")
     print(f"Async: blocked={blocked_async}, reasons={reasons_async}")
 
-    assert blocked_sync == blocked_async, f"Sync/async block discrepancy: {blocked_sync} != {blocked_async}"
-    assert reasons_sync == reasons_async, f"Sync/async reasons discrepancy: {reasons_sync} != {reasons_async}"
+    # Assertion parity of block state and reasons
+    assert blocked_sync == blocked_async, (
+        f"Sync/async block discrepancy: {blocked_sync} != {blocked_async}"
+    )
+    assert reasons_sync == reasons_async, (
+        f"Sync/async reasons discrepancy: {reasons_sync} != {reasons_async}"
+    )
+    assert (len(reasons_sync) > 0) == blocked_sync, (
+        "Metadata discrepancy: blocked is True but no reasons provided"
+    )
 
 
 if __name__ == "__main__":
