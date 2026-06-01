@@ -5,8 +5,6 @@ import sys
 import types
 import uuid
 
-import pytest
-
 # ── Stub CrewAI namespace (must happen before any adapter import) ─────────────
 
 class FakeAgent:
@@ -71,9 +69,8 @@ sys.modules["crewai"] = _fake_crewai
 # ── Real imports (after stub injection) ───────────────────────────────────────
 
 from agentwatch.adapters.crewai import AgentWatchCrewAIAdapter  # noqa: E402
-from agentwatch.core.event_bus import EventBus                   # noqa: E402
-from agentwatch.core.schema import EventType, ExecutionStatus    # noqa: E402
-
+from agentwatch.core.event_bus import EventBus  # noqa: E402
+from agentwatch.core.schema import EventType, ExecutionStatus  # noqa: E402
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
