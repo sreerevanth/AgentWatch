@@ -586,7 +586,8 @@ async def check_safety_command(request: SafetyCheckRequest) -> SafetyCheckRespon
     if not cmd:
         raise HTTPException(status_code=400, detail="command must not be empty")
 
-    merged_args = {"command": cmd, **request.arguments}
+    merged_args = dict(request.arguments)
+    merged_args["command"] = cmd
     tool_call = ToolCallData(
         tool_name=request.tool_name,
         raw_command=cmd,

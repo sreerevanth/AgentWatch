@@ -5,6 +5,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from agentwatch.api.server import create_app
+from agentwatch.core.schema import RiskLevel, SafetyCheckData
+from agentwatch.core.safety import SafetyEngine
 
 
 @pytest.fixture
@@ -28,3 +30,37 @@ def test_safety_check_allows_safe(client):
     data = res.json()
     assert data['blocked'] is False
     assert data['risk_level'] in ('safe', 'low')
+
+
+def test_safety_check_keeps_command_argument_in_sync(client, monkeypatch):
+    captured = {}
+
+    class DummyCheckedEvent:
+        safety = SafetyCheckData(
+            risk_level=RiskLevel.SAFE,
+            risk_score=0.0,
+            blocked=False,
+            reasons=[],
+            matched_policies=[],
+            requires_approval=False,
+        )
+
+    async def fake_check_event(self, event):
+        captured['tool_call'] = event.tool_call
+        return DummyCheckedEvent()
+
+    monkeypatch.setattr(SafetyEngine, 'check_event', fake_check_event)
+
+    res = client.post(
+        '/api/v1/safety/check',
+        json={
+            'command': 'echo hello',
+            'tool_name': 'bash',
+            'arguments': {'command': 'rm -rf /', 'other': 'value'},
+        },
+    )
+
+    assert res.status_code == 200
+    assert captured['tool_call'].raw_command == 'echo hello'
+    assert captured['tool_call'].arguments['command'] == 'echo hello'
+    assert captured['tool_call'].arguments['other'] == 'value'

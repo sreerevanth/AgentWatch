@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { AlertTriangle, CheckCircle2, Copy, Play, ShieldAlert, ShieldCheck } from 'lucide-react'
@@ -38,15 +38,17 @@ export default function SafetyLabPage() {
   const [error, setError] = useState<string | null>(null)
   const [history, setHistory] = useState<RunRecord[]>([])
   const [selectedNode, setSelectedNode] = useState<ThreatPathNode | null>(null)
+  const inFlightRef = useRef(false)
 
   const demoMode = router.query.demo === 'true'
 
   const latest = history[0]?.result
 
-  const runCommand = async (cmd: string) => {
+  const runCommand = useCallback(async (cmd: string) => {
     const trimmed = cmd.trim()
-    if (!trimmed || running) return
+    if (!trimmed || inFlightRef.current) return
     setError(null)
+    inFlightRef.current = true
     setRunning(true)
     try {
       const result = await api.checkSafety({ command: trimmed, tool_name: 'bash' })
@@ -65,21 +67,23 @@ export default function SafetyLabPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Safety check failed')
     } finally {
+      inFlightRef.current = false
       setRunning(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
     if (!demoMode) return
     let idx = 0
     const timer = setInterval(() => {
+      if (inFlightRef.current) return
       const cmd = PRESET_COMMANDS[idx % PRESET_COMMANDS.length]
       idx += 1
       void runCommand(cmd)
     }, 3000)
 
     return () => clearInterval(timer)
-  }, [demoMode])
+  }, [demoMode, runCommand])
 
   const demoUrl = useMemo(() => {
     if (typeof window === 'undefined') return ''
