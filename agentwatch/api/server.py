@@ -696,6 +696,40 @@ async def seed_demo(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
 
 @app.websocket("/ws/events")
 async def websocket_events(websocket: WebSocket) -> None:
+    """Real-time event stream over WebSocket.
+
+    Authentication mirrors the REST layer: clients must supply the
+    AGENTWATCH_API_KEY value either in the ``X-Api-Key`` request header or
+    as the ``api_key`` query parameter.  When the key is absent or incorrect
+    the connection is rejected with WebSocket close code 4001 before any data
+    is sent, consistent with HTTP 401 semantics.
+
+    When AGENTWATCH_API_KEY is not configured the guard follows the same
+    logic as _require_api_key: open in development, fail-closed in production.
+    """
+    # Resolve the supplied key from the header or query parameter so browser
+    # WebSocket clients (which cannot set arbitrary headers) can pass the key
+    # as a URL parameter.
+    supplied_key = (
+        websocket.headers.get("x-api-key")
+        or websocket.query_params.get("api_key")
+    )
+
+    if _IS_PROD and not _API_KEY:
+        # Fail-closed: production deployment with no key configured is a
+        # misconfiguration; reject all connections.
+        logger.error(
+            "AGENTWATCH_API_KEY is missing in production environment; "
+            "rejecting WebSocket connection"
+        )
+        await websocket.close(code=4500, reason="Server misconfiguration")
+        return
+
+    if _API_KEY and supplied_key != _API_KEY:
+        logger.warning("WebSocket connection rejected: invalid or missing API key")
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+
     await websocket.accept()
     _ws_clients.append(websocket)
     bus = get_event_bus()
