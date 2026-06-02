@@ -710,10 +710,7 @@ async def websocket_events(websocket: WebSocket) -> None:
     # Resolve the supplied key from the header or query parameter so browser
     # WebSocket clients (which cannot set arbitrary headers) can pass the key
     # as a URL parameter.
-    supplied_key = (
-        websocket.headers.get("x-api-key")
-        or websocket.query_params.get("api_key")
-    )
+    supplied_key = websocket.headers.get("x-api-key") or websocket.query_params.get("api_key")
 
     if _IS_PROD and not _API_KEY:
         # Fail-closed: production deployment with no key configured is a
