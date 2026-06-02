@@ -37,30 +37,34 @@ export default function SafetyLabPage() {
   const [running, setRunning] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [history, setHistory] = useState<RunRecord[]>([])
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [selectedNode, setSelectedNode] = useState<ThreatPathNode | null>(null)
   const inFlightRef = useRef(false)
 
   const demoMode = router.query.demo === 'true'
 
-  const latest = history[0]?.result
+  const activeResult = history.find((run) => run.id === selectedRunId)?.result ?? history[0]?.result
 
   const runCommand = useCallback(async (cmd: string) => {
     const trimmed = cmd.trim()
     if (!trimmed || inFlightRef.current) return
     setError(null)
+    setSelectedRunId(null)
     inFlightRef.current = true
     setRunning(true)
     try {
       const result = await api.checkSafety({ command: trimmed, tool_name: 'bash' })
+      const runId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
       setHistory((prev) => [
         {
-          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          id: runId,
           command: trimmed,
           createdAt: new Date().toISOString(),
           result,
         },
         ...prev,
       ].slice(0, 25))
+      setSelectedRunId(runId)
       const firstMatch = result.threat_path.find((node) => node.matched) ?? null
       setSelectedNode(firstMatch)
       setCommand('')
@@ -169,24 +173,24 @@ export default function SafetyLabPage() {
           <div className="space-y-6">
             <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
               <div className="mb-4 text-xs uppercase tracking-[0.24em] text-zinc-500">Block Explanation</div>
-              {!latest ? (
+              {!activeResult ? (
                 <div className="text-sm text-zinc-500">Run a command to see a safety decision.</div>
               ) : (
-                <div className={cn('rounded-xl border p-4', resultTone(latest))}>
+                <div className={cn('rounded-xl border p-4', resultTone(activeResult))}>
                   <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div className="font-mono text-sm">{latest.command}</div>
+                    <div className="font-mono text-sm">{activeResult.command}</div>
                     <div className="inline-flex items-center gap-2 text-xs uppercase tracking-[0.2em]">
-                      {latest.blocked ? <ShieldAlert size={14} /> : <ShieldCheck size={14} />}
-                      {latest.decision}
+                      {activeResult.blocked ? <ShieldAlert size={14} /> : <ShieldCheck size={14} />}
+                      {activeResult.decision}
                     </div>
                   </div>
                   <div className="mt-3 grid gap-2 text-sm md:grid-cols-3">
-                    <div>Risk: <span className="font-semibold">{latest.risk_level}</span></div>
-                    <div>Score: <span className="font-semibold">{latest.risk_score.toFixed(2)}</span></div>
-                    <div>Matched: <span className="font-semibold">{latest.matched_policies.length}</span></div>
+                    <div>Risk: <span className="font-semibold">{activeResult.risk_level}</span></div>
+                    <div>Score: <span className="font-semibold">{activeResult.risk_score.toFixed(2)}</span></div>
+                    <div>Matched: <span className="font-semibold">{activeResult.matched_policies.length}</span></div>
                   </div>
                   <div className="mt-3 space-y-1 text-sm">
-                    {(latest.reasons.length > 0 ? latest.reasons : ['No rule triggered.']).map((reason) => (
+                    {(activeResult.reasons.length > 0 ? activeResult.reasons : ['No rule triggered.']).map((reason) => (
                       <div key={reason} className="flex items-start gap-2">
                         <AlertTriangle size={14} className="mt-0.5 shrink-0" />
                         <span>{reason}</span>
@@ -199,12 +203,12 @@ export default function SafetyLabPage() {
 
             <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
               <div className="mb-3 text-xs uppercase tracking-[0.24em] text-zinc-500">Threat Path</div>
-              {!latest ? (
+              {!activeResult ? (
                 <div className="text-sm text-zinc-500">No path yet.</div>
               ) : (
                 <>
                   <div className="flex flex-wrap gap-2 pb-2">
-                    {latest.threat_path.map((node, index) => (
+                    {activeResult.threat_path.map((node, index) => (
                       <button
                         key={`${node.policy_id}-${index}`}
                         onClick={() => setSelectedNode(node)}
@@ -241,6 +245,7 @@ export default function SafetyLabPage() {
                 <button
                   key={item.id}
                   onClick={() => {
+                    setSelectedRunId(item.id)
                     setSelectedNode(item.result.threat_path.find((node) => node.matched) ?? null)
                   }}
                   className={cn(
