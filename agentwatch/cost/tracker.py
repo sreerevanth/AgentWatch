@@ -2,9 +2,23 @@
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass, field
 
 from agentwatch.core.schema import AgentEvent
+
+# Maximum number of sessions held in memory at once.
+# Keeps heap usage bounded on long-running deployments that process
+# thousands of unique sessions per day.
+_MAX_BUDGET_ENTRIES: int = 50_000
+
+# Sessions with no activity for this many seconds are eligible for eviction.
+_SESSION_TTL_SECONDS: float = 7_200  # 2 hours
+
+# Minimum interval between full eviction scans (seconds).
+# Prevents _maybe_evict() from performing an O(n) scan on every ingest
+# when _budgets is at capacity and all sessions are still active.
+_EVICTION_INTERVAL_SECONDS: float = 60.0
 
 
 @dataclass
@@ -16,6 +30,7 @@ class SessionBudget:
     usd_used: float = 0.0
     exceeded: bool = False
     warnings: list[str] = field(default_factory=list)
+    last_active: float = field(default_factory=time.monotonic)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -34,6 +49,9 @@ class CostTracker:
         self._default_token_budget = default_token_budget
         self._default_usd_budget = default_usd_budget
         self._budgets: dict[str, SessionBudget] = {}
+        # Timestamp of the last full eviction scan. Initialised to 0 so the
+        # first call to _maybe_evict() always runs a scan if warranted.
+        self._last_eviction: float = 0.0
 
     def configure_session(
         self,
@@ -54,7 +72,9 @@ class CostTracker:
         if event.token_usage:
             budget.tokens_used += event.token_usage.total_tokens
             budget.usd_used += float(event.token_usage.estimated_cost_usd or 0.0)
+        budget.last_active = time.monotonic()
         self._evaluate(budget)
+        self._maybe_evict()
         return budget
 
     def get_session(self, session_id: str) -> SessionBudget | None:
@@ -65,6 +85,29 @@ class CostTracker:
             "tracked_sessions": len(self._budgets),
             "sessions_over_budget": sum(1 for budget in self._budgets.values() if budget.exceeded),
         }
+
+    def _maybe_evict(self) -> None:
+        """Remove stale sessions when the store grows beyond its cap.
+
+        Eviction runs only when two conditions are both true:
+        1. The number of tracked sessions is at or above _MAX_BUDGET_ENTRIES.
+        2. At least _EVICTION_INTERVAL_SECONDS have elapsed since the last scan.
+
+        The interval guard prevents repeated O(n) scans on every ingest_event
+        call when the store is at capacity but all sessions are still active
+        (the scenario the maintainer identified as a hot-path risk). In the
+        worst case, one scan runs per interval window regardless of throughput.
+        """
+        if len(self._budgets) < _MAX_BUDGET_ENTRIES:
+            return
+        now = time.monotonic()
+        if now - self._last_eviction < _EVICTION_INTERVAL_SECONDS:
+            return
+        self._last_eviction = now
+        cutoff = now - _SESSION_TTL_SECONDS
+        stale = [sid for sid, b in self._budgets.items() if b.last_active < cutoff]
+        for sid in stale:
+            del self._budgets[sid]
 
     def _evaluate(self, budget: SessionBudget) -> None:
         budget.warnings = []

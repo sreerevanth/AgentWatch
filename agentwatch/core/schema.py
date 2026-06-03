@@ -216,6 +216,7 @@ class SafetyCheckData(BaseModel):
     matched_policies: list[str] = Field(default_factory=list)
     requires_approval: bool = False
     approval_timeout_seconds: int = 60
+    blast_radius: dict[str, Any] | None = None
 
 
 class MemoryData(BaseModel):

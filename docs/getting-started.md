@@ -54,7 +54,7 @@ For a local Docker setup, the compose file already injects the core backend valu
 DATABASE_URL=postgresql+asyncpg://agentwatch:agentwatch@localhost:5432/agentwatch
 REDIS_URL=redis://localhost:6379/0
 CELERY_BROKER_URL=redis://localhost:6379/1
-AGENTWATCH_ENV=production
+AGENTWATCH_ENV=development
 AGENTWATCH_API_URL=http://localhost:8000
 NEXT_PUBLIC_API_URL=/api/v1
 ```
@@ -225,13 +225,14 @@ Create a Slack incoming webhook and add it to your environment:
 SLACK_WEBHOOK_URL=https://hooks.slack.com/services/xxx/yyy/zzz
 ```
 
-### Optional PagerDuty Webhook
+## 6. Security & Authentication
 
-If you also want PagerDuty notifications:
+AgentWatch follows a **fail-closed** security model for production environments.
 
-```bash
-PAGERDUTY_WEBHOOK_URL=https://events.pagerduty.com/v2/enqueue
-```
+- **Development:** Unauthenticated access is allowed by default if `AGENTWATCH_API_KEY` is empty.
+- **Production:** If `AGENTWATCH_ENV=production`, the API **requires** a valid `AGENTWATCH_API_KEY`. If the key is missing or unconfigured, all protected requests will be rejected with a `500 Server Misconfiguration` error to prevent unauthorized data exposure.
+
+Always ensure `AGENTWATCH_API_KEY` is set in your production environment variables.
 
 ### Example `.env`
 

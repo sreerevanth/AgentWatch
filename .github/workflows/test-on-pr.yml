@@ -5,6 +5,10 @@ on:
     branches: [main]
 
 # Read code + write a status comment back to the PR.
+# Note: This workflow uses pull_request_target which runs with a write-capable 
+# GITHUB_TOKEN and has access to repository secrets. To prevent unauthorized 
+# code from accessing these, the job is restricted to internal PRs or trusted 
+# contributors.
 permissions:
   contents: read
   issues: write
@@ -14,6 +18,11 @@ jobs:
   test:
     name: Test & lint
     runs-on: ubuntu-latest
+    # Security: Only run on internal PRs or trusted associations to prevent 
+    # malicious code from exfiltrating secrets via pull_request_target.
+    if: >
+      github.event.pull_request.head.repo.full_name == github.repository ||
+      contains(fromJSON('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.pull_request.author_association)
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -75,7 +84,7 @@ jobs:
               `| Lint (\`ruff check .\`) | ${icon(ruffOutcome)} ${ruffOutcome} |`,
               `| Coverage (\`agentwatch\`) | **${coverage}** |`,
               '',
-              `<sub>Python 3.12 · commit ${context.sha.substring(0, 7)}</sub>`,
+              `<sub>Python 3.12 · commit ${context.payload.pull_request.head.sha.substring(0, 7)}</sub>`,
             ].join('\n');
 
             const { owner, repo } = context.repo;

@@ -1,13 +1,15 @@
 from __future__ import annotations
-import os
+
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, patch
+
 from agentwatch.api.server import app
+
 
 @pytest.fixture
 def client():
     return TestClient(app)
+
 
 def test_health_check_reports_db_status(client):
     # Depending on current state, it might be True or False
@@ -16,6 +18,7 @@ def test_health_check_reports_db_status(client):
     data = response.json()
     assert "database_connected" in data
     assert isinstance(data["database_connected"], bool)
+
 
 def test_system_status_endpoint(client):
     # Protect with API key if needed, but in local dev it's usually None

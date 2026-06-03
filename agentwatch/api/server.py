@@ -13,8 +13,17 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
+from fastapi import (
+    Depends,
+    FastAPI,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    WebSocket,
+    WebSocketDisconnect,
+    status,
+)
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -76,6 +85,12 @@ class _Limiter:
 
 
 _limiter = _Limiter()
+
+
+def _rate_limit_key(request: Request, suffix: str) -> str:
+    host = request.client.host if request.client else "unknown"
+    return f"{host}:{suffix}"
+
 
 _db_session_factory = None
 
@@ -185,6 +200,43 @@ _alerting = AlertingEngine(
     )
 )
 _ws_clients: list[WebSocket] = []
+
+
+# Optional API key guard.
+#
+# Set AGENTWATCH_API_KEY to a random secret string in the deployment
+# environment to require authentication on all sensitive endpoints.
+# When the variable is absent the guard is a no-op so local development
+# and unauthenticated demo deployments continue to work without changes.
+#
+# Clients must pass the key in the X-Api-Key request header:
+#   curl -H "X-Api-Key: <key>" http://localhost:8000/api/v1/sessions
+_API_KEY: str | None = os.getenv("AGENTWATCH_API_KEY") or None
+
+# Environment detection for fail-closed logic
+_ENV = os.getenv("AGENTWATCH_ENV") or os.getenv("ENVIRONMENT") or "development"
+_IS_PROD = _ENV.lower() == "production"
+
+
+def _require_api_key(x_api_key: str | None = Header(default=None, alias="X-Api-Key")) -> None:
+    """FastAPI dependency that enforces API key authentication.
+
+    In production mode, if AGENTWATCH_API_KEY is not set, all requests to
+    protected endpoints are rejected (fail-closed). In non-production
+    environments, authentication is only enforced if the key is provided.
+    """
+    if _IS_PROD and not _API_KEY:
+        logger.error("AGENTWATCH_API_KEY is missing in production environment")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Server misconfiguration: API key is required in production.",
+        )
+
+    if _API_KEY is not None and x_api_key != _API_KEY:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing or invalid API key. Supply the key in the X-Api-Key header.",
+        )
 
 
 class SessionListResponse(BaseModel):
@@ -341,6 +393,14 @@ def _seed_demo_data() -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _db_session_factory
+
+    if _IS_PROD and not _API_KEY:
+        error_msg = (
+            "AGENTWATCH_API_KEY is not set in production! For security, the server will not start."
+        )
+        logger.critical(error_msg)
+        raise RuntimeError(error_msg)
+
     db_url = os.getenv("DATABASE_URL", "")
     if db_url:
         try:
@@ -359,41 +419,77 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="AgentWatch API",
-    description="Reliability, Safety, and Observability Layer for AI Agents",
-    version="0.1.0",
+    description="REST API for the AgentWatch observability platform. "
+    "Handles reasoning trace ingestion, session management, safety policy enforcement, and real-time dashboard updates.",
+    version="0.2.0",
     lifespan=lifespan,
+    docs_url="/docs",
+    redoc_url="/redoc",
 )
 
 
 @app.middleware("http")
 async def rl_headers(request: Request, call_next):
     """Add X-RateLimit-* headers to every response including 429s."""
-    try:
-        response = await call_next(request)
-    except Exception:
-        raise
+    response = await call_next(request)
     if hasattr(request.state, "rl_limit"):
         response.headers["X-RateLimit-Limit"] = str(request.state.rl_limit)
         response.headers["X-RateLimit-Remaining"] = str(request.state.rl_remaining)
     return response
 
 
+# CORS configuration.
+#
+# allow_credentials=True requires an explicit origin list -- the CORS spec
+# forbids the combination of Access-Control-Allow-Origin: * with
+# Access-Control-Allow-Credentials: true and browsers reject such responses.
+#
+# Set CORS_ALLOWED_ORIGINS to a comma-separated list of frontend URLs in
+# each deployment environment, e.g.:
+#
+#   CORS_ALLOWED_ORIGINS=https://app.example.com,https://staging.example.com
+#
+# When the variable is absent the API falls back to allowing all origins
+# without credentials (safe for public read-only dashboards and CLI usage;
+# credentialed cross-origin requests will not work in that mode).
+_raw_cors_origins = os.getenv("CORS_ALLOWED_ORIGINS", "")
+_cors_origins: list[str] = (
+    [o.strip() for o in _raw_cors_origins.split(",") if o.strip()]
+    if _raw_cors_origins.strip()
+    else ["*"]
+)
+_cors_credentials = _cors_origins != ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=_cors_origins,
+    allow_credentials=_cors_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 
+@app.get("/api/v1/system/status")
+async def system_status(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+    """Returns detailed infrastructure status, including database connectivity."""
+    return {
+        "database": {
+            "connected": _db_session_factory is not None,
+            "mode": "persistent" if _db_session_factory else "in-memory",
+        },
+        "environment": os.getenv("ENVIRONMENT", "unknown"),
+        "version": "0.2.0",
+    }
+
+
 @app.get("/health")
 async def health(request: Request) -> dict[str, Any]:
-    _limiter.check(request.client.host + ':r', RATE_READ, request)
+    _limiter.check(_rate_limit_key(request, "r"), RATE_READ, request)
     return {
         "status": "ok",
-        "version": "0.1.0",
+        "version": "0.2.0",
         "timestamp": datetime.now(UTC).isoformat(),
+        "database_connected": _db_session_factory is not None,
         "traces": _collector.get_stats(),
         "event_bus": get_event_bus().stats(),
         "safety": _safety_engine.stats(),
@@ -408,8 +504,9 @@ async def list_sessions(
     framework: str | None = Query(default=None),
     status: str | None = Query(default=None),
     since_hours: int | None = Query(default=None),
+    _auth: None = Depends(_require_api_key),
 ) -> SessionListResponse:
-    _limiter.check(request.client.host + ':r', RATE_READ, request)
+    _limiter.check(_rate_limit_key(request, "r"), RATE_READ, request)
     since = None
     if since_hours is not None:
         since = datetime.now(UTC) - timedelta(hours=since_hours)
@@ -422,15 +519,24 @@ async def list_sessions(
 
 
 @app.post("/api/v1/sessions")
-async def create_session(request: Request, session: AgentSession) -> dict[str, Any]:
-    _limiter.check(request.client.host + ':w', RATE_WRITE, request)
+async def create_session(
+    request: Request,
+    session: AgentSession,
+    _auth: None = Depends(_require_api_key),
+) -> dict[str, Any]:
+    _limiter.check(_rate_limit_key(request, "w"), RATE_WRITE, request)
     _collector.register_session(session)
     await _pg_write_session(session)
     return {"status": "registered", "session": session.model_dump(mode="json")}
 
 
 @app.get("/api/v1/sessions/{session_id}")
-async def get_session(session_id: str) -> dict[str, Any]:
+async def get_session(
+    request: Request,
+    session_id: str,
+    _auth: None = Depends(_require_api_key),
+) -> dict[str, Any]:
+    _limiter.check(_rate_limit_key(request, "r"), RATE_READ, request)
     trace = _collector.get_trace(session_id)
     if not trace:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -439,10 +545,13 @@ async def get_session(session_id: str) -> dict[str, Any]:
 
 @app.get("/api/v1/sessions/{session_id}/events", response_model=TraceResponse)
 async def get_events(
+    request: Request,
     session_id: str,
     event_type: str | None = Query(default=None),
     limit: int = Query(default=500, le=2000),
+    _auth: None = Depends(_require_api_key),
 ) -> TraceResponse:
+    _limiter.check(_rate_limit_key(request, "r"), RATE_READ, request)
     events = _collector.get_events(session_id, event_type=event_type, limit=limit)
     return TraceResponse(
         session_id=session_id,
@@ -452,14 +561,18 @@ async def get_events(
 
 
 @app.post("/api/v1/events")
-async def ingest_event(request: Request, event: AgentEvent) -> dict[str, Any]:
-    _limiter.check(request.client.host + ':w', RATE_WRITE, request)
+async def ingest_event(
+    request: Request,
+    event: AgentEvent,
+    _auth: None = Depends(_require_api_key),
+) -> dict[str, Any]:
+    _limiter.check(_rate_limit_key(request, "w"), RATE_WRITE, request)
     await get_event_bus().publish(event)
     return {"status": "accepted", "event_id": event.event_id}
 
 
 @app.get("/api/v1/sessions/{session_id}/trace")
-async def get_trace(session_id: str) -> dict[str, Any]:
+async def get_trace(session_id: str, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     trace = _collector.get_trace(session_id)
     if not trace:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
@@ -467,7 +580,9 @@ async def get_trace(session_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/v1/sessions/{session_id}/confidence", response_model=ConfidenceResponse)
-async def get_confidence(session_id: str) -> ConfidenceResponse:
+async def get_confidence(
+    session_id: str, _auth: None = Depends(_require_api_key)
+) -> ConfidenceResponse:
     events = _collector.get_events(session_id, limit=2000)
     if not events:
         raise HTTPException(status_code=404, detail=f"No events for session {session_id}")
@@ -485,7 +600,9 @@ async def get_confidence(session_id: str) -> ConfidenceResponse:
 
 
 @app.get("/api/v1/sessions/{session_id}/reasoning")
-async def get_reasoning_audit(session_id: str) -> dict[str, Any]:
+async def get_reasoning_audit(
+    session_id: str, _auth: None = Depends(_require_api_key)
+) -> dict[str, Any]:
     events = _collector.get_events(session_id, limit=5000)
     if not events:
         raise HTTPException(status_code=404, detail=f"No events for session {session_id}")
@@ -493,7 +610,9 @@ async def get_reasoning_audit(session_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/v1/sessions/{session_id}/cost")
-async def get_cost_budget(session_id: str) -> dict[str, Any]:
+async def get_cost_budget(
+    session_id: str, _auth: None = Depends(_require_api_key)
+) -> dict[str, Any]:
     budget = _cost_tracker.get_session(session_id)
     if not budget:
         events = _collector.get_events(session_id, limit=5000)
@@ -506,7 +625,7 @@ async def get_cost_budget(session_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/v1/sessions/{session_id}/replay")
-async def get_replay(session_id: str) -> dict[str, Any]:
+async def get_replay(session_id: str, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     events = _collector.get_events(session_id, limit=5000)
     trace = _collector.get_trace(session_id)
     if not events or not trace:
@@ -515,7 +634,9 @@ async def get_replay(session_id: str) -> dict[str, Any]:
 
 
 @app.get("/api/v1/sessions/{session_id}/checkpoints")
-async def list_checkpoints(session_id: str) -> dict[str, Any]:
+async def list_checkpoints(
+    session_id: str, _auth: None = Depends(_require_api_key)
+) -> dict[str, Any]:
     checkpoints = _rollback_engine.list_checkpoints(session_id)
     return {
         "session_id": session_id,
@@ -524,7 +645,9 @@ async def list_checkpoints(session_id: str) -> dict[str, Any]:
 
 
 @app.post("/api/v1/sessions/{session_id}/rollback")
-async def rollback_session(session_id: str, request: RollbackRequest) -> dict[str, Any]:
+async def rollback_session(
+    session_id: str, request: RollbackRequest, _auth: None = Depends(_require_api_key)
+) -> dict[str, Any]:
     if request.checkpoint_id:
         result = await _rollback_engine.rollback(
             request.checkpoint_id,
@@ -554,7 +677,7 @@ async def rollback_session(session_id: str, request: RollbackRequest) -> dict[st
 
 
 @app.get("/api/v1/safety/policy")
-async def get_safety_policy() -> dict[str, Any]:
+async def get_safety_policy(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     policy = _safety_engine.policy
     return {
         "policy_id": policy.policy_id,
@@ -568,7 +691,9 @@ async def get_safety_policy() -> dict[str, Any]:
 
 
 @app.put("/api/v1/safety/policy")
-async def update_safety_policy(update: SafetyPolicyUpdate) -> dict[str, Any]:
+async def update_safety_policy(
+    update: SafetyPolicyUpdate, _auth: None = Depends(_require_api_key)
+) -> dict[str, Any]:
     policy = SafetyPolicy(
         policy_id="api-configured",
         name="API-configured policy",
@@ -593,6 +718,7 @@ async def update_safety_policy(update: SafetyPolicyUpdate) -> dict[str, Any]:
 async def get_blocked_events(
     limit: int = Query(default=50, le=200),
     since_hours: int = Query(default=24),
+    _auth: None = Depends(_require_api_key),
 ) -> dict[str, Any]:
     threshold = datetime.now(UTC) - timedelta(hours=since_hours)
     events = [
@@ -607,7 +733,7 @@ async def get_blocked_events(
 
 
 @app.get("/api/v1/dashboard/summary")
-async def dashboard_summary() -> dict[str, Any]:
+async def dashboard_summary(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     sessions = _collector.list_sessions(limit=200)
     stats = _collector.get_stats()
     return {
@@ -627,18 +753,49 @@ async def dashboard_summary() -> dict[str, Any]:
 
 
 @app.get("/api/v1/governance/compliance-report")
-async def compliance_report() -> dict[str, Any]:
+async def compliance_report(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     return _compliance_reporter.generate().to_dict()
 
 
 @app.post("/api/v1/demo/seed")
-async def seed_demo() -> dict[str, Any]:
+async def seed_demo(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     _seed_demo_data()
     return {"status": "seeded"}
 
 
 @app.websocket("/ws/events")
 async def websocket_events(websocket: WebSocket) -> None:
+    """Real-time event stream over WebSocket.
+
+    Authentication mirrors the REST layer: clients must supply the
+    AGENTWATCH_API_KEY value either in the ``X-Api-Key`` request header or
+    as the ``api_key`` query parameter.  When the key is absent or incorrect
+    the connection is rejected with WebSocket close code 4001 before any data
+    is sent, consistent with HTTP 401 semantics.
+
+    When AGENTWATCH_API_KEY is not configured the guard follows the same
+    logic as _require_api_key: open in development, fail-closed in production.
+    """
+    # Resolve the supplied key from the header or query parameter so browser
+    # WebSocket clients (which cannot set arbitrary headers) can pass the key
+    # as a URL parameter.
+    supplied_key = websocket.headers.get("x-api-key") or websocket.query_params.get("api_key")
+
+    if _IS_PROD and not _API_KEY:
+        # Fail-closed: production deployment with no key configured is a
+        # misconfiguration; reject all connections.
+        logger.error(
+            "AGENTWATCH_API_KEY is missing in production environment; "
+            "rejecting WebSocket connection"
+        )
+        await websocket.close(code=4500, reason="Server misconfiguration")
+        return
+
+    if _API_KEY and supplied_key != _API_KEY:
+        logger.warning("WebSocket connection rejected: invalid or missing API key")
+        await websocket.close(code=4001, reason="Unauthorized")
+        return
+
     await websocket.accept()
     _ws_clients.append(websocket)
     bus = get_event_bus()
