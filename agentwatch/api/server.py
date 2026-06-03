@@ -24,7 +24,9 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
@@ -53,23 +55,43 @@ from agentwatch.tracing.collector import TraceCollector
 
 logger = logging.getLogger(__name__)
 
-RATE_READ  = int(os.getenv("API_RATE_LIMIT_READ",  "1000"))
+RATE_READ = int(os.getenv("API_RATE_LIMIT_READ", "1000"))
 RATE_WRITE = int(os.getenv("API_RATE_LIMIT_WRITE", "200"))
+RATE_WINDOW_SEC = int(os.getenv("API_RATE_LIMIT_WINDOW_SEC", "60"))
+RATE_BUCKET_TTL_SEC = int(
+    os.getenv("API_RATE_LIMIT_BUCKET_TTL_SEC", str(RATE_WINDOW_SEC + 30))
+)
 
 
 class _Limiter:
-    def __init__(self):
-        self._buckets = defaultdict(lambda: {"count": 0, "start": 0.0})
+    def __init__(self) -> None:
+        self._buckets: dict[str, dict[str, float | int]] = defaultdict(
+            lambda: {"count": 0, "start": 0.0}
+        )
+        self._checks_since_prune = 0
+
+    def reset(self) -> None:
+        self._buckets.clear()
+        self._checks_since_prune = 0
+
+    def _prune_stale(self, now: float) -> None:
+        cutoff = now - RATE_BUCKET_TTL_SEC
+        for key in [k for k, b in self._buckets.items() if b["start"] < cutoff]:
+            del self._buckets[key]
 
     def check(self, ip: str, limit: int, request: Request) -> None:
         now = time.time()
+        self._checks_since_prune += 1
+        if self._checks_since_prune >= 64 or len(self._buckets) > 4096:
+            self._prune_stale(now)
+            self._checks_since_prune = 0
+
         b = self._buckets[ip]
-        if now - b["start"] > 60:
+        if now - b["start"] > RATE_WINDOW_SEC:
             b["count"] = 0
             b["start"] = now
         b["count"] += 1
         remaining = max(0, limit - b["count"])
-        # Always store on request.state so middleware can add headers
         request.state.rl_limit = limit
         request.state.rl_remaining = remaining
         if b["count"] > limit:
@@ -79,7 +101,7 @@ class _Limiter:
                 headers={
                     "X-RateLimit-Limit": str(limit),
                     "X-RateLimit-Remaining": "0",
-                    "Retry-After": "60",
+                    "Retry-After": str(RATE_WINDOW_SEC),
                 },
             )
 
@@ -87,9 +109,22 @@ class _Limiter:
 _limiter = _Limiter()
 
 
+def reset_rate_limiter_for_tests() -> None:
+    """Clear in-memory counters between tests (test-only helper)."""
+    _limiter.reset()
+
+
+def _client_ip(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+    if request.client:
+        return request.client.host
+    return "unknown"
+
+
 def _rate_limit_key(request: Request, suffix: str) -> str:
-    host = request.client.host if request.client else "unknown"
-    return f"{host}:{suffix}"
+    return f"{_client_ip(request)}:{suffix}"
 
 
 _db_session_factory = None
@@ -426,6 +461,21 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+
+@app.exception_handler(HTTPException)
+async def _agentwatch_http_exception_handler(request: Request, exc: HTTPException):
+    if exc.status_code == 429 and exc.detail == "rate_limit_exceeded":
+        headers = dict(exc.headers) if exc.headers else {}
+        if hasattr(request.state, "rl_limit"):
+            headers.setdefault("X-RateLimit-Limit", str(request.state.rl_limit))
+            headers.setdefault("X-RateLimit-Remaining", str(request.state.rl_remaining))
+        return JSONResponse(
+            status_code=429,
+            content={"error": "rate_limit_exceeded"},
+            headers=headers,
+        )
+    return await http_exception_handler(request, exc)
 
 
 @app.middleware("http")
