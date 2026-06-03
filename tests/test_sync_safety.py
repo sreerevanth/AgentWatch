@@ -43,6 +43,7 @@ def test_sync_vs_async_parity():
     asyncio.set_event_loop(loop)
     try:
         checked_event = loop.run_until_complete(engine.check_event(event))
+        assert checked_event.safety is not None
         blocked_async = checked_event.safety.blocked
         reasons_async = checked_event.safety.reasons
     finally:
