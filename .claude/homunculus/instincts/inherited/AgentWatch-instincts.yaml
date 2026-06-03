@@ -1,0 +1,402 @@
+# Instincts generated from https://github.com/sreerevanth/AgentWatch
+# Generated: 2026-06-03T14:18:57.846Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: AgentWatch-commit-conventional
+trigger: "when writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Commit Conventional
+
+## Action
+
+Use conventional commit format with prefixes: fix
+
+## Evidence
+
+- 4 commits analyzed
+- Detected conventional commit pattern
+- Examples: fix: apply write rate limit to POST /api/v1/events endpoint, merge main into feature/rate-limit-final and resolve server.py conflicts
+
+---
+id: AgentWatch-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Commit Length
+
+## Action
+
+Write moderate-length commit messages (~62 characters)
+
+## Evidence
+
+- Average commit message length: 62 chars
+- Based on 4 commits
+
+---
+id: AgentWatch-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Naming Files
+
+## Action
+
+Use snake_case naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: snake_case
+
+---
+id: AgentWatch-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: AgentWatch-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: AgentWatch-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: AgentWatch-test-naming
+trigger: "when creating a test file"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Test Naming
+
+## Action
+
+Name test files using the pattern: *.test.ts
+
+## Evidence
+
+- File pattern: *.test.ts
+- Consistent across test files
+
+---
+id: AgentWatch-workflow-api-endpoint-enhancement-with-tests
+trigger: "when doing api endpoint enhancement with tests"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Workflow Api Endpoint Enhancement With Tests
+
+## Action
+
+Follow the api-endpoint-enhancement-with-tests workflow:
+1. Edit or enhance the API endpoint implementation in agentwatch/api/server.py
+2. Update or add corresponding tests in tests/test_rate_limiting.py
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: agentwatch/api/server.py, tests/test_rate_limiting.py
+
+---
+id: agentwatch-instinct-file-naming
+trigger: "When creating or renaming a Python file"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct File Naming
+
+## Action
+
+Use snake_case for the file name
+
+## Evidence
+
+- Pattern in files agentwatch/api/server.py
+- Pattern in files tests/test_rate_limiting.py
+
+---
+id: agentwatch-instinct-function-naming
+trigger: "When defining a new function"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Function Naming
+
+## Action
+
+Use camelCase for function names
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.functions
+
+---
+id: agentwatch-instinct-class-naming
+trigger: "When defining a new class"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Class Naming
+
+## Action
+
+Use PascalCase for class names
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.classes
+
+---
+id: agentwatch-instinct-constant-naming
+trigger: "When defining a constant"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Constant Naming
+
+## Action
+
+Use SCREAMING_SNAKE_CASE for constant names
+
+## Evidence
+
+- Pattern in codeStyle.namingConventions.constants
+
+---
+id: agentwatch-instinct-import-style
+trigger: "When importing modules within the package"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Import Style
+
+## Action
+
+Use relative imports
+
+## Evidence
+
+- Pattern in codeStyle.importStyle
+
+---
+id: agentwatch-instinct-export-style
+trigger: "When exporting functions or classes"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Export Style
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in codeStyle.exportStyle
+
+---
+id: agentwatch-instinct-test-location
+trigger: "When adding or updating tests"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Test Location
+
+## Action
+
+Place test files in the separate 'tests' folder
+
+## Evidence
+
+- Pattern in architecture.folderStructure.commonFolders
+- Pattern in workflows.filesInvolved
+
+---
+id: agentwatch-instinct-test-type
+trigger: "When writing new tests"
+confidence: 0.7
+domain: testing
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Test Type
+
+## Action
+
+Write unit tests
+
+## Evidence
+
+- Pattern in testing.testTypes
+
+---
+id: agentwatch-instinct-test-pattern
+trigger: "When naming a test file"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Test Pattern
+
+## Action
+
+Use the pattern test_<feature>.py (e.g., test_rate_limiting.py)
+
+## Evidence
+
+- Pattern in files tests/test_rate_limiting.py
+
+---
+id: agentwatch-instinct-commit-format
+trigger: "When making a commit"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Commit Format
+
+## Action
+
+Use the conventional commit format with a 'fix' prefix for bug fixes (e.g., fix: ...)
+
+## Evidence
+
+- Seen in commit 'fix: apply write rate limit to POST /api/v1/events endpoint'
+- Pattern in commits.prefixes
+
+---
+id: agentwatch-instinct-commit-length
+trigger: "When writing a commit message"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Commit Length
+
+## Action
+
+Keep the commit message concise, around 62 characters on average
+
+## Evidence
+
+- Pattern in commits.averageLength
+
+---
+id: agentwatch-instinct-api-endpoint-enhancement
+trigger: "When someone wants to add, fix, or enhance an API endpoint and verify it with tests"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Api Endpoint Enhancement
+
+## Action
+
+Edit or enhance the API endpoint implementation in agentwatch/api/server.py and update or add corresponding tests in tests/test_rate_limiting.py
+
+## Evidence
+
+- Workflow: api-endpoint-enhancement-with-tests
+- Pattern in files agentwatch/api/server.py, tests/test_rate_limiting.py
+
