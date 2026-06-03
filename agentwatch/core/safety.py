@@ -206,6 +206,68 @@ def _score_for_level(level: RiskLevel) -> float:
     }[level]
 
 
+# ----------------------------------------------
+# Recursive-delete normalizer
+# ----------------------------------------------
+
+# Critical filesystem targets. A recursive+force ``rm`` aimed at any of these
+# is treated as CRITICAL regardless of how the flags are spelled. This mirrors
+# the path set in the FS_DELETE_CRITICAL pattern.
+_RM_CRITICAL_PATH_RE = re.compile(
+    r"^(/|~|\.\.|\$HOME|\$PWD|/home|/etc|/usr|/var|/bin|/sbin|/boot)(/|$)"
+)
+
+
+def rm_targets_critical_path(text: str) -> bool:
+    """Return True if ``text`` is an ``rm`` invocation that is both recursive
+    and forced and targets a critical filesystem path.
+
+    The built-in ``FS_DELETE_CRITICAL`` regex only matches a single adjacent
+    ``-[rf]+`` flag token immediately followed by the path, so genuinely
+    destructive variants slip past it, e.g.::
+
+        rm -rf --no-preserve-root /     # flag between -rf and the path
+        rm -r -f /                      # recursion and force split apart
+        rm --recursive --force /        # long-form flags
+
+    This helper tokenizes the command and detects recursive intent, force
+    intent, and a critical target independently of flag spelling, so all of
+    the above are caught.
+    """
+    if not text:
+        return False
+
+    # Look for an ``rm`` command token anywhere (handles a bare command as well
+    # as simple prefixes). We scan tokens after the first ``rm`` we encounter.
+    parts = text.split()
+    try:
+        start = next(i for i, t in enumerate(parts) if t == "rm" or t.endswith("/rm"))
+    except StopIteration:
+        return False
+
+    has_recursive = False
+    has_force = False
+    has_critical_path = False
+
+    for arg in parts[start + 1 :]:
+        if arg == "--recursive":
+            has_recursive = True
+        elif arg == "--force":
+            has_force = True
+        elif arg in ("--no-preserve-root", "--"):
+            continue
+        elif re.fullmatch(r"-[A-Za-z]+", arg):
+            flags = arg[1:]
+            if "r" in flags or "R" in flags:
+                has_recursive = True
+            if "f" in flags:
+                has_force = True
+        elif _RM_CRITICAL_PATH_RE.match(arg):
+            has_critical_path = True
+
+    return has_recursive and has_force and has_critical_path
+
+
 class RiskScorer:
     """Evaluates the risk of a tool call against known patterns."""
 
@@ -261,6 +323,20 @@ class RiskScorer:
                     matched_level = pat.risk_level
                 reasons.append(pat.reason)
                 policies.append(pat.policy_id)
+
+        # Catch recursive-force ``rm`` on a critical path across all flag forms
+        # (e.g. ``rm -rf --no-preserve-root /``, ``rm -r -f /``,
+        # ``rm --recursive --force /``) that the adjacency-based regex misses.
+        if rm_targets_critical_path(full_text):
+            critical_score = _score_for_level(RiskLevel.CRITICAL)
+            if critical_score > matched_score:
+                matched_score = critical_score
+                matched_level = RiskLevel.CRITICAL
+            reason = "Recursive deletion of critical filesystem path"
+            if reason not in reasons:
+                reasons.append(reason)
+            if "FS_DELETE_CRITICAL" not in policies:
+                policies.append("FS_DELETE_CRITICAL")
 
         return matched_level, matched_score, reasons, policies
 
@@ -408,6 +484,11 @@ class SafetyEngine:
             if pat.block_by_default and re.search(pat.pattern, full_text, re.IGNORECASE):
                 block_immediate = True
                 break
+
+        # A recursive-force ``rm`` on a critical path is always blocked, even
+        # when the flag spelling evades the adjacency-based regex above.
+        if not block_immediate and rm_targets_critical_path(full_text):
+            block_immediate = True
 
         # 4. Aggregate safety data for policy evaluation
         safety_data = SafetyCheckData(
