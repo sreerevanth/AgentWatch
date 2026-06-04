@@ -59,9 +59,7 @@ logger = logging.getLogger(__name__)
 RATE_READ = int(os.getenv("API_RATE_LIMIT_READ", "1000"))
 RATE_WRITE = int(os.getenv("API_RATE_LIMIT_WRITE", "200"))
 RATE_WINDOW_SEC = int(os.getenv("API_RATE_LIMIT_WINDOW_SEC", "60"))
-RATE_BUCKET_TTL_SEC = int(
-    os.getenv("API_RATE_LIMIT_BUCKET_TTL_SEC", str(RATE_WINDOW_SEC + 30))
-)
+RATE_BUCKET_TTL_SEC = int(os.getenv("API_RATE_LIMIT_BUCKET_TTL_SEC", str(RATE_WINDOW_SEC + 30)))
 
 
 class _Limiter:
