@@ -4,11 +4,11 @@ FastAPI-based REST API for the observability dashboard, CLI, and integrations.
 """
 
 from __future__ import annotations
-import time
-from collections import defaultdict
 
 import logging
 import os
+import time
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
