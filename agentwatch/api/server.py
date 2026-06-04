@@ -9,6 +9,7 @@ import logging
 import os
 import time
 from collections import defaultdict
+import re
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -26,13 +27,12 @@ from fastapi import (
 )
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
 from agentwatch.core.event_bus import get_event_bus
 from agentwatch.core.models import Repository, init_db
-from agentwatch.core.safety import SafetyEngine, SafetyPolicy
+from agentwatch.core.safety import RiskScorer, SafetyEngine, SafetyPolicy
 from agentwatch.core.schema import (
     AgentEvent,
     AgentFramework,
@@ -308,6 +308,34 @@ class SafetyPolicyUpdate(BaseModel):
     require_approval_on_high: bool = True
     require_approval_on_medium: bool = False
     approval_timeout_seconds: int = 120
+
+
+class SafetyCheckRequest(BaseModel):
+    command: str = Field(min_length=1)
+    tool_name: str = "bash"
+    arguments: dict[str, Any] = Field(default_factory=dict)
+    affected_resources: list[str] = Field(default_factory=list)
+
+
+class ThreatPathNode(BaseModel):
+    policy_id: str
+    reason: str
+    risk_level: str
+    block_by_default: bool
+    matched: bool
+
+
+class SafetyCheckResponse(BaseModel):
+    command: str
+    tool_name: str
+    blocked: bool
+    decision: str
+    risk_level: str
+    risk_score: float
+    reasons: list[str]
+    matched_policies: list[str]
+    requires_approval: bool
+    threat_path: list[ThreatPathNode]
 
 
 def _record_budget(event: AgentEvent) -> None:
@@ -780,6 +808,85 @@ async def get_blocked_events(
         "blocked_events": [event.model_dump_for_storage() for event in events],
         "total": len(events),
     }
+
+
+@app.post("/api/v1/safety/check", response_model=SafetyCheckResponse)
+async def check_safety_command(request: SafetyCheckRequest) -> SafetyCheckResponse:
+    cmd = request.command.strip()
+    if not cmd:
+        raise HTTPException(status_code=400, detail="command must not be empty")
+
+    merged_args = dict(request.arguments)
+    merged_args["command"] = cmd
+    tool_call = ToolCallData(
+        tool_name=request.tool_name,
+        raw_command=cmd,
+        arguments=merged_args,
+        affected_resources=request.affected_resources,
+    )
+
+    # Use the current policy in an isolated SafetyEngine so test invocations
+    # do not mutate global safety counters used by runtime telemetry.
+    sim_engine = SafetyEngine(policy=_safety_engine.policy)
+    event = AgentEvent(
+        session_id="safety-lab",
+        agent_id="safety-lab",
+        agent_name="Safety Lab",
+        framework=AgentFramework.CUSTOM,
+        event_type=EventType.TOOL_CALL,
+        tool_call=tool_call,
+    )
+    checked = await sim_engine.check_event(event)
+    if checked.safety is None:
+        raise HTTPException(status_code=500, detail="safety check failed")
+
+    scorer = RiskScorer(extra_patterns=_safety_engine.policy.custom_patterns)
+    full_text = " ".join(
+        [
+            tool_call.raw_command or "",
+            tool_call.tool_name,
+            *[str(v) for v in tool_call.arguments.values() if isinstance(v, str)],
+        ]
+    )
+    threat_path: list[ThreatPathNode] = []
+    for pattern in scorer._patterns:  # noqa: SLF001
+        try:
+            if pattern.use_regex:
+                matched = bool(re.search(pattern.pattern, full_text, re.IGNORECASE))
+            else:
+                matched = False
+        except re.error:
+            matched = False
+        threat_path.append(
+            ThreatPathNode(
+                policy_id=pattern.policy_id,
+                reason=pattern.reason,
+                risk_level=pattern.risk_level.value,
+                block_by_default=pattern.block_by_default,
+                matched=matched,
+            )
+        )
+
+    safety = checked.safety
+    if safety.blocked:
+        decision = "blocked"
+    elif safety.requires_approval:
+        decision = "requires_approval"
+    else:
+        decision = "allowed"
+
+    return SafetyCheckResponse(
+        command=cmd,
+        tool_name=request.tool_name,
+        blocked=safety.blocked,
+        decision=decision,
+        risk_level=safety.risk_level.value,
+        risk_score=safety.risk_score,
+        reasons=safety.reasons,
+        matched_policies=safety.matched_policies,
+        requires_approval=safety.requires_approval,
+        threat_path=threat_path,
+    )
 
 
 @app.get("/api/v1/dashboard/summary")

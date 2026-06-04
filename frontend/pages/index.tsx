@@ -1,12 +1,14 @@
 import type { ComponentType } from 'react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/router'
 import useSWR from 'swr'
 import { Activity, AlertTriangle, ChevronRight, DollarSign, Loader2, RefreshCw, Shield, Zap } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { format, formatDistanceToNow } from 'date-fns'
 
-import { AgentEvent, AgentSession, DashboardSummary, createEventSocket } from '../lib/api'
+import { AgentEvent, AgentSession, DashboardSummary } from '../lib/api'
+import { useLiveEventSocket } from '../lib/useLiveEventSocket'
+import type { LiveFeedStatus } from '../lib/wsReconnect'
 
 // Resolved at build time from the NEXT_PUBLIC_API_HOST Docker build arg.
 // In production the browser calls the API origin directly (no proxy hop).
@@ -103,22 +105,52 @@ function MetricCard({
   )
 }
 
-function LiveEventFeed({ events, wsStatus }: { events: AgentEvent[]; wsStatus: 'connecting' | 'open' | 'closed' }) {
+function liveFeedBadge(status: LiveFeedStatus, reconnectElapsedSec: number) {
+  if (status === 'streaming') {
+    return (
+      <span className="inline-flex items-center gap-2 text-xs text-emerald-400">
+        <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+        streaming
+      </span>
+    )
+  }
+  if (status === 'reconnecting') {
+    return (
+      <span className="inline-flex items-center gap-2 text-xs text-amber-300">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Reconnecting… {reconnectElapsedSec}s
+      </span>
+    )
+  }
+  if (status === 'failed') {
+    return (
+      <span className="inline-flex items-center gap-2 text-xs text-red-400">
+        Connection failed — refresh to retry
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-2 text-xs text-zinc-500">
+      <Loader2 className="h-3 w-3 animate-spin" />
+      connecting
+    </span>
+  )
+}
+
+function LiveEventFeed({
+  events,
+  wsStatus,
+  reconnectElapsedSec,
+}: {
+  events: AgentEvent[]
+  wsStatus: LiveFeedStatus
+  reconnectElapsedSec: number
+}) {
   return (
     <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
       <div className="mb-4 flex items-center justify-between">
         <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-300">Live Feed</h2>
-        {wsStatus === 'open' ? (
-          <span className="inline-flex items-center gap-2 text-xs text-emerald-400">
-            <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-            streaming
-          </span>
-        ) : (
-          <span className="inline-flex items-center gap-2 text-xs text-zinc-500">
-            <span className="h-2 w-2 rounded-full bg-zinc-500" />
-            {wsStatus}
-          </span>
-        )}
+        {liveFeedBadge(wsStatus, reconnectElapsedSec)}
       </div>
       <div className="max-h-[24rem] space-y-2 overflow-y-auto pr-1">
         {wsStatus === 'connecting' ? (
@@ -250,23 +282,15 @@ export default function DashboardPage() {
   const { data: sessionsData, mutate: refreshSessions, isLoading: sessionsLoading } = useSWR<{ sessions: AgentSession[]; total: number }>(`${API_BASE}/sessions?limit=20`, fetcher, { refreshInterval: 15000 })
   const { data: blockedData, isLoading: blockedLoading } = useSWR<{ blocked_events: AgentEvent[]; total: number }>(`${API_BASE}/safety/blocked?limit=20`, fetcher, { refreshInterval: 15000 })
   const [liveEvents, setLiveEvents] = useState<AgentEvent[]>([])
-  const [wsStatus, setWsStatus] = useState<'connecting' | 'open' | 'closed'>('connecting')
-
-  useEffect(() => {
-    // createEventSocket accesses window — guard against any accidental SSR path
-    if (typeof window === 'undefined') return
-    const ws = createEventSocket((event) => {
+  const { status: wsStatus, reconnectElapsedSec } = useLiveEventSocket(
+    (event) => {
       setLiveEvents((previous) => [event, ...previous].slice(0, 200))
+    },
+    () => {
       refreshSummary()
       refreshSessions()
-    })
-
-    ws.onopen = () => setWsStatus('open')
-    ws.onclose = () => setWsStatus('closed')
-    ws.onerror = () => setWsStatus('closed')
-
-    return () => ws.close()
-  }, [refreshSessions, refreshSummary])
+    },
+  )
 
   const sessions = sessionsData?.sessions ?? []
   const blockedEvents = blockedData?.blocked_events ?? []
@@ -302,7 +326,7 @@ export default function DashboardPage() {
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[1.05fr_1.95fr]">
-          <LiveEventFeed events={liveEvents} wsStatus={wsStatus} />
+          <LiveEventFeed events={liveEvents} wsStatus={wsStatus} reconnectElapsedSec={reconnectElapsedSec} />
           <SessionsTable sessions={sessions} loading={sessionsLoading} />
         </section>
 
