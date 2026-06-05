@@ -283,12 +283,12 @@ class GenericAdapter:
         return self.agent
 
     def _wrap(self, method_name: str, original: Any) -> Any:
-        import asyncio
         import functools
+        import inspect
 
         is_tool_like = _is_tool_like(method_name)
 
-        if asyncio.iscoroutinefunction(original):
+        if inspect.iscoroutinefunction(original):
 
             @functools.wraps(original)
             async def async_wrapped(*args: Any, **kwargs: Any) -> Any:

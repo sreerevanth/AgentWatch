@@ -8,8 +8,8 @@ emit one AgentEvent per node transition when streaming.
 
 from __future__ import annotations
 
-import asyncio
 import functools
+import inspect
 import logging
 import uuid
 from typing import Any
@@ -66,7 +66,7 @@ class LangGraphAdapter:
 
     def _wrap(self, name: str, original: Any) -> Any:
         is_stream = "stream" in name
-        is_async = asyncio.iscoroutinefunction(original) or name == "astream"
+        is_async = inspect.iscoroutinefunction(original) or name == "astream"
 
         if is_async and is_stream:
 
