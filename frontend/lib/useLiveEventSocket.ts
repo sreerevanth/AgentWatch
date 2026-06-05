@@ -65,6 +65,14 @@ export function useLiveEventSocket(
       socket.onopen = () => {
         attempt = 0
         disconnectedAt = null
+
+        clearReconnectTimer()
+
+        if (elapsedTimer) {
+          clearInterval(elapsedTimer)
+          elapsedTimer = undefined
+        }
+
         setReconnectElapsedSec(0)
         setStatus('streaming')
       }
