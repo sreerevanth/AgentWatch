@@ -1,0 +1,414 @@
+# Instincts generated from https://github.com/sreerevanth/AgentWatch
+# Generated: 2026-06-06T13:46:40.843Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: AgentWatch-commit-conventional
+trigger: "when writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Commit Conventional
+
+## Action
+
+Use conventional commit format with prefixes: ci, fix
+
+## Evidence
+
+- 5 commits analyzed
+- Detected conventional commit pattern
+- Examples: fix(security): resolve OWASP scanner bypass by including tool arguments in scan, ci(security): split PR testing and reporting to avoid privileged execution
+
+---
+id: AgentWatch-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Commit Length
+
+## Action
+
+Write moderate-length commit messages (~70 characters)
+
+## Evidence
+
+- Average commit message length: 70 chars
+- Based on 5 commits
+
+---
+id: AgentWatch-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Naming Files
+
+## Action
+
+Use camelCase naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: camelCase
+
+---
+id: AgentWatch-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: AgentWatch-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: AgentWatch-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: AgentWatch-workflow-update-github-actions-workflow
+trigger: "when doing update github actions workflow"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Workflow Update Github Actions Workflow
+
+## Action
+
+Follow the update-github-actions-workflow workflow:
+1. Edit one or more files in .github/workflows/ (e.g., report-on-pr.yml, test-on-pr.yml)
+2. Commit changes with a message describing the CI improvement or fix
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: .github/workflows/report-on-pr.yml, .github/workflows/test-on-pr.yml
+
+---
+id: AgentWatch-workflow-security-feature-or-fix-in-owasp-module
+trigger: "when doing security feature or fix in owasp module"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Workflow Security Feature Or Fix In Owasp Module
+
+## Action
+
+Follow the security-feature-or-fix-in-owasp-module workflow:
+1. Edit agentwatch/security/owasp.py to add or fix security logic
+2. Optionally update or add tests in tests/test_owasp_security.py
+3. Commit with a message describing the security change
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: agentwatch/security/owasp.py, tests/test_owasp_security.py
+
+---
+id: agentwatch-instinct-naming-files
+trigger: "When creating or renaming a file in the codebase"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Naming Files
+
+## Action
+
+Use camelCase for file names
+
+## Evidence
+
+- Pattern in namingConventions.files
+- Observed in agentwatch/
+
+---
+id: agentwatch-instinct-naming-functions
+trigger: "When defining a new function"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Naming Functions
+
+## Action
+
+Use camelCase for function names
+
+## Evidence
+
+- Pattern in namingConventions.functions
+- Observed in agentwatch/
+
+---
+id: agentwatch-instinct-naming-classes
+trigger: "When defining a new class"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Naming Classes
+
+## Action
+
+Use PascalCase for class names
+
+## Evidence
+
+- Pattern in namingConventions.classes
+- Observed in agentwatch/
+
+---
+id: agentwatch-instinct-naming-constants
+trigger: "When defining a constant"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Naming Constants
+
+## Action
+
+Use SCREAMING_SNAKE_CASE for constant names
+
+## Evidence
+
+- Pattern in namingConventions.constants
+- Observed in agentwatch/
+
+---
+id: agentwatch-instinct-import-style
+trigger: "When importing modules in Python files"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Import Style
+
+## Action
+
+Use relative imports
+
+## Evidence
+
+- Pattern in importStyle
+- Observed in agentwatch/
+
+---
+id: agentwatch-instinct-export-style
+trigger: "When exporting functions or classes from a module"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Export Style
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in exportStyle
+- Observed in agentwatch/
+
+---
+id: agentwatch-instinct-test-location
+trigger: "When adding or updating tests"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Test Location
+
+## Action
+
+Place test files in the separate 'tests' folder
+
+## Evidence
+
+- Pattern in architecture.folderStructure.testLocation
+- Seen in tests/test_owasp_security.py
+
+---
+id: agentwatch-instinct-test-owasp
+trigger: "When adding or modifying security logic in agentwatch/security/owasp.py"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Test Owasp
+
+## Action
+
+Update or add corresponding tests in tests/test_owasp_security.py
+
+## Evidence
+
+- Pattern in workflow 'security-feature-or-fix-in-owasp-module'
+- Seen in commits updating both agentwatch/security/owasp.py and tests/test_owasp_security.py
+
+---
+id: agentwatch-instinct-git-commit-format
+trigger: "When writing a commit message"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Git Commit Format
+
+## Action
+
+Use the conventional commit format: <type>(<scope>): <description>
+
+## Evidence
+
+- Pattern in commits.type and commits.prefixes
+- Examples: fix(security): resolve OWASP scanner bypass...
+
+---
+id: agentwatch-instinct-git-commit-length
+trigger: "When writing a commit message"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Git Commit Length
+
+## Action
+
+Keep the commit message concise, around 70 characters on average
+
+## Evidence
+
+- Pattern in commits.averageLength
+- Examples in commit messages
+
+---
+id: agentwatch-instinct-update-ci-workflow
+trigger: "When someone wants to change, split, or harden CI workflows for PR testing or reporting"
+confidence: 0.95
+domain: workflow
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Update Ci Workflow
+
+## Action
+
+Edit .github/workflows/report-on-pr.yml and/or .github/workflows/test-on-pr.yml, then commit with a message describing the CI improvement or fix
+
+## Evidence
+
+- Workflow: update-github-actions-workflow
+- Seen in commits: ci: pin GitHub Action versions and improve report logic
+
+---
+id: agentwatch-instinct-update-owasp-security
+trigger: "When someone wants to add, fix, or improve security scanning logic in the OWASP module"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Update Owasp Security
+
+## Action
+
+Edit agentwatch/security/owasp.py and optionally tests/test_owasp_security.py, then commit with a message describing the security change
+
+## Evidence
+
+- Workflow: security-feature-or-fix-in-owasp-module
+- Seen in commits: fix(security): resolve OWASP scanner bypass...
+
