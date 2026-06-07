@@ -1,0 +1,346 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #0a0a0a;
+  --accent: #e8ff47;
+  --secondary: #bcd20e;
+  --text: #e5e2e1;
+  --muted: #888;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+  color: var(--text);
+  scroll-behavior: auto; /* Lenis handles smooth scroll */
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-inter, 'Inter', sans-serif);
+  overflow-x: hidden;
+}
+
+/* Headings use Syne */
+h1, h2, h3, h4 {
+  font-family: var(--font-syne, 'Syne', sans-serif);
+}
+
+/* Code uses JetBrains Mono */
+code, pre, .mono {
+  font-family: var(--font-jetbrains, 'JetBrains Mono', monospace);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0a0a0a;
+}
+::-webkit-scrollbar-thumb {
+  background: #333;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #e8ff47;
+}
+
+/* Selection */
+::selection {
+  background: rgba(232, 255, 71, 0.2);
+  color: #e8ff47;
+}
+
+/* Gradient text utility */
+.gradient-text {
+  background: linear-gradient(135deg, #e8ff47, #bcd20e);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+/* Dot grid background */
+.dot-grid {
+  background-image: radial-gradient(circle, rgba(232, 255, 71, 0.08) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Shimmer animation */
+@keyframes shimmer {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* Pulse glow */
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 10px rgba(232, 255, 71, 0.3); }
+  50% { box-shadow: 0 0 25px rgba(232, 255, 71, 0.6), 0 0 50px rgba(232, 255, 71, 0.2); }
+}
+
+/* Bounce animation */
+@keyframes bounce-y {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(8px); }
+}
+
+/* Blink cursor */
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+/* Green dot pulse */
+@keyframes green-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.6; transform: scale(1.3); }
+}
+
+.animate-shimmer {
+  animation: shimmer 1.5s infinite;
+}
+.animate-pulse-glow {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+.animate-bounce-y {
+  animation: bounce-y 1.5s ease-in-out infinite;
+}
+.animate-blink {
+  animation: blink 1s step-end infinite;
+}
+.animate-green-pulse {
+  animation: green-pulse 2s ease-in-out infinite;
+}
+
+/* Marquee */
+@keyframes marquee {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-33.333%); }
+}
+
+/* — Premium spotlight card —
+   Strong dark glass so content reads cleanly over the neural canvas.
+   The neural network frames the layout — it never bleeds through cards. */
+.spotlight-card {
+  position: relative;
+  isolation: isolate;
+  border-radius: 1rem;
+  background:
+    linear-gradient(135deg, rgba(232,255,71,0.03) 0%, rgba(15,15,17,0.92) 45%),
+    rgba(13,13,13,0.88);
+  backdrop-filter: blur(16px) saturate(120%);
+  -webkit-backdrop-filter: blur(16px) saturate(120%);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-left: 2px solid rgba(232,255,71,0.35);
+  transition:
+    border-color 350ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 350ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: box-shadow, border-color;
+}
+.spotlight-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background: radial-gradient(
+    320px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(232, 255, 71, 0.10),
+    transparent 60%
+  );
+  opacity: 0;
+  transition: opacity 280ms ease;
+  z-index: 0;
+}
+.spotlight-card:hover {
+  border-left-color: rgba(232,255,71,0.85);
+  box-shadow: 0 0 24px rgba(232,255,71,0.10), inset 0 0 0 1px rgba(232,255,71,0.12);
+}
+.spotlight-card:hover::before { opacity: 1; }
+.spotlight-card > * { position: relative; z-index: 1; }
+
+.spotlight-card-inner {
+  transition: transform 350ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+.spotlight-card:hover .spotlight-card-inner {
+  transform: translateY(-3px);
+}
+
+/* — Magnetic glow button — */
+.btn-magnetic {
+  position: relative;
+  isolation: isolate;
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+              box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1),
+              border-color 240ms ease;
+}
+.btn-magnetic::after {
+  content: "";
+  position: absolute;
+  inset: -1px;
+  border-radius: inherit;
+  background: radial-gradient(
+    140px circle at var(--mx, 50%) var(--my, 50%),
+    rgba(232, 255, 71, 0.22),
+    transparent 60%
+  );
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
+  z-index: -1;
+}
+.btn-magnetic:hover { transform: translateY(-1px); }
+.btn-magnetic:hover::after { opacity: 1; }
+.btn-magnetic:active { transform: translateY(0); }
+
+/* — Discord button subtle pulse — */
+@keyframes discord-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(88,101,242,0.0), 0 0 14px rgba(88,101,242,0.18); }
+  50%      { box-shadow: 0 0 0 0 rgba(88,101,242,0.0), 0 0 22px rgba(88,101,242,0.34); }
+}
+.btn-discord-pulse {
+  animation: discord-pulse 3.4s ease-in-out infinite;
+}
+
+/* — Telemetry float — */
+@keyframes telemetry-float {
+  0%   { opacity: 0; transform: translateY(8px); }
+  15%  { opacity: 1; transform: translateY(0); }
+  85%  { opacity: 1; transform: translateY(0); }
+  100% { opacity: 0; transform: translateY(-8px); }
+}
+
+/* — Scan line on the blocked-action panel — */
+@keyframes scan-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
+/* — Soft slow pulse for live dot — */
+@keyframes live-dot {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(232,255,71,0.45); }
+  50%      { box-shadow: 0 0 0 6px rgba(232,255,71,0); }
+}
+.live-dot {
+  animation: live-dot 1.8s ease-out infinite;
+}
+
+/* — Smooth section hand-off divider — */
+.section-edge {
+  position: relative;
+}
+.section-edge::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent 0%, rgba(232,255,71,0.18) 50%, transparent 100%);
+  pointer-events: none;
+}
+
+/* — Dark glass utility (for tables, panels, terminals) — */
+.dark-glass {
+  background: rgba(13, 13, 13, 0.86);
+  backdrop-filter: blur(14px) saturate(120%);
+  -webkit-backdrop-filter: blur(14px) saturate(120%);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+/* — Section content veil —
+   Dense darkening exactly behind the content cluster.
+   Neural canvas remains fully visible at the section edges. */
+.content-veil {
+  position: relative;
+}
+.content-veil::before {
+  content: "";
+  position: absolute;
+  inset: -2rem -1rem;
+  border-radius: 2rem;
+  background: radial-gradient(
+    ellipse 75% 80% at 50% 50%,
+    rgba(10, 10, 10, 0.72) 0%,
+    rgba(10, 10, 10, 0.35) 55%,
+    transparent 90%
+  );
+  pointer-events: none;
+  z-index: -1;
+}
+
+/* — Click ripple (cybernetic pulse) — */
+@keyframes click-ripple-expand {
+  0% {
+    width: 0; height: 0;
+    opacity: 0.9;
+    border-color: rgba(232,255,71,0.55);
+  }
+  100% {
+    width: 280px; height: 280px;
+    opacity: 0;
+    border-color: rgba(232,255,71,0);
+  }
+}
+.click-ripple {
+  position: fixed;
+  pointer-events: none;
+  z-index: 9999;
+  border: 1px solid rgba(232,255,71,0.55);
+  border-radius: 9999px;
+  transform: translate(-50%, -50%);
+  width: 0; height: 0;
+  box-shadow: 0 0 12px rgba(232,255,71,0.35);
+  animation: click-ripple-expand 800ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.click-ripple::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(232,255,71,0.12), transparent 60%);
+}
+
+/* — Ambient SVG trace lines (between sections) — */
+@keyframes trace-flow {
+  0%   { stroke-dashoffset: 200; }
+  100% { stroke-dashoffset: 0; }
+}
+.trace-line {
+  stroke-dasharray: 12 16;
+  animation: trace-flow 4s linear infinite;
+}
+
+/* Section content must sit above the fixed neural canvas.
+   (nav is excluded — it owns its own fixed positioning) */
+main > section,
+main > footer {
+  position: relative;
+  z-index: 1;
+}
+
+/* — Navbar link underline reveal — */
+.nav-link {
+  position: relative;
+}
+.nav-link::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: -6px;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #e8ff47, transparent);
+  transform: scaleX(0);
+  transform-origin: center;
+  transition: transform 280ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.nav-link:hover::after,
+.nav-link[data-active="true"]::after {
+  transform: scaleX(1);
+}
+.nav-link[data-active="true"] {
+  color: #e5e2e1;
+}
+

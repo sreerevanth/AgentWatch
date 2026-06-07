@@ -79,6 +79,27 @@ export interface DashboardSummary {
   event_bus_stats: Record<string, number>
 }
 
+export interface ThreatPathNode {
+  policy_id: string
+  reason: string
+  risk_level: string
+  block_by_default: boolean
+  matched: boolean
+}
+
+export interface SafetyCheckResponse {
+  command: string
+  tool_name: string
+  blocked: boolean
+  decision: 'allowed' | 'blocked' | 'requires_approval'
+  risk_level: string
+  risk_score: number
+  reasons: string[]
+  matched_policies: string[]
+  requires_approval: boolean
+  threat_path: ThreatPathNode[]
+}
+
 export interface ReplayStep {
   index: number
   event: AgentEvent
@@ -117,6 +138,11 @@ export const api = {
     }),
   simulate: (sessionId: string, body: { rewind_to_step: number; tool_id?: string; replacement?: any; notes?: string }) =>
     request(`/sessions/${sessionId}/simulate`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  checkSafety: (body: { command: string; tool_name?: string; arguments?: Record<string, unknown>; affected_resources?: string[] }) =>
+    request<SafetyCheckResponse>('/safety/check', {
       method: 'POST',
       body: JSON.stringify(body),
     }),

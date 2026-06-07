@@ -1,5 +1,5 @@
 """
-SAF-002 — Risk Scoring Engine.
+SAF-002 â€” Risk Scoring Engine.
 
 Score 0..100 per action combining:
     command_danger + context_risk + goal_alignment_penalty
@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 
+from agentwatch.core.safety import rm_targets_critical_path
 from agentwatch.core.schema import AgentEvent, RiskLevel
 
 _DANGEROUS_CMD = [
@@ -45,6 +46,14 @@ def _command_danger(raw: str | None) -> tuple[int, list[str]]:
         if pat.search(raw):
             matched.append(pat.pattern)
             score = max(score, weight)
+    # Recursive-force ``rm`` on a critical path across all flag spellings
+    # (e.g. ``rm -r -f /``, ``rm --recursive --force /``) that the narrow
+    # regex above misses.
+    if rm_targets_critical_path(raw):
+        score = max(score, 95)
+        flag = "rm_recursive_force_critical_path"
+        if flag not in matched:
+            matched.append(flag)
     return score, matched
 
 

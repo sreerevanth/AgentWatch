@@ -13,9 +13,11 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 
+from agentwatch.core.blast_radius import BlastRadiusEstimator
 from agentwatch.core.policy_dsl import PolicyAction, PolicyEngine
 from agentwatch.core.schema import (
     AgentEvent,
+    AgentFramework,
     ConfidenceData,
     EventType,
     ExecutionStatus,
@@ -204,6 +206,80 @@ def _score_for_level(level: RiskLevel) -> float:
     }[level]
 
 
+# ----------------------------------------------
+# Recursive-delete normalizer
+# ----------------------------------------------
+
+# Critical filesystem targets. A recursive+force ``rm`` aimed at any of these
+# is treated as CRITICAL regardless of how the flags are spelled. This mirrors
+# the path set in the FS_DELETE_CRITICAL pattern.
+_RM_CRITICAL_PATH_RE = re.compile(
+    r"^(/|~|\.\.|\$HOME|\$PWD|/home|/etc|/usr|/var|/bin|/sbin|/boot)(/|$)"
+)
+
+
+def rm_targets_critical_path(text: str) -> bool:
+    """Return True if ``text`` is an ``rm`` invocation that is both recursive
+    and forced and targets a critical filesystem path.
+
+    The built-in ``FS_DELETE_CRITICAL`` regex only matches a single adjacent
+    ``-[rf]+`` flag token immediately followed by the path, so genuinely
+    destructive variants slip past it, e.g.::
+
+        rm -rf --no-preserve-root /     # flag between -rf and the path
+        rm -r -f /                      # recursion and force split apart
+        rm --recursive --force /        # long-form flags
+
+    This helper tokenizes the command and detects recursive intent, force
+    intent, and a critical target independently of flag spelling, so all of
+    the above are caught.
+    """
+    if not text:
+        return False
+
+    # Look for an ``rm`` command token anywhere (handles a bare command as well
+    # as simple prefixes). We scan tokens after the first ``rm`` we encounter.
+    parts = text.split()
+    try:
+        start = next(i for i, t in enumerate(parts) if t == "rm" or t.endswith("/rm"))
+    except StopIteration:
+        return False
+
+    has_recursive = False
+    has_force = False
+    has_critical_path = False
+    end_of_options = False
+
+    for arg in parts[start + 1 :]:
+        # ``--`` terminates option parsing: every token after it is an operand
+        # (a path), never a flag -- so ``rm -r -- --force /`` does NOT count as
+        # forced. The path matcher below still runs so ``rm -rf -- /`` is caught.
+        if not end_of_options:
+            if arg == "--":
+                end_of_options = True
+                continue
+            if arg == "--recursive":
+                has_recursive = True
+                continue
+            if arg == "--force":
+                has_force = True
+                continue
+            if arg == "--no-preserve-root":
+                continue
+            if re.fullmatch(r"-[A-Za-z]+", arg):
+                flags = arg[1:]
+                if "r" in flags or "R" in flags:
+                    has_recursive = True
+                if "f" in flags:
+                    has_force = True
+                continue
+
+        if _RM_CRITICAL_PATH_RE.match(arg):
+            has_critical_path = True
+
+    return has_recursive and has_force and has_critical_path
+
+
 class RiskScorer:
     """Evaluates the risk of a tool call against known patterns."""
 
@@ -260,6 +336,20 @@ class RiskScorer:
                 reasons.append(pat.reason)
                 policies.append(pat.policy_id)
 
+        # Catch recursive-force ``rm`` on a critical path across all flag forms
+        # (e.g. ``rm -rf --no-preserve-root /``, ``rm -r -f /``,
+        # ``rm --recursive --force /``) that the adjacency-based regex misses.
+        if rm_targets_critical_path(full_text):
+            critical_score = _score_for_level(RiskLevel.CRITICAL)
+            if critical_score > matched_score:
+                matched_score = critical_score
+                matched_level = RiskLevel.CRITICAL
+            reason = "Recursive deletion of critical filesystem path"
+            if reason not in reasons:
+                reasons.append(reason)
+            if "FS_DELETE_CRITICAL" not in policies:
+                policies.append("FS_DELETE_CRITICAL")
+
         return matched_level, matched_score, reasons, policies
 
     def add_pattern(self, pattern: RiskPattern) -> None:
@@ -294,6 +384,7 @@ class SafetyEngine:
         approval_callback: ApprovalCallback | None = None,
         auditor: ReasoningAuditor | None = None,
         policy_engine: PolicyEngine | None = None,
+        blast_radius_estimator: BlastRadiusEstimator | None = None,
     ) -> None:
         """Create a safety engine with optional policy and approval hook.
 
@@ -302,12 +393,14 @@ class SafetyEngine:
             approval_callback: Async callback for human-in-the-loop approval.
             auditor: Reasoning auditor for confidence scoring.
             policy_engine: DSL policy engine for complex rules.
+            blast_radius_estimator: Estimator for proactive impact analysis.
         """
         self._policy = policy or DEFAULT_POLICY
         self._scorer = RiskScorer(extra_patterns=self._policy.custom_patterns)
         self._approval_callback = approval_callback
         self._auditor = auditor or ReasoningAuditor()
         self._policy_engine = policy_engine or PolicyEngine()
+        self._blast_radius_estimator = blast_radius_estimator or BlastRadiusEstimator()
         self._pending_approvals: dict[str, asyncio.Future[bool]] = {}
         self._blocked_count = 0
         self._approved_count = 0
@@ -330,80 +423,32 @@ class SafetyEngine:
             return event
 
         self._checked_count += 1
-        tool_call = event.tool_call
 
-        # 1. Pattern-based risk scoring
-        risk_level, risk_score, reasons, policies = self._scorer.score(tool_call)
-
-        # 2. Confidence-based reasoning audit
+        # 1. Confidence-based reasoning audit (Async only for now)
         audit = await self._auditor.audit_step(event.step_number, event)
         event.confidence = ConfidenceData(
             overall_score=audit.score,
             explanation=audit.rationale,
         )
 
-        # 3. Static/Pattern-based blocking (pre-DSL)
-        block_immediate = False
-        for pat in self._scorer._patterns:
-            if pat.block_by_default:
-                full_text = " ".join(filter(None, [tool_call.raw_command, tool_call.tool_name]))
-                if re.search(pat.pattern, full_text, re.IGNORECASE):
-                    block_immediate = True
-                    break
-
-        # 4. Aggregate safety data for policy evaluation
-        safety_data = SafetyCheckData(
-            risk_level=risk_level,
-            risk_score=risk_score,
-            blocked=block_immediate,
-            reasons=reasons,
-            matched_policies=policies,
-            approval_timeout_seconds=self._policy.approval_timeout_seconds,
-        )
+        # 2. Run shared evaluation logic
+        safety_data, block_decision = self._evaluate_safety(event)
         event.safety = safety_data
-
-        # 5. DSL Policy evaluation
-        decision = self._policy_engine.evaluate(event)
-
-        # Preserve previously computed block_immediate if DSL says ALLOW
-        if decision.action == PolicyAction.BLOCK:
-            block_immediate = True
-        elif decision.action == PolicyAction.PAUSE_AND_ALERT:
-            block_immediate = True
-
-        requires_approval = decision.action == PolicyAction.REQUIRE_APPROVAL
-
-        # Fallback to static policy if no DSL rules matched
-        if decision.action == PolicyAction.ALLOW and not block_immediate:
-            if risk_level == RiskLevel.CRITICAL:
-                block_immediate = True
-            elif risk_level == RiskLevel.HIGH and self._policy.block_on_high:
-                block_immediate = True
-            elif risk_level == RiskLevel.HIGH and self._policy.require_approval_on_high:
-                requires_approval = True
-            elif risk_level == RiskLevel.MEDIUM and self._policy.require_approval_on_medium:
-                requires_approval = True
-
-        safety_data.blocked = block_immediate
-        safety_data.requires_approval = requires_approval and not safety_data.blocked
-        if decision.reasons:
-            safety_data.reasons.extend(decision.reasons)
 
         if safety_data.blocked:
             event.status = ExecutionStatus.BLOCKED
             self._blocked_count += 1
             logger.warning(
-                "BLOCKED event %s [%s] risk=%s conf=%.2f: %s",
+                "BLOCKED event %s [%s] risk=%s: %s",
                 event.event_id,
                 event.tool_call.tool_name,
-                risk_level.value,
-                audit.score,
+                safety_data.risk_level.value,
                 safety_data.reasons,
             )
             return event
 
-        if requires_approval:
-            # CodeRabbit: Block if approval is required but no callback exists
+        # 3. Handle Human-in-the-Loop approvals (Async path)
+        if safety_data.requires_approval:
             if not self._approval_callback:
                 logger.warning(
                     "Approval required for event %s but no callback registered. Blocking.",
@@ -424,6 +469,89 @@ class SafetyEngine:
             self._approved_count += 1
 
         return event
+
+    def _evaluate_safety(self, event: AgentEvent) -> tuple[SafetyCheckData, bool]:
+        """Core evaluation logic shared between sync and async paths.
+
+        Args:
+            event: Event to evaluate.
+
+        Returns:
+            Tuple of (safety_data, final_block_decision).
+        """
+        tool_call = event.tool_call
+        if not tool_call:
+            return SafetyCheckData(), False
+
+        # 1. Pattern-based risk scoring
+        risk_level, risk_score, reasons, policies = self._scorer.score(tool_call)
+
+        # 2. Blast radius impact analysis
+        radius = self._blast_radius_estimator.estimate(event)
+
+        # 3. Static/Pattern-based blocking (pre-DSL)
+        block_immediate = False
+        full_text = " ".join(filter(None, [tool_call.raw_command, tool_call.tool_name]))
+        for pat in self._scorer._patterns:
+            if pat.block_by_default and re.search(pat.pattern, full_text, re.IGNORECASE):
+                block_immediate = True
+                break
+
+        # A recursive-force ``rm`` on a critical path is always blocked, even
+        # when the flag spelling evades the adjacency-based regex above.
+        if not block_immediate and rm_targets_critical_path(full_text):
+            block_immediate = True
+
+        # 4. Aggregate safety data for policy evaluation
+        safety_data = SafetyCheckData(
+            risk_level=risk_level,
+            risk_score=risk_score,
+            blocked=block_immediate,
+            reasons=list(reasons),
+            matched_policies=list(policies),
+            approval_timeout_seconds=self._policy.approval_timeout_seconds,
+            blast_radius=radius.to_dict(),
+        )
+
+        # Temporary assignment to allow DSL evaluation to see current state
+        event.safety = safety_data
+
+        # 5. DSL Policy evaluation
+        decision = self._policy_engine.evaluate(event)
+
+        if decision.action == PolicyAction.BLOCK or decision.action == PolicyAction.PAUSE_AND_ALERT:
+            block_immediate = True
+        elif decision.action == PolicyAction.REQUIRE_APPROVAL:
+            # We don't set block_immediate=True here yet, it's handled in callers
+            pass
+
+        requires_approval = decision.action == PolicyAction.REQUIRE_APPROVAL
+
+        # 6. Escalation logic (Causal Override)
+        # If blast radius is high, we force approval even if other policies didn't catch it
+        if self._blast_radius_estimator.requires_approval(radius):
+            if not requires_approval and not block_immediate:
+                requires_approval = True
+                safety_data.reasons.append(f"ESCALATED: {radius.explanation}")
+
+        # 7. Fallback to static policy if no DSL rules matched
+        if decision.action == PolicyAction.ALLOW and not block_immediate:
+            if risk_level == RiskLevel.CRITICAL:
+                block_immediate = True
+            elif risk_level == RiskLevel.HIGH and self._policy.block_on_high:
+                block_immediate = True
+            elif risk_level == RiskLevel.HIGH and self._policy.require_approval_on_high:
+                requires_approval = True
+            elif risk_level == RiskLevel.MEDIUM and self._policy.require_approval_on_medium:
+                requires_approval = True
+
+        if decision.reasons:
+            safety_data.reasons.extend(decision.reasons)
+
+        safety_data.blocked = block_immediate
+        safety_data.requires_approval = requires_approval and not safety_data.blocked
+
+        return safety_data, block_immediate
 
     async def _request_approval(self, event: AgentEvent, safety_data: SafetyCheckData) -> bool:
         """Await human approval via the configured callback.
@@ -468,14 +596,12 @@ class SafetyEngine:
         self._scorer = RiskScorer(extra_patterns=policy.custom_patterns)
 
     def check_tool_call_sync(self, tool_call: ToolCallData) -> tuple[bool, list[str]]:
-        """Synchronous risk check — pattern matching only, no approval flow.
+        """Synchronous risk check — consistent with async check_event logic.
 
         Safe to call from synchronous code where an event loop may not be
-        running (e.g. :class:`agentwatch.core.watcher.GenericAdapter` sync
-        wrappers).  Approval callbacks are never triggered; calls that would
-        require human approval are *allowed* with a warning rather than
-        blocked.  Use :meth:`check_event` from async code to get the full
-        approval flow.
+        running. DSL policies and Blast Radius (if applicable) are enforced.
+        Human-in-the-loop approvals are not possible in this path; calls
+        requiring approval will be BLOCKED (fail-safe) rather than allowed.
 
         Args:
             tool_call: Tool invocation to evaluate.
@@ -484,31 +610,36 @@ class SafetyEngine:
             ``(blocked, reasons)`` — ``blocked`` is ``True`` when the call
             must be prevented immediately.
         """
-        risk_level, _, reasons, _ = self._scorer.score(tool_call)
-
-        block = risk_level == RiskLevel.CRITICAL or (
-            risk_level == RiskLevel.HIGH and self._policy.block_on_high
+        # Create a transient event for evaluation
+        event = AgentEvent(
+            session_id="sync-check",
+            agent_id="unknown",
+            framework=AgentFramework.CLAUDE_CODE,  # Default
+            event_type=EventType.TOOL_CALL,
+            tool_call=tool_call,
         )
 
-        # Honour block_by_default patterns even when general policy is lenient
-        if not block:
-            full_text = " ".join([x for x in [tool_call.raw_command, tool_call.tool_name] if x])
-            for pat in self._scorer._patterns:
-                if pat.block_by_default and re.search(pat.pattern, full_text, re.IGNORECASE):
-                    block = True
-                    break
-
         self._checked_count += 1
-        if block:
+        safety_data, block_decision = self._evaluate_safety(event)
+
+        # Fail-safe: if the decision was REQUIRE_APPROVAL, we must block in sync path
+        final_block = block_decision or safety_data.requires_approval
+
+        if final_block:
             self._blocked_count += 1
+            if safety_data.requires_approval:
+                safety_data.reasons.append(
+                    "Sync path cannot request human approval; blocked for safety."
+                )
+
             logger.warning(
                 "BLOCKED (sync) [%s] risk=%s: %s",
                 tool_call.tool_name,
-                risk_level.value,
-                reasons,
+                safety_data.risk_level.value,
+                safety_data.reasons,
             )
 
-        return block, reasons
+        return final_block, safety_data.reasons
 
     def stats(self) -> dict[str, int]:
         """Return counters for checked, blocked, and approved events.
@@ -566,5 +697,6 @@ async def cli_approval_handler(event: AgentEvent, safety: SafetyCheckData) -> bo
         print("Non-interactive session detected. Blocking action.")
         return False
 
-    response = input("Allow this action? [y/N]: ").strip().lower()
+    response = await asyncio.to_thread(input, "Allow this action? [y/N]: ")
+    response = response.strip().lower()
     return response in ("y", "yes")

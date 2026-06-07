@@ -10,8 +10,19 @@ venv/
 dist/
 build/
 
+# Coverage (pytest --cov)
+.coverage
+coverage.json
+coverage.xml
+htmlcov/
+
+# Node
+node_modules/
+**/node_modules/
+
 # Frontend
 frontend/node_modules/
+agentwatch-landing/node_modules/
 frontend/.next/
 frontend/tsconfig.tsbuildinfo
 

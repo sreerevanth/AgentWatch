@@ -1,8 +1,9 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/AgentWatch-v0.1.0-black?style=for-the-badge" />
+<img src="https://img.shields.io/badge/AgentWatch-v0.2.0-black?style=for-the-badge" />
 
 # AgentWatch
+<img width="130" height="130" alt="ChatGPT Image May 29, 2026, 10_52_17 PM" src="https://github.com/user-attachments/assets/4e6fd818-2458-4ac2-bb9c-25542622dd00" />
 
 ### Your AI agent is lying to you.
 ### AgentWatch catches it — before it deletes your database.
@@ -129,7 +130,7 @@ That's it. Zero config for default settings, or customize via the [.env.example]
 
 ## Supported Frameworks
 
-AgentWatch wraps your existing agent. **You change nothing.**
+AgentWatch wraps your existing agent. **You change nothing.** Detailed guides for each framework are available in the [docs/adapters/](./docs/adapters/) directory.
 
 <details>
 <summary><b>Claude Code</b></summary>
@@ -137,6 +138,8 @@ AgentWatch wraps your existing agent. **You change nothing.**
 ```bash
 agentwatch watch "Build me a REST API"
 ```
+
+[Read the detailed Claude Code guide](./docs/adapters/claude-code.md)
 </details>
 
 <details>
@@ -148,6 +151,8 @@ from agentwatch.adapters.langchain import AgentWatchCallbackHandler
 handler = AgentWatchCallbackHandler()
 agent = AgentExecutor(agent=..., callbacks=[handler])
 ```
+
+[Read the detailed LangChain guide](./docs/adapters/langchain.md)
 </details>
 
 <details>
@@ -354,6 +359,31 @@ pytest tests/
 ```
 
 Browse [open issues](https://github.com/sreerevanth/AgentWatch/issues) — tagged by difficulty: `good first issue` · `intermediate` · `advanced`
+
+Every PR to `main` is automatically tested by the [`test-on-pr`](.github/workflows/test-on-pr.yml) workflow, which runs the suite with coverage and posts the results as a PR comment.
+
+---
+
+## Release Process
+
+Releases publish to [PyPI](https://pypi.org/project/agentwatch-ai/) automatically via the [`publish-pypi`](.github/workflows/publish-pypi.yml) workflow whenever a version tag is pushed:
+
+```bash
+# Bump [project].version in pyproject.toml to match the tag first, then:
+git tag v0.X.Y
+git push origin v0.X.Y
+# PyPI publishes automatically.
+```
+
+On a `v*` tag the workflow verifies the tag matches `pyproject.toml` (failing fast on a mismatch), builds the wheel + sdist, runs `twine check`, uploads with `twine`, and creates a GitHub Release titled **AgentWatch v0.X.Y** — notes pulled from `CHANGELOG.md`, with the `.whl` and `.tar.gz` attached.
+
+### One-time setup — add the PyPI token
+
+The upload step authenticates with a PyPI API token stored as a GitHub secret named `PYPI_TOKEN`:
+
+1. Create a token at **pypi.org → Account settings → API tokens** (scope it to this project).
+2. In the repo: **Settings → Secrets and variables → Actions → New repository secret**.
+3. Name it `PYPI_TOKEN` and paste your `pypi-...` token as the value.
 
 ---
 

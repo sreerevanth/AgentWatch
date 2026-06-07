@@ -1,0 +1,3 @@
+# Locust CSV output from run_load_test.sh (--csv results)
+results_*.csv
+results.csv

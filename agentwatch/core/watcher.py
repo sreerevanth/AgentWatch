@@ -78,7 +78,9 @@ class AgentWatchBlockedError(RuntimeError):
 # ─────────────────────────────────────────────
 
 #: Method name substrings that indicate a potential tool invocation.
-_TOOL_LIKE_KEYWORDS: frozenset[str] = frozenset({"execute", "run", "call", "invoke", "tool"})
+_TOOL_LIKE_KEYWORDS: frozenset[str] = frozenset(
+    {"execute", "run", "call", "invoke", "tool", "kickoff", "step", "stream"}
+)
 
 
 def _is_tool_like(method_name: str) -> bool:
@@ -281,12 +283,12 @@ class GenericAdapter:
         return self.agent
 
     def _wrap(self, method_name: str, original: Any) -> Any:
-        import asyncio
         import functools
+        import inspect
 
         is_tool_like = _is_tool_like(method_name)
 
-        if asyncio.iscoroutinefunction(original):
+        if inspect.iscoroutinefunction(original):
 
             @functools.wraps(original)
             async def async_wrapped(*args: Any, **kwargs: Any) -> Any:

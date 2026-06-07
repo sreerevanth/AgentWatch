@@ -5,7 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+The PyPI publish workflow reads the section matching the release tag from this
+file and uses it as the GitHub Release body, so keep each version's notes here.
+
 ## [Unreleased]
+
+### Added
+- Locust load-test suite (`tests/load/`) simulating weighted agent traffic.
+- Auto-updating contributors wall (scheduled workflow + `contributors.json`).
+- PyPI auto-publish workflow on `v*` tags and a PR test/coverage workflow.
 
 ## [0.2.0-preview] - 2026-05-27
 

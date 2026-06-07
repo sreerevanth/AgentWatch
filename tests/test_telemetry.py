@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock
-from agentwatch.telemetry.otel import TelemetryProvider, TelemetryConfig, OTELConfig, OTELExporter
+
+from agentwatch.telemetry.otel import TelemetryConfig, TelemetryProvider
 
 
 def test_telemetry_config_backward_compatibility():
