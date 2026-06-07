@@ -115,6 +115,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  simulate: (sessionId: string, body: { rewind_to_step: number; tool_id?: string; replacement?: any; notes?: string }) =>
+    request(`/sessions/${sessionId}/simulate`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
 }
 
 export function createEventSocket(onEvent: (event: AgentEvent) => void, wsUrl?: string): WebSocket {
