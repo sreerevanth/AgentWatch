@@ -919,6 +919,31 @@ async def seed_demo(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     return {"status": "seeded"}
 
 
+def _sanitize_event(event_dict: dict[str, Any]) -> dict[str, Any]:
+    """Escape HTML tags in user-facing preview strings to prevent XSS in the dashboard."""
+    import html
+    if "prompt_preview" in event_dict and isinstance(event_dict["prompt_preview"], str):
+        event_dict["prompt_preview"] = html.escape(event_dict["prompt_preview"])
+    if "planner_output_preview" in event_dict and isinstance(event_dict["planner_output_preview"], str):
+        event_dict["planner_output_preview"] = html.escape(event_dict["planner_output_preview"])
+    
+    if "tool_call" in event_dict and event_dict["tool_call"]:
+        tc = event_dict["tool_call"]
+        if "raw_command" in tc and isinstance(tc["raw_command"], str):
+            tc["raw_command"] = html.escape(tc["raw_command"])
+        if "arguments" in tc and isinstance(tc["arguments"], dict):
+            tc["arguments"] = {k: html.escape(str(v)) for k, v in tc["arguments"].items()}
+            
+    if "tool_result" in event_dict and event_dict["tool_result"]:
+        tr = event_dict["tool_result"]
+        if "output" in tr and isinstance(tr["output"], str):
+            tr["output"] = html.escape(tr["output"])
+        if "error" in tr and isinstance(tr["error"], str):
+            tr["error"] = html.escape(tr["error"])
+            
+    return event_dict
+
+
 @app.websocket("/ws/events")
 async def websocket_events(websocket: WebSocket) -> None:
     """Real-time event stream over WebSocket.
@@ -958,7 +983,7 @@ async def websocket_events(websocket: WebSocket) -> None:
 
     async def forward(event: AgentEvent) -> None:
         try:
-            await websocket.send_json(event.model_dump_for_storage())
+            await websocket.send_json(_sanitize_event(event.model_dump_for_storage()))
         except Exception:
             logger.debug("WebSocket client send failed", exc_info=True)
 

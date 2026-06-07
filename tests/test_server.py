@@ -126,3 +126,27 @@ class TestWebSocketAuth:
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("/ws/events"):
                 pass
+
+
+def test_websocket_payload_sanitization(client):
+    from agentwatch.core.event_bus import get_event_bus
+    from agentwatch.core.schema import AgentEvent, EventType, AgentFramework
+    
+    # Connect to websocket
+    with client.websocket_connect("/ws/events") as ws:
+        # Publish an event to the bus containing HTML
+        event = AgentEvent(
+            session_id="ws-test-session",
+            agent_id="test-agent",
+            framework=AgentFramework.CUSTOM,
+            event_type=EventType.PLANNER_OUTPUT,
+            planner_output_preview="<script>alert('xss')</script>",
+        )
+        
+        # Publish synchronously
+        get_event_bus().publish_sync(event)
+        
+        # Read from websocket
+        received = ws.receive_json()
+        assert received["planner_output_preview"] == "&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;"
+
