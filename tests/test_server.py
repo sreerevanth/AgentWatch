@@ -126,3 +126,37 @@ class TestWebSocketAuth:
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("/ws/events"):
                 pass
+
+
+def test_update_safety_policy_validation(client):
+    # Valid payload
+    resp = client.put(
+        "/api/v1/safety/policy",
+        json={
+            "block_on_high": True,
+            "block_on_critical": True,
+            "require_approval_on_high": True,
+            "require_approval_on_medium": False,
+            "approval_timeout_seconds": 60,
+        },
+    )
+    assert resp.status_code == 200
+
+    # Invalid payload (timeout too low)
+    resp = client.put(
+        "/api/v1/safety/policy",
+        json={
+            "approval_timeout_seconds": 4,
+        },
+    )
+    assert resp.status_code == 422
+
+    # Invalid payload (timeout too high)
+    resp = client.put(
+        "/api/v1/safety/policy",
+        json={
+            "approval_timeout_seconds": 99999,
+        },
+    )
+    assert resp.status_code == 422
+
