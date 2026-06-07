@@ -154,7 +154,7 @@ export default function ReplayStudio() {
   }
 
   if (isLoading) return <div className="p-8 text-slate-400">Loading Replay Studio...</div>
-  if (error) return <div className="p-8 text-red-400">Error loading session: {error.message}</div>
+  if (error) return <div className="p-8 text-red-400">Error loading session: {error instanceof Error ? error.message : String(error)}</div>
   if (!sessionParam) return (
     <div className="flex flex-col items-center justify-center min-h-screen bg-[#0b1020] text-slate-300">
       <Film size={64} className="mb-6 text-pink-500 opacity-50" />
@@ -737,7 +737,7 @@ export default function ReplayStudio() {
                       </div>
                     )}
 
-                    {data.failure_analysis.tool_error_counts && Object.keys(data.failure_analysis.tool_error_counts).length > 0 && (
+                    {data.failure_analysis?.tool_error_counts && Object.keys(data.failure_analysis.tool_error_counts).length > 0 && (
                       <div className="bg-slate-900/50 border border-slate-800 rounded-2xl p-6">
                         <h3 className="text-sm font-bold text-slate-400 uppercase mb-6">Tool Error Distribution</h3>
                         <div className="space-y-4">

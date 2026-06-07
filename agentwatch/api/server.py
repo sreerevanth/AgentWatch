@@ -753,8 +753,11 @@ async def simulate_session(
         replacement=request.replacement,
         notes=request.notes,
     )
-    engine = CounterfactualEngine()
-    result = engine.run(events, scenario)
+    try:
+        engine = CounterfactualEngine()
+        result = engine.run(events, scenario)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     return {
         "session_id": session_id,
