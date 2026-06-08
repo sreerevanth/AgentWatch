@@ -1,6 +1,6 @@
-﻿# Contributing to AgentWatch
+# Contributing to AgentWatch
 
-Thank you for your interest in contributing to AgentWatch ≡ƒÜÇ
+Thank you for your interest in contributing to AgentWatch 🚀
 
 AgentWatch is an open-source reliability, safety, and observability platform for AI agents.
 
@@ -45,7 +45,7 @@ We're building this together.
 
 Join the AgentWatch community:
 
-≡ƒÆ¼ Discord:
+💬 Discord:
 https://discord.com/invite/ZbQ9m9HtnE
 
 The Discord server is the best place for:
@@ -120,8 +120,6 @@ Do not commit directly to `main`.
 ---
 
 # Backend Setup
-
-## Linux / macOS
 
 ```bash
 python -m pip install -e ".[dev]"
@@ -249,13 +247,13 @@ http://localhost:3000
 
 ```text
 AgentWatch/
-Γö£ΓöÇΓöÇ agentwatch/
-Γö£ΓöÇΓöÇ frontend/
-Γö£ΓöÇΓöÇ tests/
-Γö£ΓöÇΓöÇ docs/
-Γö£ΓöÇΓöÇ docker-compose.yml
-Γö£ΓöÇΓöÇ pyproject.toml
-ΓööΓöÇΓöÇ README.md
+├── agentwatch/
+├── frontend/
+├── tests/
+├── docs/
+├── docker-compose.yml
+├── pyproject.toml
+└── README.md
 ```
 
 ---
@@ -481,5 +479,4 @@ Whether you:
 
 your contribution is appreciated.
 
-Thank you for helping build AgentWatch Γ¥ñ∩╕Å
-
+Thank you for helping build AgentWatch ❤️
