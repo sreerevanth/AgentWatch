@@ -375,9 +375,7 @@ def chmod_targets_critical_path(text: str) -> bool:
 
     parts = text.split()
     try:
-        start = next(
-            i for i, t in enumerate(parts) if t == "chmod" or t.endswith("/chmod")
-        )
+        start = next(i for i, t in enumerate(parts) if t == "chmod" or t.endswith("/chmod"))
     except StopIteration:
         return False
 
@@ -442,9 +440,7 @@ def is_remote_code_execution(text: str) -> bool:
     match = re.search(_RCE_FETCH + r"[^\n]*?\s-[oO]\s*(\S+)", text, re.IGNORECASE)
     if match:
         fname = match.group(1).strip("'\"")
-        if fname and re.search(
-            _RCE_INTERP + r"[^\n]*" + re.escape(fname), text, re.IGNORECASE
-        ):
+        if fname and re.search(_RCE_INTERP + r"[^\n]*" + re.escape(fname), text, re.IGNORECASE):
             return True
 
     return False
