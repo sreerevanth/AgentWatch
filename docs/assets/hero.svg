@@ -1,0 +1,91 @@
+<svg viewBox="0 0 1200 480" xmlns="http://www.w3.org/2000/svg" font-family="'Segoe UI', system-ui, -apple-system, Helvetica, Arial, sans-serif" role="img" aria-label="AgentWatch execution flow: your agent passes proposed actions to AgentWatch, which captures reasoning, audits it with an independent model, blocks dangerous actions, and checkpoints for rollback before allowed actions reach the world.">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#0A0E1A"/>
+      <stop offset="1" stop-color="#0C1326"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#34D8C4"/>
+      <stop offset="1" stop-color="#2BC58A"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.5" cy="0.5" r="0.5">
+      <stop offset="0" stop-color="#34D8C4" stop-opacity="0.16"/>
+      <stop offset="1" stop-color="#34D8C4" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="soft" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="6" stdDeviation="11" flood-color="#000000" flood-opacity="0.40"/>
+    </filter>
+    <marker id="arrowG" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="10" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#2BC58A"/></marker>
+    <marker id="arrowR" markerUnits="userSpaceOnUse" markerWidth="14" markerHeight="14" refX="10" refY="5" orient="auto"><path d="M0,0 L10,5 L0,10 Z" fill="#FF5C6C"/></marker>
+    <marker id="arrowM" markerUnits="userSpaceOnUse" markerWidth="13" markerHeight="13" refX="9" refY="4.5" orient="auto"><path d="M0,0 L9,4.5 L0,9 Z" fill="#566089"/></marker>
+  </defs>
+
+  <rect width="1200" height="480" fill="url(#bg)"/>
+  <ellipse cx="585" cy="225" rx="330" ry="215" fill="url(#glow)"/>
+
+  <text x="600" y="42" fill="#5C6680" font-size="13" letter-spacing="4" text-anchor="middle" font-weight="600">EXECUTION FLOW</text>
+
+  <!-- ============ AGENT ============ -->
+  <rect x="55" y="175" width="225" height="130" rx="16" fill="#131B30" stroke="#263150" stroke-width="1.5" filter="url(#soft)"/>
+  <rect x="149" y="190" width="36" height="28" rx="7" fill="none" stroke="#34D8C4" stroke-width="2.5"/>
+  <circle cx="159" cy="204" r="3" fill="#34D8C4"/>
+  <circle cx="175" cy="204" r="3" fill="#34D8C4"/>
+  <line x1="167" y1="190" x2="167" y2="182" stroke="#34D8C4" stroke-width="2.5"/>
+  <circle cx="167" cy="179" r="2.6" fill="#34D8C4"/>
+  <text x="167" y="246" fill="#E8ECF5" font-size="17" font-weight="700" text-anchor="middle">YOUR AGENT</text>
+  <text x="167" y="267" fill="#8A94AC" font-size="11.5" text-anchor="middle">LangChain · CrewAI</text>
+  <text x="167" y="284" fill="#8A94AC" font-size="11.5" text-anchor="middle">AutoGPT · LangGraph</text>
+
+  <!-- ============ AGENTWATCH ============ -->
+  <rect x="370" y="70" width="430" height="300" rx="18" fill="#101A2F" stroke="url(#accent)" stroke-width="2" filter="url(#soft)"/>
+  <path d="M398,86 L411,91 L411,101 Q411,112 398,118 Q385,112 385,101 L385,91 Z" fill="none" stroke="url(#accent)" stroke-width="2.5"/>
+  <path d="M392,101 l4,4 l8,-9" fill="none" stroke="#2BC58A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="425" y="107" fill="#E8ECF5" font-size="23" font-weight="700">AgentWatch</text>
+  <text x="386" y="132" fill="#8A94AC" font-size="12">watches the reasoning, not just the output</text>
+  <line x1="386" y1="148" x2="784" y2="148" stroke="#263150" stroke-width="1"/>
+
+  <!-- step 1 -->
+  <circle cx="404" cy="180" r="13" fill="#18233B" stroke="#34D8C4" stroke-width="1.5"/>
+  <text x="404" y="185" fill="#34D8C4" font-size="13" font-weight="700" text-anchor="middle">1</text>
+  <text x="430" y="185" fill="#D4DAE8" font-size="14.5">Capture every reasoning step</text>
+  <!-- step 2 -->
+  <circle cx="404" cy="223" r="13" fill="#18233B" stroke="#34D8C4" stroke-width="1.5"/>
+  <text x="404" y="228" fill="#34D8C4" font-size="13" font-weight="700" text-anchor="middle">2</text>
+  <text x="430" y="228" fill="#D4DAE8" font-size="14.5">Independent model scores it</text>
+  <!-- step 3 -->
+  <circle cx="404" cy="266" r="13" fill="#241420" stroke="#FF5C6C" stroke-width="1.5"/>
+  <text x="404" y="271" fill="#FF5C6C" font-size="13" font-weight="700" text-anchor="middle">3</text>
+  <text x="430" y="271" fill="#D4DAE8" font-size="14.5">Block dangerous actions</text>
+  <!-- step 4 -->
+  <circle cx="404" cy="309" r="13" fill="#13261D" stroke="#2BC58A" stroke-width="1.5"/>
+  <text x="404" y="314" fill="#2BC58A" font-size="13" font-weight="700" text-anchor="middle">4</text>
+  <text x="430" y="314" fill="#D4DAE8" font-size="14.5">Checkpoint for instant rollback</text>
+
+  <!-- ============ WORLD ============ -->
+  <rect x="885" y="175" width="260" height="130" rx="16" fill="#131B30" stroke="#263150" stroke-width="1.5" filter="url(#soft)"/>
+  <circle cx="1015" cy="205" r="20" fill="none" stroke="#34D8C4" stroke-width="2.5"/>
+  <ellipse cx="1015" cy="205" rx="8" ry="20" fill="none" stroke="#34D8C4" stroke-width="2"/>
+  <line x1="995" y1="205" x2="1035" y2="205" stroke="#34D8C4" stroke-width="2"/>
+  <line x1="1000" y1="193" x2="1030" y2="193" stroke="#34D8C4" stroke-width="1.6"/>
+  <line x1="1000" y1="217" x2="1030" y2="217" stroke="#34D8C4" stroke-width="1.6"/>
+  <text x="1015" y="246" fill="#E8ECF5" font-size="17" font-weight="700" text-anchor="middle">THE WORLD</text>
+  <text x="1015" y="267" fill="#8A94AC" font-size="11.5" text-anchor="middle">tools · APIs · databases</text>
+
+  <!-- ============ FLOW ARROWS ============ -->
+  <text x="324" y="230" fill="#8A94AC" font-size="11" text-anchor="middle">proposed action</text>
+  <line x1="283" y1="240" x2="364" y2="240" stroke="#2BC58A" stroke-width="2.5" marker-end="url(#arrowG)"/>
+
+  <text x="843" y="230" fill="#2BC58A" font-size="11" font-weight="600" text-anchor="middle">allowed</text>
+  <line x1="803" y1="240" x2="883" y2="240" stroke="#2BC58A" stroke-width="2.5" marker-end="url(#arrowG)"/>
+
+  <!-- blocked branch -->
+  <line x1="488" y1="372" x2="488" y2="408" stroke="#FF5C6C" stroke-width="2.5" marker-end="url(#arrowR)"/>
+  <rect x="372" y="414" width="232" height="38" rx="10" fill="#241420" stroke="#FF5C6C" stroke-width="1.5"/>
+  <circle cx="396" cy="433" r="7" fill="none" stroke="#FF5C6C" stroke-width="2"/>
+  <line x1="392" y1="429" x2="400" y2="437" stroke="#FF5C6C" stroke-width="2"/>
+  <text x="488" y="438" fill="#FF8893" font-size="13" font-weight="600" text-anchor="middle">BLOCKED · pre-execution</text>
+
+  <!-- rollback loop -->
+  <path d="M1015,305 C1015,432 825,442 806,350" fill="none" stroke="#566089" stroke-width="2" stroke-dasharray="6 6" marker-end="url(#arrowM)"/>
+  <text x="918" y="458" fill="#8A94AC" font-size="11" text-anchor="middle">rollback to any step</text>
+</svg>
