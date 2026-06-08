@@ -61,6 +61,17 @@ def _load_session_file(path: Path):
 
 
 # ─────────────────────────────────────────────
+# NEW HELPER: Dry-run printer
+# ─────────────────────────────────────────────
+
+
+def _dry_run_print(action: str, detail: str = "") -> None:
+    """Print a consistent dry-run preview line to the terminal."""
+    detail_str = f"\n  [dim]{detail}[/dim]" if detail else ""
+    console.print(f"[bold yellow][DRY-RUN][/bold yellow] Would {action}{detail_str}")
+
+
+# ─────────────────────────────────────────────
 # watch command — wrap an agent run
 # ─────────────────────────────────────────────
 
@@ -75,8 +86,37 @@ def watch(
     policy: str = typer.Option(
         "default", "--policy", help="Safety policy: default|strict|permissive"
     ),
+    # ✅ NEW: dry-run flag added here, following Typer's Option pattern
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview what would happen without executing or writing to disk"
+    ),
 ) -> None:
     """[bold]Watch[/bold] a Claude Code execution with full observability and safety."""
+
+    # ✅ NEW: If --dry-run is passed, show a preview and exit early.
+    # We do this BEFORE the async block so nothing executes.
+    if dry_run:
+        console.print(
+            Panel(
+                "[bold yellow]DRY-RUN MODE[/bold yellow] — No agent will be run. No files will be written.\n"
+                f"[dim]Prompt:[/dim]  {prompt[:80]}{'...' if len(prompt) > 80 else ''}\n"
+                f"[dim]Model:[/dim]   {model}\n"
+                f"[dim]Turns:[/dim]   {max_turns}\n"
+                f"[dim]Policy:[/dim]  {'DISABLED ⚠️' if no_safety else policy}\n"
+                f"[dim]Safety:[/dim]  {'off' if no_safety else 'on'}",
+                border_style="yellow",
+                title="AgentWatch watch --dry-run",
+            )
+        )
+        if output:
+            _dry_run_print(
+                "save session to file",
+                f"Path: {output.resolve()}",
+            )
+        else:
+            _dry_run_print("run agent (no --output specified, session would not be saved)")
+        console.print("\n[yellow]Dry-run complete. Nothing was executed or written.[/yellow]")
+        raise typer.Exit(0)
 
     async def _run() -> None:
         from agentwatch.adapters.claude_code import ClaudeCodeAdapter
@@ -140,7 +180,10 @@ def watch(
         # Summary
         _print_session_summary(session, adapter.events)
 
-        # Save to file if requested
+        # ✅ MODIFIED: The file-write block is now guarded.
+        # Previously this ran unconditionally when `output` was set.
+        # Now it only runs when dry_run is False (which it always is here,
+        # since dry_run=True exits before _run() is ever called).
         if output:
             from agentwatch.replay.engine import ReplayEngine
 
@@ -381,8 +424,34 @@ def serve(
     host: str = typer.Option("0.0.0.0", "--host"),
     port: int = typer.Option(8000, "--port"),
     reload: bool = typer.Option(False, "--reload"),
+    # ✅ NEW: dry-run flag for serve command
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview what would happen without starting the server"
+    ),
 ) -> None:
     """[bold]Start[/bold] the AgentWatch API server."""
+
+    # ✅ NEW: Intercept before uvicorn is even imported or called
+    if dry_run:
+        console.print(
+            Panel(
+                "[bold yellow]DRY-RUN MODE[/bold yellow] — Server will NOT be started.\n"
+                f"[dim]Would bind to:[/dim]  http://{host}:{port}\n"
+                f"[dim]Dashboard:[/dim]     http://localhost:3000\n"
+                f"[dim]Hot-reload:[/dim]    {'enabled' if reload else 'disabled'}\n"
+                f"[dim]App module:[/dim]    agentwatch.api.server:app",
+                border_style="yellow",
+                title="AgentWatch serve --dry-run",
+            )
+        )
+        _dry_run_print(
+            "start uvicorn server",
+            f"uvicorn agentwatch.api.server:app --host {host} --port {port}"
+            + (" --reload" if reload else ""),
+        )
+        console.print("\n[yellow]Dry-run complete. Server was not started.[/yellow]")
+        raise typer.Exit(0)
+
     try:
         import uvicorn
     except ImportError:
@@ -407,7 +476,7 @@ def serve(
 
 
 # ─────────────────────────────────────────────
-# Print helpers
+# Print helpers (unchanged)
 # ─────────────────────────────────────────────
 
 
