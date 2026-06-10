@@ -307,7 +307,7 @@ class SafetyPolicyUpdate(BaseModel):
     block_on_critical: bool = True
     require_approval_on_high: bool = True
     require_approval_on_medium: bool = False
-    approval_timeout_seconds: int = 120
+    approval_timeout_seconds: int = Field(default=120, ge=5, le=3600)
 
 
 class SimulateRequest(BaseModel):
