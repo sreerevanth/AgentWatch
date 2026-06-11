@@ -190,6 +190,46 @@ rules:
     decision = engine.evaluate(_tool_event("bash", "ls"))
     assert decision.action == PolicyAction.REQUIRE_APPROVAL
 
+def test_policy_dsl_yaml_validation_valid():
+    yaml = """
+rules:
+  - if: tool == "bash"
+    then: require_approval
+    label: "bash block"
+"""
+    # Should load correctly
+    engine = PolicyEngine.from_yaml(yaml)
+    assert len(engine.rules) == 1
+    assert engine.rules[0].label == "bash block"
+
+
+def test_policy_dsl_yaml_validation_invalid_root():
+    yaml = """
+not_rules: []
+"""
+    with pytest.raises(ValueError, match="missing required property 'rules'"):
+        PolicyEngine.from_yaml(yaml)
+
+
+def test_policy_dsl_yaml_validation_extra_property():
+    yaml = """
+rules:
+  - if: tool == "bash"
+    then: require_approval
+extra: 123
+"""
+    with pytest.raises(ValueError, match="additional properties not allowed"):
+        PolicyEngine.from_yaml(yaml)
+
+
+def test_policy_dsl_yaml_validation_invalid_action():
+    yaml = """
+rules:
+  - if: tool == "bash"
+    then: invalid_action
+"""
+    with pytest.raises(ValueError, match="then must be one of"):
+        PolicyEngine.from_yaml(yaml)
 
 # ─────────────────────────────────────────────
 # SAF-006 — Prompt injection
