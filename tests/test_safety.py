@@ -595,9 +595,7 @@ def test_rm_recursive_force_variants_are_critical(command):
 def test_rm_benign_targets_are_not_critical(command):
     """Recursive rm on non-critical paths must NOT be escalated to CRITICAL."""
     scorer = RiskScorer()
-    level, _, _, _ = scorer.score(
-        ToolCallData(tool_name="bash", raw_command=command, arguments={})
-    )
+    level, _, _, _ = scorer.score(ToolCallData(tool_name="bash", raw_command=command, arguments={}))
     assert level != RiskLevel.CRITICAL, f"{command!r} should not be CRITICAL"
 
 
@@ -646,9 +644,7 @@ def test_rm_double_dash_terminates_option_parsing(command):
     """After ``--`` every token is an operand, not a flag, so ``--force`` /
     ``--recursive`` appearing there must NOT be read as flags (Issue #123 review)."""
     scorer = RiskScorer()
-    level, _, _, _ = scorer.score(
-        ToolCallData(tool_name="bash", raw_command=command, arguments={})
-    )
+    level, _, _, _ = scorer.score(ToolCallData(tool_name="bash", raw_command=command, arguments={}))
     assert level != RiskLevel.CRITICAL, f"{command!r} must not be CRITICAL: -- ends option parsing"
 
 
