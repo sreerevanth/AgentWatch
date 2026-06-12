@@ -25,7 +25,7 @@ _EXFIL_PATTERNS = [
     re.compile(r"raw\.githubusercontent\.com/[^\s]+\.(env|pem|key)"),
     # Detect base64 obfuscated http/https schemes
     re.compile(r"aHR0cHM6Ly[a-zA-Z0-9+/=]+", re.I),  # https://
-    re.compile(r"aHR0cDovL[a-zA-Z0-9+/=]+", re.I),   # http://
+    re.compile(r"aHR0cDovL[a-zA-Z0-9+/=]+", re.I),  # http://
 ]
 
 _ALLOWLIST = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
@@ -83,11 +83,13 @@ def _parse_obfuscated_ip(host: str) -> str | None:
     # 3. Base64 encoded domain check
     if len(host) >= 8 and len(host) % 4 == 0:
         import base64
+        import binascii
+
         try:
             decoded = base64.b64decode(host).decode("utf-8", errors="ignore")
             if re.match(r"^[a-zA-Z0-9.-]+$", decoded):
                 return decoded
-        except Exception:
+        except (binascii.Error, ValueError):
             pass
     return None
 
@@ -104,18 +106,20 @@ def _extract_host(raw: str) -> str:
         host = m.group(1)
         parsed = _parse_obfuscated_ip(host)
         return parsed or host
-    
+
     # Try parsing base64 string matching direct schemes
     for pat in [r"aHR0cHM6Ly([a-zA-Z0-9+/=]+)", r"aHR0cDovL([a-zA-Z0-9+/=]+)"]:
         bm = re.search(pat, raw, re.I)
         if bm:
             import base64
+            import binascii
+
             try:
                 decoded = base64.b64decode(bm.group(0)).decode("utf-8", errors="ignore")
                 host_m = re.search(r"https?://([a-z0-9.-]+)", decoded, re.I)
                 if host_m:
                     return host_m.group(1)
-            except Exception:
+            except (binascii.Error, ValueError):
                 pass
     return "unknown"
 
