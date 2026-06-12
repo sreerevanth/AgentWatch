@@ -702,6 +702,7 @@ def test_exfil_obfuscated_base64_url():
     assert findings
     assert findings[0].destination == "evil.com"
 
+
 # ----------------------------------------------
 # SAF-013 - block-by-default bypass coverage for
 # DISK_FORMAT / PERM_CHANGE_CRITICAL / RCE_PIPE
