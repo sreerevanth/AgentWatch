@@ -415,8 +415,8 @@ def serve(
 def verify_env() -> None:
     """[bold]Verify[/bold] local developer environment variables and dependencies."""
     from agentwatch.cli.verify_env import verify_environment
-    verify_environment()
 
+    verify_environment()
 
 
 # ─────────────────────────────────────────────
