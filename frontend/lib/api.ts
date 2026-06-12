@@ -136,6 +136,11 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(body),
     }),
+  simulate: (sessionId: string, body: { rewind_to_step: number; tool_id?: string; replacement?: any; notes?: string }) =>
+    request(`/sessions/${sessionId}/simulate`, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
   checkSafety: (body: { command: string; tool_name?: string; arguments?: Record<string, unknown>; affected_resources?: string[] }) =>
     request<SafetyCheckResponse>('/safety/check', {
       method: 'POST',
