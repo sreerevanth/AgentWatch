@@ -154,4 +154,3 @@ def test_update_safety_policy_validation(client):
         },
     )
     assert resp.status_code == 422
-

@@ -219,32 +219,38 @@ def test_visualization_payload_marks_corrupted():
 
 
 def test_causal_graph_memory_bounds():
-    from agentwatch.memory.causal_graph import CausalGraph, CausalNode, EdgeKind
     from datetime import UTC, datetime, timedelta
-    
+
+    from agentwatch.memory.causal_graph import CausalGraph, CausalNode, EdgeKind
+
     g = CausalGraph(max_nodes=3)
-    n1 = CausalNode(node_id="n1", kind="decision", text="1", timestamp=datetime.now(UTC) - timedelta(seconds=10))
-    n2 = CausalNode(node_id="n2", kind="decision", text="2", timestamp=datetime.now(UTC) - timedelta(seconds=5))
-    n3 = CausalNode(node_id="n3", kind="decision", text="3", timestamp=datetime.now(UTC) - timedelta(seconds=2))
-    
+    n1 = CausalNode(
+        node_id="n1", kind="decision", text="1", timestamp=datetime.now(UTC) - timedelta(seconds=10)
+    )
+    n2 = CausalNode(
+        node_id="n2", kind="decision", text="2", timestamp=datetime.now(UTC) - timedelta(seconds=5)
+    )
+    n3 = CausalNode(
+        node_id="n3", kind="decision", text="3", timestamp=datetime.now(UTC) - timedelta(seconds=2)
+    )
+
     g.add_node(n1)
     g.add_node(n2)
     g.add_node(n3)
-    
+
     g.add_edge("n1", "n2", EdgeKind.CAUSED_BY)
     g.add_edge("n2", "n3", EdgeKind.CAUSED_BY)
-    
+
     assert len(g.nodes) == 3
-    
+
     # Adding 4th node should evict n1 (the oldest by timestamp)
     n4 = CausalNode(node_id="n4", kind="decision", text="4", timestamp=datetime.now(UTC))
     g.add_node(n4)
-    
+
     assert len(g.nodes) == 3
     assert "n1" not in g.nodes
     assert "n4" in g.nodes
-    
+
     # n1's edges should also be cleaned up
     # Edge "n1" -> "n2" should be removed from n2's incoming list
     assert not any(e.src == "n1" for e in g._in["n2"])
-
