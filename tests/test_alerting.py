@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+
 import httpx
+
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
-from agentwatch.core.schema import AgentEvent, EventType, AgentFramework
+from agentwatch.core.schema import AgentEvent, AgentFramework, EventType
 
 
 def test_alerting_engine_retries_and_succeeds(monkeypatch):
@@ -26,7 +28,7 @@ def test_alerting_engine_retries_and_succeeds(monkeypatch):
 
     # Shorten delay for fast tests
     engine = AlertingEngine(AlertingConfig(slack_webhook_url="http://fake-slack"))
-    
+
     event = AgentEvent(
         session_id="S",
         agent_id="A",
@@ -50,7 +52,7 @@ def test_alerting_engine_fails_after_max_retries(monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
 
     engine = AlertingEngine(AlertingConfig(slack_webhook_url="http://fake-slack"))
-    
+
     event = AgentEvent(
         session_id="S",
         agent_id="A",

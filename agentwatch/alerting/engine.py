@@ -95,6 +95,7 @@ class AlertingEngine:
 
     async def _post(self, url: str, payload: dict[str, Any], max_retries: int = 3) -> bool:
         import asyncio
+
         delay = 0.5
         for attempt in range(max_retries):
             try:
