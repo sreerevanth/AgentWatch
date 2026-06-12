@@ -8,8 +8,9 @@ Covers the bypass vectors identified in issues #97 and #98:
 
 from __future__ import annotations
 
-import pytest
 import sys
+
+import pytest
 
 from agentwatch.core.schema import PluginManifest, PluginPermissions
 from agentwatch.plugins.sandbox import (
@@ -56,7 +57,9 @@ def test_safe_exec_without_permission_raises():
 
 def test_safe_exec_with_permission_runs():
     enforcer = _make_enforcer(subprocess_exec=True)
-    result = enforcer.safe_exec([sys.executable, "-c", "print('hello')"], capture_output=True, text=True)
+    result = enforcer.safe_exec(
+        [sys.executable, "-c", "print('hello')"], capture_output=True, text=True
+    )
     assert result.returncode == 0
     assert "hello" in result.stdout
 

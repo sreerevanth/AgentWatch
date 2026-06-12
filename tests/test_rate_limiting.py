@@ -1,4 +1,5 @@
 """Tests for per-IP rate limiting on the AgentWatch API."""
+
 import os
 
 import pytest
@@ -45,7 +46,9 @@ def test_write_endpoint_returns_429_after_limit(rate_client: TestClient) -> None
         last_status = r.status_code
         if r.status_code == 429:
             break
-    assert last_status == 429, f"Expected 429 after exceeding write limit, last status was {last_status}"
+    assert last_status == 429, (
+        f"Expected 429 after exceeding write limit, last status was {last_status}"
+    )
 
 
 def test_429_body_matches_spec(rate_client: TestClient) -> None:
@@ -85,6 +88,9 @@ def test_limiter_prunes_stale_buckets() -> None:
     import agentwatch.api.server as server
 
     server.reset_rate_limiter_for_tests()
-    server._limiter._buckets["stale-ip:w"] = {"count": 1, "start": time.time() - server.RATE_BUCKET_TTL_SEC - 1}
+    server._limiter._buckets["stale-ip:w"] = {
+        "count": 1,
+        "start": time.time() - server.RATE_BUCKET_TTL_SEC - 1,
+    }
     server._limiter._prune_stale(time.time())
     assert "stale-ip:w" not in server._limiter._buckets
