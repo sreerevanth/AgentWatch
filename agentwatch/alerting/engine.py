@@ -93,12 +93,25 @@ class AlertingEngine:
             },
         }
 
-    async def _post(self, url: str, payload: dict[str, Any]) -> bool:
-        try:
-            async with httpx.AsyncClient(timeout=5.0) as client:
-                response = await client.post(url, json=payload)
-                response.raise_for_status()
-                return True
-        except Exception as exc:
-            logger.warning("Alert delivery failed for %s: %s", url, exc)
-            return False
+    async def _post(self, url: str, payload: dict[str, Any], max_retries: int = 3) -> bool:
+        import asyncio
+
+        delay = 0.5
+        for attempt in range(max_retries):
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    response = await client.post(url, json=payload)
+                    response.raise_for_status()
+                    return True
+            except Exception as exc:
+                logger.warning(
+                    "Alert delivery failed for %s (attempt %d/%d): %s",
+                    url,
+                    attempt + 1,
+                    max_retries,
+                    exc,
+                )
+                if attempt < max_retries - 1:
+                    await asyncio.sleep(delay)
+                    delay *= 2
+        return False

