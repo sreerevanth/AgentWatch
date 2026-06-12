@@ -10,9 +10,10 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
-from typing import Any, Generator, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ class ExecutionLogger:
             **kwargs,
         }
 
-    def log_step(self, step_name: str, details: Optional[dict[str, Any]] = None) -> None:
+    def log_step(self, step_name: str, details: dict[str, Any] | None = None) -> None:
         """Log an execution step."""
         logger.info(
             json.dumps(
@@ -102,7 +103,7 @@ class ExecutionLogger:
         error_message: str,
         error_type: str,
         stack_trace: str,
-        context_data: Optional[dict[str, Any]] = None,
+        context_data: dict[str, Any] | None = None,
     ) -> None:
         """Log error with full context and stack trace."""
         logger.error(
@@ -121,7 +122,7 @@ class ExecutionLogger:
         self,
         status: str,
         duration_ms: float,
-        result: Optional[Any] = None,
+        result: Any | None = None,
     ) -> None:
         """Log execution completion."""
         logger.info(
@@ -137,7 +138,7 @@ class ExecutionLogger:
         )
 
     @staticmethod
-    def _redact_sensitive(data: dict) -> dict:
+    def _redact_sensitive(data: dict[str, Any]) -> dict[str, Any]:
         """Remove sensitive data from logs (API keys, tokens, etc)."""
         redacted = data.copy()
         sensitive_keys = {"authorization", "api_key", "token", "password", "secret"}
@@ -151,7 +152,7 @@ class ExecutionLogger:
         self,
         endpoint: str,
         method: str,
-        parameters: dict,
+        parameters: dict[str, Any],
     ) -> Generator[None, None, None]:
         """Context manager for API execution with automatic timing."""
         start_time = time.time()
