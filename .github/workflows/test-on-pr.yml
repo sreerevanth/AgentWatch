@@ -1,39 +1,21 @@
 name: PR Tests
 
 on:
-  pull_request_target:
+  pull_request:
     branches: [main]
-
-# Read code + write a status comment back to the PR.
-# Note: This workflow uses pull_request_target which runs with a write-capable 
-# GITHUB_TOKEN and has access to repository secrets. To prevent unauthorized 
-# code from accessing these, the job is restricted to internal PRs or trusted 
-# contributors.
-permissions:
-  contents: read
-  issues: write
-  pull-requests: write
 
 jobs:
   test:
     name: Test & lint
     runs-on: ubuntu-latest
-    # Security: Only run on internal PRs or trusted associations to prevent 
-    # malicious code from exfiltrating secrets via pull_request_target.
-    if: >
-      github.event.pull_request.head.repo.full_name == github.repository ||
-      contains(fromJSON('["COLLABORATOR", "MEMBER", "OWNER"]'), github.event.pull_request.author_association)
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
         with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          # Note: pull_request_target runs in the context of the base repo.
-          # Checking out the PR head is necessary to test the changes,
-          # but use caution as this runs with a write-capable GITHUB_TOKEN.
+          persist-credentials: false
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
         with:
           python-version: "3.12"
           cache: pip
@@ -55,53 +37,26 @@ jobs:
         continue-on-error: true
         run: ruff check .
 
-      - name: Comment results on PR
+      - name: Save PR info and results
         if: always()
-        uses: actions/github-script@v7
+        run: |
+          mkdir -p pr_results
+          echo "${{ github.event.pull_request.number }}" > pr_results/pr_number.txt
+          echo "${{ github.event.pull_request.head.sha }}" > pr_results/pr_sha.txt
+          echo "${{ steps.pytest.outcome }}" > pr_results/pytest_outcome.txt
+          echo "${{ steps.ruff.outcome }}" > pr_results/ruff_outcome.txt
+          if [ -f coverage.json ]; then
+            cp coverage.json pr_results/coverage.json
+          else
+            echo "{}" > pr_results/coverage.json
+          fi
+
+      - name: Upload results artifact
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          script: |
-            const fs = require('fs');
-            const marker = '<!-- agentwatch-pr-tests -->';
-            const testOutcome = '${{ steps.pytest.outcome }}';
-            const ruffOutcome = '${{ steps.ruff.outcome }}';
-
-            let coverage = 'n/a';
-            try {
-              const cov = JSON.parse(fs.readFileSync('coverage.json', 'utf8'));
-              coverage = `${cov.totals.percent_covered.toFixed(2)}%`;
-            } catch (e) {
-              core.warning(`Could not read coverage.json: ${e}`);
-            }
-
-            const icon = (o) => (o === 'success' ? '✅' : '❌');
-            const body = [
-              marker,
-              '## 🧪 PR Test Results',
-              '',
-              '| Check | Result |',
-              '| --- | --- |',
-              `| Tests (\`pytest tests/\`) | ${icon(testOutcome)} ${testOutcome} |`,
-              `| Lint (\`ruff check .\`) | ${icon(ruffOutcome)} ${ruffOutcome} |`,
-              `| Coverage (\`agentwatch\`) | **${coverage}** |`,
-              '',
-              `<sub>Python 3.12 · commit ${context.payload.pull_request.head.sha.substring(0, 7)}</sub>`,
-            ].join('\n');
-
-            const { owner, repo } = context.repo;
-            const issue_number = context.issue.number;
-            const { data: comments } = await github.rest.issues.listComments({
-              owner, repo, issue_number,
-            });
-            const existing = comments.find((c) => c.body && c.body.includes(marker));
-            if (existing) {
-              await github.rest.issues.updateComment({
-                owner, repo, comment_id: existing.id, body,
-              });
-            } else {
-              await github.rest.issues.createComment({
-                owner, repo, issue_number, body,
-              });
-            }
+          name: pr_results
+          path: pr_results/
 
       # Tests gate the PR. Lint runs and is reported above but is not a hard
       # blocker (the repo carries pre-existing lint debt outside the package).

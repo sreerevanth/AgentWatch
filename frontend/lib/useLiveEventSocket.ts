@@ -33,12 +33,17 @@ export function useLiveEventSocket(
     let disconnectedAt: number | null = null
     const maxAttempts = parseMaxReconnectAttempts()
 
-    const clearTimers = () => {
-      if (reconnectTimer) clearTimeout(reconnectTimer)
+    const clearReconnectTimer = () => {
+    if (reconnectTimer) clearTimeout(reconnectTimer)
+    reconnectTimer = undefined
+}
+
+    const clearAllTimers = () => {
+      clearReconnectTimer()
+
       if (elapsedTimer) clearInterval(elapsedTimer)
-      reconnectTimer = undefined
       elapsedTimer = undefined
-    }
+}
 
     const startElapsedTicker = () => {
       if (elapsedTimer) clearInterval(elapsedTimer)
@@ -50,7 +55,7 @@ export function useLiveEventSocket(
 
     const connect = () => {
       if (cancelled) return
-      clearTimers()
+      clearReconnectTimer()
       socket?.close()
       socket = createEventSocket((event) => {
         onEventRef.current(event)
@@ -60,6 +65,14 @@ export function useLiveEventSocket(
       socket.onopen = () => {
         attempt = 0
         disconnectedAt = null
+
+        clearReconnectTimer()
+
+        if (elapsedTimer) {
+          clearInterval(elapsedTimer)
+          elapsedTimer = undefined
+        }
+
         setReconnectElapsedSec(0)
         setStatus('streaming')
       }
@@ -77,7 +90,7 @@ export function useLiveEventSocket(
 
         attempt += 1
         if (attempt > maxAttempts) {
-          clearTimers()
+          clearAllTimers()
           setStatus('failed')
           return
         }
@@ -96,7 +109,7 @@ export function useLiveEventSocket(
 
     return () => {
       cancelled = true
-      clearTimers()
+      clearAllTimers()
       socket?.close()
     }
   }, [])

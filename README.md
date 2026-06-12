@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/AgentWatch-v0.1.0-black?style=for-the-badge" />
+<img src="https://img.shields.io/badge/AgentWatch-v0.2.0-black?style=for-the-badge" />
 
 # AgentWatch
 <img width="130" height="130" alt="ChatGPT Image May 29, 2026, 10_52_17 PM" src="https://github.com/user-attachments/assets/4e6fd818-2458-4ac2-bb9c-25542622dd00" />
@@ -350,6 +350,8 @@ AgentWatch is built in the open. Contributors get their name on the landing page
 
 Get help picking the right issue, discuss your approach, and ship faster.
 
+### Local Backend Setup
+
 ```bash
 git clone https://github.com/sreerevanth/AgentWatch
 cd AgentWatch
@@ -357,6 +359,18 @@ docker compose up -d
 pip install -e ".[dev]"
 pytest tests/
 ```
+
+### Local Frontend Dashboard Setup
+
+To run the Next.js frontend dashboard dev server:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+The dashboard will be live at `http://localhost:3000`.
 
 Browse [open issues](https://github.com/sreerevanth/AgentWatch/issues) — tagged by difficulty: `good first issue` · `intermediate` · `advanced`
 

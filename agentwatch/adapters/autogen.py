@@ -7,8 +7,8 @@ AutoGen emits messages through `generate_reply`, `send`, and `receive`.
 
 from __future__ import annotations
 
-import asyncio
 import functools
+import inspect
 import logging
 import uuid
 from typing import Any
@@ -82,7 +82,7 @@ class AutoGenAdapter:
         return self.agent
 
     def _wrap(self, name: str, original: Any) -> Any:
-        if asyncio.iscoroutinefunction(original):
+        if inspect.iscoroutinefunction(original):
 
             @functools.wraps(original)
             async def async_wrapped(*args: Any, **kwargs: Any) -> Any:

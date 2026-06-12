@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from starlette.websockets import WebSocketDisconnect
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 import agentwatch.api.server as _server_module
 from agentwatch.api.server import app
@@ -45,6 +45,7 @@ def test_get_governance_report(client):
 # WebSocket /ws/events authentication tests (issue #120)
 # ---------------------------------------------------------------------------
 
+
 class TestWebSocketAuth:
     """Verify that /ws/events enforces API key authentication consistently
     with the REST layer, covering both the header and query-param paths as
@@ -70,9 +71,7 @@ class TestWebSocketAuth:
         monkeypatch.setattr(_server_module, "_IS_PROD", False)
         client = TestClient(app)
         with pytest.raises(WebSocketDisconnect):
-            with client.websocket_connect(
-                "/ws/events", headers={"x-api-key": "wrong-secret"}
-            ):
+            with client.websocket_connect("/ws/events", headers={"x-api-key": "wrong-secret"}):
                 pass
 
     def test_wrong_key_rejected_via_query_param(self, monkeypatch):
@@ -89,9 +88,7 @@ class TestWebSocketAuth:
         monkeypatch.setattr(_server_module, "_API_KEY", "correct-secret")
         monkeypatch.setattr(_server_module, "_IS_PROD", False)
         client = TestClient(app)
-        with client.websocket_connect(
-            "/ws/events", headers={"x-api-key": "correct-secret"}
-        ) as ws:
+        with client.websocket_connect("/ws/events", headers={"x-api-key": "correct-secret"}) as ws:
             # Connection accepted; send a keepalive ping and verify no error.
             ws.send_text("ping")
 
@@ -100,9 +97,7 @@ class TestWebSocketAuth:
         monkeypatch.setattr(_server_module, "_API_KEY", "correct-secret")
         monkeypatch.setattr(_server_module, "_IS_PROD", False)
         client = TestClient(app)
-        with client.websocket_connect(
-            "/ws/events?api_key=correct-secret"
-        ) as ws:
+        with client.websocket_connect("/ws/events?api_key=correct-secret") as ws:
             ws.send_text("ping")
 
     def test_no_key_configured_development_allows_connection(self, monkeypatch):
@@ -126,3 +121,36 @@ class TestWebSocketAuth:
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("/ws/events"):
                 pass
+
+
+def test_update_safety_policy_validation(client):
+    # Valid payload
+    resp = client.put(
+        "/api/v1/safety/policy",
+        json={
+            "block_on_high": True,
+            "block_on_critical": True,
+            "require_approval_on_high": True,
+            "require_approval_on_medium": False,
+            "approval_timeout_seconds": 60,
+        },
+    )
+    assert resp.status_code == 200
+
+    # Invalid payload (timeout too low)
+    resp = client.put(
+        "/api/v1/safety/policy",
+        json={
+            "approval_timeout_seconds": 4,
+        },
+    )
+    assert resp.status_code == 422
+
+    # Invalid payload (timeout too high)
+    resp = client.put(
+        "/api/v1/safety/policy",
+        json={
+            "approval_timeout_seconds": 99999,
+        },
+    )
+    assert resp.status_code == 422

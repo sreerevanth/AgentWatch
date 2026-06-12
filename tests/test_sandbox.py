@@ -8,6 +8,8 @@ Covers the bypass vectors identified in issues #97 and #98:
 
 from __future__ import annotations
 
+import sys
+
 import pytest
 
 from agentwatch.core.schema import PluginManifest, PluginPermissions
@@ -55,7 +57,9 @@ def test_safe_exec_without_permission_raises():
 
 def test_safe_exec_with_permission_runs():
     enforcer = _make_enforcer(subprocess_exec=True)
-    result = enforcer.safe_exec(["echo", "hello"], capture_output=True, text=True)
+    result = enforcer.safe_exec(
+        [sys.executable, "-c", "print('hello')"], capture_output=True, text=True
+    )
     assert result.returncode == 0
     assert "hello" in result.stdout
 
@@ -66,7 +70,7 @@ def test_safe_exec_shell_metacharacters_not_interpreted():
     # If shell=True were used, 'echo safe; echo injected' would run two commands.
     # With shell=False it is passed as a single argv element to echo.
     result = enforcer.safe_exec(
-        ["echo", "safe; echo injected"],
+        [sys.executable, "-c", "import sys; print(sys.argv[1])", "safe; echo injected"],
         capture_output=True,
         text=True,
     )
