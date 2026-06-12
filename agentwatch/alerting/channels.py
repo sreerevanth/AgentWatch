@@ -33,9 +33,9 @@ def validate_slack_webhook(url: str) -> None:
     Raises:
         ChannelConfigError: If the URL does not match the expected Slack format.
     """
-    if not _SLACK_WEBHOOK_RE.match(url):
+    if not url or not _SLACK_WEBHOOK_RE.match(url):
         raise ChannelConfigError(
-            f"Invalid Slack webhook URL: {url!r}. "
+            "Invalid Slack webhook URL. "
             "Expected format: https://hooks.slack.com/services/TXXXXXXXX/BXXXXXXXX/XXXXXXXX"
         )
     logger.debug("Slack webhook URL validated successfully.")
@@ -50,9 +50,9 @@ def validate_pagerduty_key(key: str) -> None:
     Raises:
         ChannelConfigError: If the key does not match the expected 32-char hex format.
     """
-    if not _PAGERDUTY_KEY_RE.match(key):
+    if not key or not _PAGERDUTY_KEY_RE.match(key):
         raise ChannelConfigError(
-            f"Invalid PagerDuty routing key: {key!r}. "
+            "Invalid PagerDuty routing key. "
             "Expected a 32-character hexadecimal string."
         )
     logger.debug("PagerDuty routing key validated successfully.")
@@ -67,9 +67,9 @@ def validate_pagerduty_webhook(url: str) -> None:
     Raises:
         ChannelConfigError: If the URL does not match the expected PagerDuty format.
     """
-    if not _PAGERDUTY_WEBHOOK_RE.match(url):
+    if not url or not _PAGERDUTY_WEBHOOK_RE.match(url):
         raise ChannelConfigError(
-            f"Invalid PagerDuty webhook URL: {url!r}. "
+            "Invalid PagerDuty webhook URL. "
             "Expected format: https://events.pagerduty.com/..."
         )
     logger.debug("PagerDuty webhook URL validated successfully.")
@@ -83,6 +83,10 @@ def validate_channels(
     """Validate all provided notification channel configurations.
 
     Call this at startup to catch invalid configurations before any alerts fire.
+    Empty strings are treated as invalid values and will raise ChannelConfigError.
+
+    If either pagerduty_webhook_url or pagerduty_routing_key is provided,
+    both must be present and valid (incomplete PagerDuty config fails fast).
 
     Args:
         slack_webhook_url: Optional Slack webhook URL.
@@ -90,13 +94,25 @@ def validate_channels(
         pagerduty_routing_key: Optional PagerDuty routing key.
 
     Raises:
-        ChannelConfigError: If any provided value is invalid.
+        ChannelConfigError: If any provided value is invalid or incomplete.
     """
-    if slack_webhook_url:
+    if slack_webhook_url is not None:
         validate_slack_webhook(slack_webhook_url)
 
-    if pagerduty_webhook_url:
-        validate_pagerduty_webhook(pagerduty_webhook_url)
+    # Incomplete PagerDuty config should fail fast
+    pd_url_present = pagerduty_webhook_url is not None
+    pd_key_present = pagerduty_routing_key is not None
 
-    if pagerduty_routing_key:
-        validate_pagerduty_key(pagerduty_routing_key)
+    if pd_url_present or pd_key_present:
+        if not pd_url_present:
+            raise ChannelConfigError(
+                "Incomplete PagerDuty configuration: "
+                "pagerduty_webhook_url is required when pagerduty_routing_key is set."
+            )
+        if not pd_key_present:
+            raise ChannelConfigError(
+                "Incomplete PagerDuty configuration: "
+                "pagerduty_routing_key is required when pagerduty_webhook_url is set."
+            )
+        validate_pagerduty_webhook(pagerduty_webhook_url)  # type: ignore[arg-type]
+        validate_pagerduty_key(pagerduty_routing_key)  # type: ignore[arg-type]

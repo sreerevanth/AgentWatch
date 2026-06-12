@@ -30,7 +30,7 @@ def test_invalid_slack_webhook_missing_parts():
         validate_slack_webhook("https://hooks.slack.com/services/TABC")
 
 
-def test_invalid_slack_webhook_empty():
+def test_invalid_slack_webhook_empty_string():
     with pytest.raises(ChannelConfigError, match="Invalid Slack webhook URL"):
         validate_slack_webhook("")
 
@@ -53,7 +53,7 @@ def test_invalid_pagerduty_key_non_hex():
         validate_pagerduty_key("z" * 32)
 
 
-def test_invalid_pagerduty_key_empty():
+def test_invalid_pagerduty_key_empty_string():
     with pytest.raises(ChannelConfigError, match="Invalid PagerDuty routing key"):
         validate_pagerduty_key("")
 
@@ -76,12 +76,16 @@ def test_invalid_pagerduty_webhook_http():
         validate_pagerduty_webhook("http://events.pagerduty.com/v2/enqueue")
 
 
+def test_invalid_pagerduty_webhook_empty_string():
+    with pytest.raises(ChannelConfigError, match="Invalid PagerDuty webhook URL"):
+        validate_pagerduty_webhook("")
+
+
 # ---------------------------------------------------------------------------
 # validate_channels (combined) tests
 # ---------------------------------------------------------------------------
 
 def test_validate_channels_all_none():
-    # Should not raise when nothing is configured
     validate_channels()
 
 
@@ -96,6 +100,11 @@ def test_validate_channels_invalid_slack_raises():
         validate_channels(slack_webhook_url="not-a-valid-url")
 
 
+def test_validate_channels_empty_slack_raises():
+    with pytest.raises(ChannelConfigError):
+        validate_channels(slack_webhook_url="")
+
+
 def test_validate_channels_valid_pagerduty():
     validate_channels(
         pagerduty_webhook_url="https://events.pagerduty.com/v2/enqueue",
@@ -108,4 +117,20 @@ def test_validate_channels_invalid_pagerduty_key_raises():
         validate_channels(
             pagerduty_webhook_url="https://events.pagerduty.com/v2/enqueue",
             pagerduty_routing_key="invalid-key",
+        )
+
+
+def test_validate_channels_missing_pagerduty_key_raises():
+    with pytest.raises(ChannelConfigError, match="Incomplete PagerDuty"):
+        validate_channels(
+            pagerduty_webhook_url="https://events.pagerduty.com/v2/enqueue",
+            pagerduty_routing_key=None,
+        )
+
+
+def test_validate_channels_missing_pagerduty_url_raises():
+    with pytest.raises(ChannelConfigError, match="Incomplete PagerDuty"):
+        validate_channels(
+            pagerduty_webhook_url=None,
+            pagerduty_routing_key="a" * 32,
         )
