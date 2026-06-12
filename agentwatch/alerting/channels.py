@@ -1,8 +1,8 @@
-"""Validation for Slack and PagerDuty notification channel configurations."""
+﻿"""Validation for Slack and PagerDuty notification channel configurations."""
 from __future__ import annotations
 
-import re
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -116,3 +116,4 @@ def validate_channels(
             )
         validate_pagerduty_webhook(pagerduty_webhook_url)  # type: ignore[arg-type]
         validate_pagerduty_key(pagerduty_routing_key)  # type: ignore[arg-type]
+

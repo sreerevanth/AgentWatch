@@ -1,4 +1,4 @@
-"""Alert routing for Slack and PagerDuty webhooks."""
+﻿"""Alert routing for Slack and PagerDuty webhooks."""
 from __future__ import annotations
 
 import logging
@@ -7,8 +7,8 @@ from typing import Any
 
 import httpx
 
-from agentwatch.core.schema import AgentEvent, RiskLevel
 from agentwatch.alerting.channels import validate_channels
+from agentwatch.core.schema import AgentEvent, RiskLevel
 
 logger = logging.getLogger(__name__)
 
@@ -105,3 +105,4 @@ class AlertingEngine:
         except Exception as exc:
             logger.warning("Alert delivery failed for %s: %s", url, exc)
             return False
+
