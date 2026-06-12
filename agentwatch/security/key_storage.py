@@ -10,8 +10,8 @@ import logging
 from datetime import UTC, datetime
 from typing import Optional
 
-from sqlalchemy import Column, DateTime, String, Text, create_engine
-from sqlalchemy.orm import declarative_base, sessionmaker
+from sqlalchemy import Column, DateTime, String, Text
+from sqlalchemy.orm import declarative_base
 
 logger = logging.getLogger(__name__)
 Base = declarative_base()

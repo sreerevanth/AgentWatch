@@ -11,7 +11,7 @@ import hashlib
 import logging
 import os
 from base64 import b64decode, b64encode
-from typing import Optional
+from typing import Any, Optional
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -49,8 +49,7 @@ class APIKeyEncryption:
         Returns:
             (encrypted_key_b64, nonce_b64): Encrypted key and nonce, both base64-encoded
         """
-        import os as os_module
-        nonce = os_module.urandom(12)
+        nonce = os.urandom(12)
         cipher = AESGCM(self._encryption_key)
         ciphertext = cipher.encrypt(nonce, api_key.encode(), None)
 
@@ -98,11 +97,11 @@ class APIKeyEncryption:
 class KeyRotationManager:
     """Manages API key rotation and audit trail."""
 
-    def __init__(self, db_session=None) -> None:
+    def __init__(self, db_session: Any = None) -> None:
         """Initialize rotation manager with database session."""
         self.db_session = db_session
 
-    def rotate_key(self, agent_id: str, new_key: str) -> dict:
+    def rotate_key(self, agent_id: str, new_key: str) -> dict[str, Any]:
         """
         Rotate an agent's API key.
 
@@ -120,6 +119,6 @@ class KeyRotationManager:
             "new_key_hash": APIKeyEncryption.hash_key(new_key),
         }
 
-    def get_rotation_history(self, agent_id: str) -> list[dict]:
+    def get_rotation_history(self, agent_id: str) -> list[dict[str, Any]]:
         """Get rotation history for an agent."""
         return []  # Would query database
