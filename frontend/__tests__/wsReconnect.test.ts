@@ -29,23 +29,23 @@ describe('nextLiveFeedStatus', () => {
 })
 
 describe('parseMaxReconnectAttempts', () => {
-  const original = process.env.NEXT_PUBLIC_WS_MAX_RECONNECT_ATTEMPTS
+  const original = process.env.NEXT_PUBLIC_WS_MAX_ATTEMPTS
 
   afterEach(() => {
     if (original === undefined) {
-      delete process.env.NEXT_PUBLIC_WS_MAX_RECONNECT_ATTEMPTS
+      delete process.env.NEXT_PUBLIC_WS_MAX_ATTEMPTS
     } else {
-      process.env.NEXT_PUBLIC_WS_MAX_RECONNECT_ATTEMPTS = original
+      process.env.NEXT_PUBLIC_WS_MAX_ATTEMPTS = original
     }
   })
 
   it('defaults to 8', () => {
-    delete process.env.NEXT_PUBLIC_WS_MAX_RECONNECT_ATTEMPTS
+    delete process.env.NEXT_PUBLIC_WS_MAX_ATTEMPTS
     expect(parseMaxReconnectAttempts()).toBe(8)
   })
 
   it('reads env override', () => {
-    process.env.NEXT_PUBLIC_WS_MAX_RECONNECT_ATTEMPTS = '3'
+    process.env.NEXT_PUBLIC_WS_MAX_ATTEMPTS = '3'
     expect(parseMaxReconnectAttempts()).toBe(3)
   })
 })

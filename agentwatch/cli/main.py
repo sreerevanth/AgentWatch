@@ -61,6 +61,17 @@ def _load_session_file(path: Path):
 
 
 # ─────────────────────────────────────────────
+# NEW HELPER: Dry-run printer
+# ─────────────────────────────────────────────
+
+
+def _dry_run_print(action: str, detail: str = "") -> None:
+    """Print a consistent dry-run preview line to the terminal."""
+    detail_str = f"\n  [dim]{detail}[/dim]" if detail else ""
+    console.print(f"[bold yellow][DRY-RUN][/bold yellow] Would {action}{detail_str}")
+
+
+# ─────────────────────────────────────────────
 # watch command — wrap an agent run
 # ─────────────────────────────────────────────
 
@@ -75,8 +86,38 @@ def watch(
     policy: str = typer.Option(
         "default", "--policy", help="Safety policy: default|strict|permissive"
     ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Preview what would happen without executing or writing to disk",
+    ),
 ) -> None:
     """[bold]Watch[/bold] a Claude Code execution with full observability and safety."""
+
+    if dry_run:
+        console.print(
+            Panel(
+                "[bold yellow]DRY-RUN MODE[/bold yellow] — No agent will be run. "
+                "No files will be written.\n"
+                f"[dim]Prompt:[/dim]  "
+                f"{prompt[:80]}{'...' if len(prompt) > 80 else ''}\n"
+                f"[dim]Model:[/dim]   {model}\n"
+                f"[dim]Turns:[/dim]   {max_turns}\n"
+                f"[dim]Policy:[/dim]  {'DISABLED ⚠️' if no_safety else policy}\n"
+                f"[dim]Safety:[/dim]  {'off' if no_safety else 'on'}",
+                border_style="yellow",
+                title="AgentWatch watch --dry-run",
+            )
+        )
+        if output:
+            _dry_run_print(
+                "save session to file",
+                f"Path: {output.resolve()}",
+            )
+        else:
+            _dry_run_print("run agent (no --output specified, session would not be saved)")
+        console.print("\n[yellow]Dry-run complete. Nothing was executed or written.[/yellow]")
+        raise typer.Exit(0)
 
     async def _run() -> None:
         from agentwatch.adapters.claude_code import ClaudeCodeAdapter
@@ -96,7 +137,6 @@ def watch(
             )
         )
 
-        # Configure safety
         if no_safety:
             console.print("[yellow]⚠️  Safety checks disabled![/yellow]")
             safety = SafetyEngine(
@@ -122,7 +162,6 @@ def watch(
 
         adapter = ClaudeCodeAdapter(safety_engine=safety)
 
-        # Subscribe to print events live
         from agentwatch.core.event_bus import get_event_bus
 
         bus = get_event_bus()
@@ -137,10 +176,8 @@ def watch(
         finally:
             bus.unsubscribe("cli.watch.live")
 
-        # Summary
         _print_session_summary(session, adapter.events)
 
-        # Save to file if requested
         if output:
             from agentwatch.replay.engine import ReplayEngine
 
@@ -185,12 +222,13 @@ def replay(
                 f"[dim]ID:[/dim]     {session.session_id}\n"
                 f"[dim]Agent:[/dim]  {session.agent_name or session.agent_id}\n"
                 f"[dim]Steps:[/dim]  {rs.total_steps}\n"
-                f"[dim]Status:[/dim] [{_status_color(session.status.value)}]{session.status.value}[/{_status_color(session.status.value)}]",
+                f"[dim]Status:[/dim] "
+                f"[{_status_color(session.status.value)}]{session.status.value}"
+                f"[/{_status_color(session.status.value)}]",
                 border_style="blue",
             )
         )
 
-        # Failure analysis
         if rs.failure_analysis:
             fa = rs.failure_analysis
             if (
@@ -320,7 +358,11 @@ def confidence(
         _rate(result.overall_score),
     )
     table.add_row("Goal Alignment", f"{result.goal_alignment:.3f}", _rate(result.goal_alignment))
-    table.add_row("Consistency", f"{result.consistency_score:.3f}", _rate(result.consistency_score))
+    table.add_row(
+        "Consistency",
+        f"{result.consistency_score:.3f}",
+        _rate(result.consistency_score),
+    )
 
     console.print(table)
     console.print()
@@ -381,8 +423,34 @@ def serve(
     host: str = typer.Option("0.0.0.0", "--host"),
     port: int = typer.Option(8000, "--port"),
     reload: bool = typer.Option(False, "--reload"),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Preview what would happen without starting the server",
+    ),
 ) -> None:
     """[bold]Start[/bold] the AgentWatch API server."""
+
+    if dry_run:
+        console.print(
+            Panel(
+                "[bold yellow]DRY-RUN MODE[/bold yellow] — Server will NOT be started.\n"
+                f"[dim]Would bind to:[/dim]  http://{host}:{port}\n"
+                f"[dim]Dashboard:[/dim]     http://localhost:3000\n"
+                f"[dim]Hot-reload:[/dim]    {'enabled' if reload else 'disabled'}\n"
+                f"[dim]App module:[/dim]    agentwatch.api.server:app",
+                border_style="yellow",
+                title="AgentWatch serve --dry-run",
+            )
+        )
+        _dry_run_print(
+            "start uvicorn server",
+            f"uvicorn agentwatch.api.server:app --host {host} --port {port}"
+            + (" --reload" if reload else ""),
+        )
+        console.print("\n[yellow]Dry-run complete. Server was not started.[/yellow]")
+        raise typer.Exit(0)
+
     try:
         import uvicorn
     except ImportError:
@@ -470,7 +538,9 @@ def _print_replay_step(step, show_all: bool = False) -> None:
     border = "red" if step.is_failure_point else "blue"
 
     info_lines = [
-        f"[bold]Step {step.index:04d}[/bold]  [{_status_color(event.status.value)}]{event.event_type.value}[/{_status_color(event.status.value)}]  [dim]{ts}[/dim]"
+        f"[bold]Step {step.index:04d}[/bold]  "
+        f"[{_status_color(event.status.value)}]{event.event_type.value}"
+        f"[/{_status_color(event.status.value)}]  [dim]{ts}[/dim]"
     ]
 
     if event.tool_call:
@@ -482,7 +552,8 @@ def _print_replay_step(step, show_all: bool = False) -> None:
     if event.safety and event.safety.risk_level.value not in ("safe", "low"):
         rc = _risk_color(event.safety.risk_level.value)
         info_lines.append(
-            f"Risk: [{rc}]{event.safety.risk_level.value.upper()}[/{rc}] ({event.safety.risk_score:.2f})"
+            f"Risk: [{rc}]{event.safety.risk_level.value.upper()}[/{rc}]"
+            f" ({event.safety.risk_score:.2f})"
         )
     if annotations:
         info_lines.append(f"[bold]{annotations}[/bold]")

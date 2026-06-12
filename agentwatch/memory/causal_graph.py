@@ -41,14 +41,27 @@ class CausalEdge:
 
 
 class CausalGraph:
-    """Append-only causal graph with reverse lookups."""
+    """Bounded causal graph with reverse lookups to prevent memory exhaustion."""
 
-    def __init__(self) -> None:
+    def __init__(self, max_nodes: int = 1000) -> None:
+        self.max_nodes = max_nodes
         self._nodes: dict[str, CausalNode] = {}
         self._out: dict[str, list[CausalEdge]] = {}
         self._in: dict[str, list[CausalEdge]] = {}
 
     def add_node(self, node: CausalNode) -> CausalNode:
+        if len(self._nodes) >= self.max_nodes and node.node_id not in self._nodes:
+            # Evict oldest node based on timestamp
+            oldest_id = min(self._nodes.keys(), key=lambda k: self._nodes[k].timestamp)
+            self._nodes.pop(oldest_id, None)
+            self._out.pop(oldest_id, None)
+            self._in.pop(oldest_id, None)
+            # Remove references in other nodes' incoming/outgoing edges
+            for adj in self._out.values():
+                adj[:] = [e for e in adj if e.dst != oldest_id]
+            for adj in self._in.values():
+                adj[:] = [e for e in adj if e.src != oldest_id]
+
         self._nodes[node.node_id] = node
         self._out.setdefault(node.node_id, [])
         self._in.setdefault(node.node_id, [])

@@ -49,6 +49,7 @@ from agentwatch.cost.tracker import CostTracker
 from agentwatch.governance.compliance_reporter import ComplianceReporter
 from agentwatch.governance.engine import AuditEventType, GovernanceEngine
 from agentwatch.reasoning.auditor import ReasoningAuditor
+from agentwatch.replay.counterfactual import CounterfactualEngine, CounterfactualScenario
 from agentwatch.replay.engine import ReplayEngine
 from agentwatch.rollback.engine import RollbackEngine
 from agentwatch.scoring.confidence import ConfidenceScorer
@@ -306,7 +307,14 @@ class SafetyPolicyUpdate(BaseModel):
     block_on_critical: bool = True
     require_approval_on_high: bool = True
     require_approval_on_medium: bool = False
-    approval_timeout_seconds: int = 120
+    approval_timeout_seconds: int = Field(default=120, ge=5, le=3600)
+
+
+class SimulateRequest(BaseModel):
+    rewind_to_step: int
+    tool_id: str | None = None
+    replacement: Any = None
+    notes: str = ""
 
 
 class SafetyCheckRequest(BaseModel):
@@ -707,7 +715,57 @@ async def get_replay(session_id: str, _auth: None = Depends(_require_api_key)) -
     trace = _collector.get_trace(session_id)
     if not events or not trace:
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-    return _replay_engine.load_from_events(trace.session, events).to_dict()
+
+    replay = _replay_engine.load_from_events(trace.session, events)
+    audit_summary = await _reasoning_auditor.audit_session(events)
+
+    d = replay.to_dict()
+    d["reasoning_audit"] = {
+        "overall_score": audit_summary.average_score,
+        "hallucination_risk": 1.0 - audit_summary.average_score,  # Simple heuristic for UI
+        "goal_alignment": audit_summary.average_score,  # Shared heuristic
+        "findings": [
+            {
+                "type": a.verdict,
+                "severity": "high" if a.score < 0.4 else "medium" if a.score < 0.7 else "low",
+                "message": a.rationale,
+                "step_index": a.step_index,
+            }
+            for a in audit_summary.audits
+            if a.score < 0.7
+        ],
+    }
+    return d
+
+
+@app.post("/api/v1/sessions/{session_id}/simulate")
+async def simulate_session(
+    session_id: str, request: SimulateRequest, _auth: None = Depends(_require_api_key)
+) -> dict[str, Any]:
+    events = _collector.get_events(session_id, limit=5000)
+    trace = _collector.get_trace(session_id)
+    if not events or not trace:
+        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
+
+    scenario = CounterfactualScenario(
+        rewind_to_step=request.rewind_to_step,
+        tool_id=request.tool_id,
+        replacement=request.replacement,
+        notes=request.notes,
+    )
+    try:
+        engine = CounterfactualEngine()
+        result = engine.run(events, scenario)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {
+        "session_id": session_id,
+        "diverged_at_step": result.diverged_at_step,
+        "original_events": [e.model_dump_for_storage() for e in result.original_events],
+        "alternate_events": [e.model_dump_for_storage() for e in result.alternate_events],
+        "summary": result.summary,
+    }
 
 
 @app.get("/api/v1/sessions/{session_id}/checkpoints")

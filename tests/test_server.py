@@ -131,7 +131,7 @@ class TestWebSocketAuth:
 def test_websocket_payload_sanitization(client):
     from agentwatch.core.event_bus import get_event_bus
     from agentwatch.core.schema import AgentEvent, EventType, AgentFramework
-    
+
     # Connect to websocket
     with client.websocket_connect("/ws/events") as ws:
         # Publish an event to the bus containing HTML
@@ -142,11 +142,45 @@ def test_websocket_payload_sanitization(client):
             event_type=EventType.PLANNER_OUTPUT,
             planner_output_preview="<script>alert('xss')</script>",
         )
-        
+
         # Publish synchronously
         get_event_bus().publish_sync(event)
-        
+
         # Read from websocket
         received = ws.receive_json()
         assert received["planner_output_preview"] == "&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;"
+
+
+def test_update_safety_policy_validation(client):
+    # Valid payload
+    resp = client.put(
+        "/api/v1/safety/policy",
+        json={
+            "block_on_high": True,
+            "block_on_critical": True,
+            "require_approval_on_high": True,
+            "require_approval_on_medium": False,
+            "approval_timeout_seconds": 60,
+        },
+    )
+    assert resp.status_code == 200
+
+    # Invalid payload (timeout too low)
+    resp = client.put(
+        "/api/v1/safety/policy",
+        json={
+            "approval_timeout_seconds": 4,
+        },
+    )
+    assert resp.status_code == 422
+
+    # Invalid payload (timeout too high)
+    resp = client.put(
+        "/api/v1/safety/policy",
+        json={
+            "approval_timeout_seconds": 99999,
+        },
+    )
+    assert resp.status_code == 422
+
 

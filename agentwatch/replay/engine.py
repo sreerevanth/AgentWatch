@@ -149,6 +149,7 @@ class ReplaySession:
             "started_at": self.session.started_at.isoformat(),
             "ended_at": self.session.ended_at.isoformat() if self.session.ended_at else None,
             "status": self.session.status.value,
+            "goal": self.session.goal,
             "total_events": self.total_steps,
             "failure_analysis": _failure_analysis_to_dict(self.failure_analysis),
             "steps": [_step_to_dict(s) for s in self.steps],
