@@ -11,7 +11,7 @@ import hashlib
 import logging
 import os
 from base64 import b64decode, b64encode
-from typing import Any, Optional
+from typing import Any
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 class APIKeyEncryption:
     """Secure API key encryption and decryption using AES-256-GCM."""
 
-    def __init__(self, master_key: Optional[str] = None) -> None:
+    def __init__(self, master_key: str | None = None) -> None:
         """Initialize encryption with master key from environment."""
         self.master_key = master_key or os.getenv("API_KEY_ENCRYPTION_KEY")
         if not self.master_key:
