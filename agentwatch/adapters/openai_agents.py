@@ -42,12 +42,12 @@ class AgentWatchOpenAIAgentsAdapter:
         self._bus.publish_sync(event)
 
     def on_agent_start(self, **kwargs):
-        event = self._base(EventType.SESSION_START)
+        event = self._base(EventType.AGENT_START)
         event.metadata["kwargs"] = kwargs
         self._emit(event)
 
     def on_agent_end(self, result=None):
-        event = self._base(EventType.SESSION_END)
+        event = self._base(EventType.AGENT_END)
         event.status = ExecutionStatus.SUCCESS
         event.metadata["result"] = result
         self._emit(event)

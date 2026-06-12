@@ -13,24 +13,24 @@ def _make_bus():
     return bus, captured
 
 
-def test_agent_start_emits_session_start():
+def test_agent_start_emits_agent_start():
     bus, captured = _make_bus()
 
     adapter = AgentWatchOpenAIAgentsAdapter(event_bus=bus)
     adapter.on_agent_start(role="Researcher")
 
     assert len(captured) == 1
-    assert captured[0].event_type == EventType.SESSION_START
+    assert captured[0].event_type == EventType.AGENT_START
 
 
-def test_agent_end_emits_session_end():
+def test_agent_end_emits_agent_end():
     bus, captured = _make_bus()
 
     adapter = AgentWatchOpenAIAgentsAdapter(event_bus=bus)
     adapter.on_agent_end(result="done")
 
     assert len(captured) == 1
-    assert captured[0].event_type == EventType.SESSION_END
+    assert captured[0].event_type == EventType.AGENT_END
     assert captured[0].status == ExecutionStatus.SUCCESS
 
 
