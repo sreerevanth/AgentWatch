@@ -32,7 +32,7 @@ class ExecutionLogger:
             "started_at": datetime.now(UTC).isoformat(),
         }
 
-    def _format_log(self, level: str, message: str, **kwargs: Any) -> dict:
+    def _format_log(self, level: str, message: str, **kwargs: Any) -> dict[str, Any]:
         """Format log entry with context and metadata."""
         return {
             "timestamp": datetime.now(UTC).isoformat(),
@@ -42,7 +42,7 @@ class ExecutionLogger:
             **kwargs,
         }
 
-    def log_step(self, step_name: str, details: Optional[dict] = None) -> None:
+    def log_step(self, step_name: str, details: Optional[dict[str, Any]] = None) -> None:
         """Log an execution step."""
         logger.info(
             json.dumps(
@@ -59,8 +59,8 @@ class ExecutionLogger:
         self,
         endpoint: str,
         method: str,
-        parameters: dict,
-        headers: dict,
+        parameters: dict[str, Any],
+        headers: dict[str, Any],
     ) -> None:
         """Log API call with parameters."""
         logger.info(
@@ -102,7 +102,7 @@ class ExecutionLogger:
         error_message: str,
         error_type: str,
         stack_trace: str,
-        context_data: Optional[dict] = None,
+        context_data: Optional[dict[str, Any]] = None,
     ) -> None:
         """Log error with full context and stack trace."""
         logger.error(
