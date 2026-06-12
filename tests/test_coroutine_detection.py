@@ -10,17 +10,12 @@ from __future__ import annotations
 
 import inspect
 import warnings
-from typing import Any
-from unittest.mock import AsyncMock, MagicMock
-
-import pytest
 
 from agentwatch.adapters.autogen import AutoGenAdapter
 from agentwatch.adapters.langgraph import LangGraphAdapter
 from agentwatch.core.event_bus import EventBus
-from agentwatch.core.watcher import GenericAdapter
 from agentwatch.core.schema import AgentFramework
-
+from agentwatch.core.watcher import GenericAdapter
 
 # ── Stub agents ──────────────────────────────────────────────────────────────
 
@@ -81,13 +76,9 @@ def test_generic_adapter_wraps_async_method():
     adapter.attach()
 
     # After attach, the wrapped arun must still be a coroutine function
-    assert inspect.iscoroutinefunction(agent.arun), (
-        "arun should be wrapped as a coroutine function"
-    )
+    assert inspect.iscoroutinefunction(agent.arun), "arun should be wrapped as a coroutine function"
     # The sync run wrapper must NOT be a coroutine
-    assert not inspect.iscoroutinefunction(agent.run), (
-        "run should be wrapped as a regular function"
-    )
+    assert not inspect.iscoroutinefunction(agent.run), "run should be wrapped as a regular function"
 
 
 def test_autogen_adapter_wraps_async_method():
@@ -140,8 +131,7 @@ def test_no_asyncio_iscoroutinefunction_deprecation_warning():
     deprecation_msgs = [
         str(w.message)
         for w in caught
-        if issubclass(w.category, DeprecationWarning)
-        and "iscoroutinefunction" in str(w.message)
+        if issubclass(w.category, DeprecationWarning) and "iscoroutinefunction" in str(w.message)
     ]
     assert deprecation_msgs == [], (
         f"Unexpected DeprecationWarnings about iscoroutinefunction: {deprecation_msgs}"
