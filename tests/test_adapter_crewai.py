@@ -1,4 +1,3 @@
-
 from __future__ import annotations
 
 import sys
@@ -7,8 +6,10 @@ import uuid
 
 # ── Stub CrewAI namespace (must happen before any adapter import) ─────────────
 
+
 class FakeAgent:
     """Minimal stand-in for crewai.Agent."""
+
     def __init__(self, role: str, tools: list | None = None):
         self.role = role
         self.tools = tools or []
@@ -16,6 +17,7 @@ class FakeAgent:
 
 class FakeTool:
     """Minimal stand-in for a crewai tool."""
+
     def __init__(self, name: str):
         self.name = name
 
@@ -34,13 +36,14 @@ class FakeCrew:
         on_tool_end     → TOOL_RESULT
         on_agent_finish → SESSION_END
     """
+
     def __init__(
         self,
         agents: list[FakeAgent] | None = None,
         adapter=None,
     ):
         self.agents = agents or []
-        self._adapter = adapter   # injected so kickoff() can fire hooks
+        self._adapter = adapter  # injected so kickoff() can fire hooks
 
     def kickoff(self) -> str:
         if self._adapter is None:
@@ -62,8 +65,8 @@ class FakeCrew:
 # Inject into sys.modules so the adapter (and any future import of "crewai")
 # sees these stubs instead of the real package.
 _fake_crewai = types.ModuleType("crewai")
-_fake_crewai.Agent = FakeAgent   # type: ignore[attr-defined]
-_fake_crewai.Crew  = FakeCrew    # type: ignore[attr-defined]
+_fake_crewai.Agent = FakeAgent  # type: ignore[attr-defined]
+_fake_crewai.Crew = FakeCrew  # type: ignore[attr-defined]
 sys.modules["crewai"] = _fake_crewai
 
 # ── Real imports (after stub injection) ───────────────────────────────────────
@@ -74,6 +77,7 @@ from agentwatch.core.schema import EventType, ExecutionStatus  # noqa: E402
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
+
 def _make_bus() -> tuple[EventBus, list]:
     """Return a fresh (bus, captured_events) pair for each test."""
     bus = EventBus()
@@ -83,6 +87,7 @@ def _make_bus() -> tuple[EventBus, list]:
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
+
 
 class TestCrewAIAdapterEventOrder:
     """Verify the lifecycle event sequence emitted during a crew run."""
@@ -98,9 +103,9 @@ class TestCrewAIAdapterEventOrder:
             agent_id="agent-abc",
             event_bus=bus,
         )
-        tool  = FakeTool("web_search")
+        tool = FakeTool("web_search")
         agent = FakeAgent(role="Researcher", tools=[tool])
-        crew  = FakeCrew(agents=[agent], adapter=adapter)
+        crew = FakeCrew(agents=[agent], adapter=adapter)
 
         crew.kickoff()
 
@@ -120,10 +125,10 @@ class TestCrewAIAdapterEventOrder:
         crew.kickoff()
 
         types_ = [e.event_type for e in captured]
-        assert types_[0]  == EventType.SESSION_START
+        assert types_[0] == EventType.SESSION_START
         assert types_[-1] == EventType.SESSION_END
         # No tool events
-        assert EventType.TOOL_CALL   not in types_
+        assert EventType.TOOL_CALL not in types_
         assert EventType.TOOL_RESULT not in types_
 
 
@@ -226,8 +231,8 @@ class TestCrewAIAdapterErrorHandling:
 
         assert len(captured) == 1
         err = captured[0]
-        assert err.event_type  == EventType.AGENT_ERROR
-        assert err.status      == ExecutionStatus.FAILURE
+        assert err.event_type == EventType.AGENT_ERROR
+        assert err.status == ExecutionStatus.FAILURE
         assert "something exploded" in err.metadata["error"]
 
     def test_error_does_not_suppress_previous_events(self):
@@ -239,7 +244,7 @@ class TestCrewAIAdapterErrorHandling:
 
         types_ = [e.event_type for e in captured]
         assert EventType.SESSION_START in types_
-        assert EventType.AGENT_ERROR  in types_
+        assert EventType.AGENT_ERROR in types_
 
 
 class TestCrewAIAdapterStepOrdering:
