@@ -114,6 +114,7 @@ def validate_channels(
                 "Incomplete PagerDuty configuration: "
                 "pagerduty_routing_key is required when pagerduty_webhook_url is set."
             )
-        validate_pagerduty_webhook(pagerduty_webhook_url)  # type: ignore[arg-type]
-        validate_pagerduty_key(pagerduty_routing_key)  # type: ignore[arg-type]
+        validate_pagerduty_webhook(pagerduty_webhook_url)
+        validate_pagerduty_key(pagerduty_routing_key)
+
 
