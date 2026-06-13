@@ -8,6 +8,8 @@ jobs:
   bandit:
     name: Bandit Scan
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
@@ -21,7 +23,7 @@ jobs:
           cache: pip
 
       - name: Install Bandit
-        run: pip install bandit
+        run: pip install bandit==1.9.4
 
       - name: Run Bandit
         run: bandit -r agentwatch -b bandit-baseline.json
