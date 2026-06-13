@@ -978,31 +978,38 @@ async def seed_demo(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
 
 
 def _sanitize_event(event_dict: dict[str, Any]) -> dict[str, Any]:
-    """Escape HTML tags in user-facing preview strings to prevent XSS in the dashboard."""
+    """Escape HTML tags in user-facing preview strings to prevent XSS in the dashboard.
+    
+    Creates and returns a new sanitized dictionary to avoid mutating the original input.
+    """
     import html
 
-    if "prompt_preview" in event_dict and isinstance(event_dict["prompt_preview"], str):
-        event_dict["prompt_preview"] = html.escape(event_dict["prompt_preview"])
-    if "planner_output_preview" in event_dict and isinstance(
-        event_dict["planner_output_preview"], str
-    ):
-        event_dict["planner_output_preview"] = html.escape(event_dict["planner_output_preview"])
+    sanitized = event_dict.copy()
 
-    if "tool_call" in event_dict and event_dict["tool_call"]:
-        tc = event_dict["tool_call"]
+    if "prompt_preview" in sanitized and isinstance(sanitized["prompt_preview"], str):
+        sanitized["prompt_preview"] = html.escape(sanitized["prompt_preview"])
+    if "planner_output_preview" in sanitized and isinstance(
+        sanitized["planner_output_preview"], str
+    ):
+        sanitized["planner_output_preview"] = html.escape(sanitized["planner_output_preview"])
+
+    if "tool_call" in sanitized and sanitized["tool_call"]:
+        tc = sanitized["tool_call"].copy()
         if "raw_command" in tc and isinstance(tc["raw_command"], str):
             tc["raw_command"] = html.escape(tc["raw_command"])
         if "arguments" in tc and isinstance(tc["arguments"], dict):
             tc["arguments"] = {k: html.escape(str(v)) for k, v in tc["arguments"].items()}
+        sanitized["tool_call"] = tc
 
-    if "tool_result" in event_dict and event_dict["tool_result"]:
-        tr = event_dict["tool_result"]
+    if "tool_result" in sanitized and sanitized["tool_result"]:
+        tr = sanitized["tool_result"].copy()
         if "output" in tr and isinstance(tr["output"], str):
             tr["output"] = html.escape(tr["output"])
         if "error" in tr and isinstance(tr["error"], str):
             tr["error"] = html.escape(tr["error"])
+        sanitized["tool_result"] = tr
 
-    return event_dict
+    return sanitized
 
 
 @app.websocket("/ws/events")
