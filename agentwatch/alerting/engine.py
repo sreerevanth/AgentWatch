@@ -118,4 +118,3 @@ class AlertingEngine:
                     await asyncio.sleep(delay)
                     delay *= 2
         return False
->>>>>>> upstream/main
