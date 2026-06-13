@@ -26,6 +26,7 @@ class AgentWatchOpenAIAgentsAdapter:
         self.agent_id = agent_id or f"openai-agents-{uuid.uuid4().hex[:8]}"
         self._bus = event_bus or get_event_bus()
         self._step = 0
+
     def _step_up(self) -> int:
         self._step += 1
         return self._step
@@ -66,6 +67,7 @@ class AgentWatchOpenAIAgentsAdapter:
         event.metadata["tool_name"] = tool_name
         event.metadata["result"] = result
         self._emit(event)
+
     def on_handoff(self, from_agent, to_agent):
         event = self._base(EventType.PLANNER_OUTPUT)
         event.metadata["from_agent"] = from_agent
@@ -77,5 +79,6 @@ class AgentWatchOpenAIAgentsAdapter:
         event.status = ExecutionStatus.FAILURE
         event.metadata["error"] = str(error)
         self._emit(event)
+
     def on_agent_finish(self, result=None):
         self.on_agent_end(result=result)
