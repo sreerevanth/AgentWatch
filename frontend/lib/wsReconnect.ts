@@ -11,8 +11,12 @@ export function wsBackoffDelayMs(attempt: number): number {
 }
 
 export function parseMaxReconnectAttempts(): number {
-  const raw = process.env.NEXT_PUBLIC_WS_MAX_ATTEMPTS
+  const raw =
+    process.env.NEXT_PUBLIC_WS_MAX_ATTEMPTS ??
+    process.env.NEXT_PUBLIC_WS_MAX_RECONNECT_ATTEMPTS
+
   if (!raw) return 8
+
   const parsed = Number.parseInt(raw, 10)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 8
 }
