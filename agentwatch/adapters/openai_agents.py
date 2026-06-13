@@ -13,6 +13,8 @@ from agentwatch.core.schema import (
     EventType,
     ExecutionStatus,
 )
+
+
 class AgentWatchOpenAIAgentsAdapter:
     def __init__(
         self,
