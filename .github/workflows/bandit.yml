@@ -24,4 +24,4 @@ jobs:
         run: pip install bandit
 
       - name: Run Bandit
-        run: bandit -r . -x .venv,.pytest_cache,.ruff_cache,tests -b bandit-baseline.json
+        run: bandit -r agentwatch -b bandit-baseline.json
