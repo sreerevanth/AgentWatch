@@ -1,41 +1,55 @@
 feature:
-    - branch: ['^feature\/.*', '^feat\/.*']
+  - any:
+    - head-branch: ['^feature\/.*', '^feat\/.*']
 
 bug:
-    - branch: ['^bugfix\/.*', '^fix\/.*', '^quick\/.*', '^hot\/.*', '^hotfix\/.*']
+  - any:
+    - head-branch: ['^bugfix\/.*', '^fix\/.*', '^quick\/.*', '^hot\/.*', '^hotfix\/.*']
 
 documentation:
-    - branch: ['^docs\/.*']
+  - any:
+    - head-branch: ['^docs\/.*']
 
 enhancement:
-    - branch: ['^enhancement\/.*', '^improve\/.*', '^refactor\/.*', '^perf\/.*']
+  - any:
+    - head-branch: ['^enhancement\/.*', '^improve\/.*', '^refactor\/.*', '^perf\/.*']
 
 testing:
-    - branch: ['^test\/.*', '^testing\/.*', '^qa\/.*']
+  - any:
+    - head-branch: ['^test\/.*', '^testing\/.*', '^qa\/.*']
 
 security:
-    - branch: ['^security\/.*', '^sec\/.*']
+  - any:
+    - head-branch: ['^security\/.*', '^sec\/.*']
 
 dependencies:
-    - branch: ['^deps\/.*', '^dependency\/.*', '^dependabot\/.*']
+  - any:
+    - head-branch: ['^deps\/.*', '^dependency\/.*', '^dependabot\/.*']
 
 release:
-    - branch: ['^release\/.*', '^rc\/.*', '^releases\/.*']
+  - any:
+    - head-branch: ['^release\/.*', '^rc\/.*', '^releases\/.*']
 
 breaking-change:
-    - branch: ['^breaking\/.*', '^major\/.*', '^breaking-change\/.*', '^bc\/.*']
+  - any:
+    - head-branch: ['^breaking\/.*', '^major\/.*', '^breaking-change\/.*', '^bc\/.*']
 
 performance:
-    - branch: ['^performance\/.*', '^perf\/.*', '^optimize\/.*']
+  - any:
+    - head-branch: ['^performance\/.*', '^perf\/.*', '^optimize\/.*']
 
 style:
-    - branch: ['^style\/.*', '^ui\/.*', '^design\/.*', '^lint\/.*']
+  - any:
+    - head-branch: ['^style\/.*', '^ui\/.*', '^design\/.*', '^lint\/.*']
 
 experimental:
-    - branch: ['^experiment\/.*', '^exp\/.*']
+  - any:
+    - head-branch: ['^experiment\/.*', '^exp\/.*']
 
 infrastructure:
-    - branch: ['^infra\/.*', '^ci\/.*', '^cd\/.*', '^devops\/.*', '^pipeline\/.*', '^docker\/.*']
+  - any:
+    - head-branch: ['^infra\/.*', '^ci\/.*', '^cd\/.*', '^devops\/.*', '^pipeline\/.*', '^docker\/.*']
 
 urgent:
-    - branch: ['^urgent\/.*', '^emergency\/.*', '^critical\/.*']
+  - any:
+    - head-branch: ['^urgent\/.*', '^emergency\/.*', '^critical\/.*']
