@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 import time
 from dataclasses import dataclass, field
 
@@ -25,9 +26,9 @@ _EVICTION_INTERVAL_SECONDS: float = 60.0
 class SessionBudget:
     session_id: str
     token_budget: int
-    usd_budget: float
+    usd_budget: Decimal
     tokens_used: int = 0
-    usd_used: float = 0.0
+    usd_used: Decimal = Decimal("0.0")
     exceeded: bool = False
     warnings: list[str] = field(default_factory=list)
     last_active: float = field(default_factory=time.monotonic)
@@ -36,18 +37,18 @@ class SessionBudget:
         return {
             "session_id": self.session_id,
             "token_budget": self.token_budget,
-            "usd_budget": self.usd_budget,
+            "usd_budget": float(self.usd_budget),
             "tokens_used": self.tokens_used,
-            "usd_used": round(self.usd_used, 6),
+            "usd_used": float(round(self.usd_used, 6)),
             "exceeded": self.exceeded,
             "warnings": self.warnings,
         }
 
 
 class CostTracker:
-    def __init__(self, default_token_budget: int = 100_000, default_usd_budget: float = 25.0):
+    def __init__(self, default_token_budget: int = 100_000, default_usd_budget: float | Decimal = 25.0):
         self._default_token_budget = default_token_budget
-        self._default_usd_budget = default_usd_budget
+        self._default_usd_budget = Decimal(str(default_usd_budget))
         self._budgets: dict[str, SessionBudget] = {}
         # Timestamp of the last full eviction scan. Initialised to 0 so the
         # first call to _maybe_evict() always runs a scan if warranted.
@@ -57,12 +58,12 @@ class CostTracker:
         self,
         session_id: str,
         token_budget: int | None = None,
-        usd_budget: float | None = None,
+        usd_budget: float | Decimal | None = None,
     ) -> SessionBudget:
         budget = SessionBudget(
             session_id=session_id,
             token_budget=token_budget if token_budget is not None else self._default_token_budget,
-            usd_budget=usd_budget if usd_budget is not None else self._default_usd_budget,
+            usd_budget=Decimal(str(usd_budget)) if usd_budget is not None else self._default_usd_budget,
         )
         self._budgets[session_id] = budget
         return budget
@@ -71,7 +72,8 @@ class CostTracker:
         budget = self._budgets.get(event.session_id) or self.configure_session(event.session_id)
         if event.token_usage:
             budget.tokens_used += event.token_usage.total_tokens
-            budget.usd_used += float(event.token_usage.estimated_cost_usd or 0.0)
+            cost = event.token_usage.estimated_cost_usd
+            budget.usd_used += Decimal(str(cost or 0.0))
         budget.last_active = time.monotonic()
         self._evaluate(budget)
         self._maybe_evict()
@@ -114,7 +116,7 @@ class CostTracker:
         budget.exceeded = False
         if budget.tokens_used >= budget.token_budget * 0.8:
             budget.warnings.append("token_budget_near_limit")
-        if budget.usd_used >= budget.usd_budget * 0.8:
+        if budget.usd_used >= budget.usd_budget * Decimal("0.8"):
             budget.warnings.append("usd_budget_near_limit")
         if budget.tokens_used > budget.token_budget or budget.usd_used > budget.usd_budget:
             budget.exceeded = True
