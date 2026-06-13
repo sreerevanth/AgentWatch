@@ -7,8 +7,7 @@ from typing import Any
 
 import httpx
 
-from agentwatch.alerting.channels import validate_channels
-from agentwatch.core.schema import AgentEvent, RiskLevel
+from agentwatch.alerting.channels import validate_channels`nfrom agentwatch.core.schema import AgentEvent, RiskLevel
 
 logger = logging.getLogger(__name__)
 
@@ -118,3 +117,4 @@ class AlertingEngine:
                     await asyncio.sleep(delay)
                     delay *= 2
         return False
+
