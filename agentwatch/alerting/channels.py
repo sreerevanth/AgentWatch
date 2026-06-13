@@ -1,4 +1,5 @@
-﻿"""Validation for Slack and PagerDuty notification channel configurations."""
+"""Validation for Slack and PagerDuty notification channel configurations."""
+
 from __future__ import annotations
 
 import logging
@@ -15,9 +16,7 @@ _SLACK_WEBHOOK_RE = re.compile(
 _PAGERDUTY_KEY_RE = re.compile(r"^[a-f0-9]{32}$")
 
 # PagerDuty webhook URLs must start with https://events.pagerduty.com/
-_PAGERDUTY_WEBHOOK_RE = re.compile(
-    r"^https://events\.pagerduty\.com/.*$"
-)
+_PAGERDUTY_WEBHOOK_RE = re.compile(r"^https://events\.pagerduty\.com/.*$")
 
 
 class ChannelConfigError(ValueError):
@@ -52,8 +51,7 @@ def validate_pagerduty_key(key: str) -> None:
     """
     if not key or not _PAGERDUTY_KEY_RE.match(key):
         raise ChannelConfigError(
-            "Invalid PagerDuty routing key. "
-            "Expected a 32-character hexadecimal string."
+            "Invalid PagerDuty routing key. Expected a 32-character hexadecimal string."
         )
     logger.debug("PagerDuty routing key validated successfully.")
 
@@ -69,8 +67,7 @@ def validate_pagerduty_webhook(url: str) -> None:
     """
     if not url or not _PAGERDUTY_WEBHOOK_RE.match(url):
         raise ChannelConfigError(
-            "Invalid PagerDuty webhook URL. "
-            "Expected format: https://events.pagerduty.com/..."
+            "Invalid PagerDuty webhook URL. Expected format: https://events.pagerduty.com/..."
         )
     logger.debug("PagerDuty webhook URL validated successfully.")
 
@@ -116,5 +113,3 @@ def validate_channels(
             )
         validate_pagerduty_webhook(pagerduty_webhook_url)
         validate_pagerduty_key(pagerduty_routing_key)
-
-

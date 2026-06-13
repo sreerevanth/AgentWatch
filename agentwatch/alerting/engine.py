@@ -1,4 +1,5 @@
-﻿"""Alert routing for Slack and PagerDuty webhooks."""
+"""Alert routing for Slack and PagerDuty webhooks."""
+
 from __future__ import annotations
 
 import logging
@@ -118,4 +119,3 @@ class AlertingEngine:
                     await asyncio.sleep(delay)
                     delay *= 2
         return False
-
