@@ -63,7 +63,7 @@ def test_health_healthy_db_and_redis(client, mock_db_session, mock_redis_healthy
 
 def test_health_db_unavailable(client, mock_redis_healthy):
     with patch(
-        "agentwatch.api.server._db_session_factory", side_effect=Exception("DB is not available")
+        "agentwatch.api.server._db_session_factory", side_effect=Exception("Database is Unavailable")
     ):
         response = client.get("/health")
 
@@ -71,7 +71,7 @@ def test_health_db_unavailable(client, mock_redis_healthy):
     data = response.json()
 
     assert data["database"]["status"] == "degraded"
-    assert "DB is not available" in data["database"]["error"]
+    assert "Database is Unavailable" in data["database"]["error"]
 
 
 def test_health_redis_unavailable(client, mock_db_session):
@@ -81,9 +81,10 @@ def test_health_redis_unavailable(client, mock_db_session):
     ):
         mock_getenv.return_value = "redis://localhost:6379"
         mock_client = AsyncMock()
-        mock_client.ping = AsyncMock(side_effect=Exception("Redis connection failed"))
+        mock_client.ping = AsyncMock(side_effect=Exception("Redis is Unavailable"))
         mock_client.aclose = AsyncMock()
-        mock_redis.from_url = AsyncMock(return_value=mock_client)
+        
+        mock_redis.return_value = mock_client
 
         response = client.get("/health")
 

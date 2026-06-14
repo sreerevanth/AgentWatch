@@ -598,7 +598,7 @@ async def health(request: Request) -> JSONResponse:
             checks["database"] = {"status": "ok"}
         except Exception as e:
             degraded = True
-            checks["database"] = {"status": "degraded", "error": str(e)}
+            checks["database"] = {"status": "degraded", "error": "Database is Unavailable"}
 
     redis_url = os.getenv("REDIS_URL")
     if redis_url:
@@ -615,7 +615,7 @@ async def health(request: Request) -> JSONResponse:
             checks["redis"] = {"status": "ok"}
         except Exception as e:
             degraded = True
-            checks["redis"] = {"status": "degraded", "error": str(e)}
+            checks["redis"] = {"status": "degraded", "error": "Redis is Unavailable"}
     else:
         checks["redis"] = {"status": "not_configured"}
 
