@@ -1,5 +1,5 @@
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -44,9 +44,9 @@ DUMMY_REPLAY = {
 def mock_httpx_client():
     with patch("httpx.AsyncClient") as mock_client_cls:
         mock_instance = AsyncMock()
-        mock_response = AsyncMock()
+        mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json = lambda: DUMMY_REPLAY
+        mock_response.json.return_value = DUMMY_REPLAY
         mock_instance.get.return_value = mock_response
 
         # AsyncClient as context manager
