@@ -48,7 +48,7 @@ def main_callback(ctx: typer.Context):
     from agentwatch.cli.animator import glitch_ascii_art, matrix_type_print
     glitch_ascii_art(ascii_art)
     
-    matrix_type_print("Initializing runtime components...", color="90m;3m", delay=0.01)
+    matrix_type_print("Initializing runtime components...", color="90;3m", delay=0.01)
     print()
 
     if ctx.invoked_subcommand is None:
