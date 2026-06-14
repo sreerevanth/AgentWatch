@@ -1,12 +1,9 @@
-import asyncio
-
 import pytest
-
 from fastapi.testclient import TestClient
 
 from agentwatch.api.server import create_app
-from agentwatch.core.schema import RiskLevel, SafetyCheckData
 from agentwatch.core.safety import SafetyEngine
+from agentwatch.core.schema import RiskLevel, SafetyCheckData
 
 
 @pytest.fixture
@@ -17,19 +14,19 @@ def client():
 
 
 def test_safety_check_blocks_critical(client):
-    res = client.post('/api/v1/safety/check', json={'command': 'rm -rf /', 'tool_name': 'bash'})
+    res = client.post("/api/v1/safety/check", json={"command": "rm -rf /", "tool_name": "bash"})
     assert res.status_code == 200
     data = res.json()
-    assert data['blocked'] is True
-    assert data['risk_level'] in ('critical', 'high')
+    assert data["blocked"] is True
+    assert data["risk_level"] in ("critical", "high")
 
 
 def test_safety_check_allows_safe(client):
-    res = client.post('/api/v1/safety/check', json={'command': 'echo hello', 'tool_name': 'bash'})
+    res = client.post("/api/v1/safety/check", json={"command": "echo hello", "tool_name": "bash"})
     assert res.status_code == 200
     data = res.json()
-    assert data['blocked'] is False
-    assert data['risk_level'] in ('safe', 'low')
+    assert data["blocked"] is False
+    assert data["risk_level"] in ("safe", "low")
 
 
 def test_safety_check_keeps_command_argument_in_sync(client, monkeypatch):
@@ -46,21 +43,21 @@ def test_safety_check_keeps_command_argument_in_sync(client, monkeypatch):
         )
 
     async def fake_check_event(self, event):
-        captured['tool_call'] = event.tool_call
+        captured["tool_call"] = event.tool_call
         return DummyCheckedEvent()
 
-    monkeypatch.setattr(SafetyEngine, 'check_event', fake_check_event)
+    monkeypatch.setattr(SafetyEngine, "check_event", fake_check_event)
 
     res = client.post(
-        '/api/v1/safety/check',
+        "/api/v1/safety/check",
         json={
-            'command': 'echo hello',
-            'tool_name': 'bash',
-            'arguments': {'command': 'rm -rf /', 'other': 'value'},
+            "command": "echo hello",
+            "tool_name": "bash",
+            "arguments": {"command": "rm -rf /", "other": "value"},
         },
     )
 
     assert res.status_code == 200
-    assert captured['tool_call'].raw_command == 'echo hello'
-    assert captured['tool_call'].arguments['command'] == 'echo hello'
-    assert captured['tool_call'].arguments['other'] == 'value'
+    assert captured["tool_call"].raw_command == "echo hello"
+    assert captured["tool_call"].arguments["command"] == "echo hello"
+    assert captured["tool_call"].arguments["other"] == "value"

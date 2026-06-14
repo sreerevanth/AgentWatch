@@ -532,6 +532,16 @@ def status(
         console.print(f"  Active subscribers:     {eb_stats.get('active_subscribers', 0)}\n")
 
     asyncio.run(_run())
+# verify-env command
+# ─────────────────────────────────────────────
+
+
+@app.command(name="verify-env")
+def verify_env() -> None:
+    """[bold]Verify[/bold] local developer environment variables and dependencies."""
+    from agentwatch.cli.verify_env import verify_environment
+
+    verify_environment()
 
 
 # ─────────────────────────────────────────────
