@@ -33,8 +33,8 @@ app.add_typer(safety_app)
 
 import time
 
-@app.callback()
-def main_callback():
+@app.callback(invoke_without_command=True)
+def main_callback(ctx: typer.Context):
     """AgentWatch CLI with ASCII Animation"""
     ascii_art = [
         r"    ___                    __ _       __      __       __  ",
@@ -57,6 +57,9 @@ def main_callback():
             time.sleep(0.002)
         print()
     console.print("[dim italic]Initializing runtime components...[/dim italic]\n")
+
+    if ctx.invoked_subcommand is None:
+        console.print(ctx.get_help())
 
 
 
