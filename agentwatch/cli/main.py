@@ -38,9 +38,15 @@ app.add_typer(server_app)
 app.add_typer(safety_app)
 
 
+_IN_REPL = False
+
 @app.callback(invoke_without_command=True)
 def main_callback(ctx: typer.Context):
     """AgentWatch CLI with ASCII Animation"""
+    global _IN_REPL
+    if _IN_REPL:
+        return
+        
     ascii_art = [
         r"    ___                    __ _       __      __       __  ",
         r"   /   |  ____  ___  ____ / /| |     / /___ _/ /______/ /_ ",
@@ -61,6 +67,41 @@ def main_callback(ctx: typer.Context):
 
     if ctx.invoked_subcommand is None:
         print_systematic_menu()
+        _IN_REPL = True
+        try:
+            _start_repl_session()
+        finally:
+            _IN_REPL = False
+
+def _start_repl_session():
+    """Run an interactive REPL shell for the CLI."""
+    import shlex
+
+    from rich.prompt import Prompt
+
+    from agentwatch.cli.animator import matrix_type_print
+    
+    console.print("\n[bold cyan]AgentWatch Interactive Shell[/bold cyan] (type 'exit' or 'quit' to close)")
+    while True:
+        try:
+            cmd_line = Prompt.ask("[bold green]>[/bold green]")
+            cmd_line = cmd_line.strip()
+            if not cmd_line:
+                continue
+            if cmd_line.lower() in ("exit", "quit"):
+                matrix_type_print("Terminating AgentWatch session...", color="dim")
+                break
+                
+            args = shlex.split(cmd_line)
+            try:
+                app(args, standalone_mode=False)
+            except SystemExit:
+                pass
+            except Exception as e:
+                console.print(f"[red]Error executing command:[/red] {e}")
+        except (KeyboardInterrupt, EOFError):
+            matrix_type_print("\nTerminating AgentWatch session...", color="dim")
+            break
 
 
 
