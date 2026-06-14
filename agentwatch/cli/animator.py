@@ -90,32 +90,65 @@ def glitch_ascii_art(ascii_art: List[str]) -> None:
 
 def print_systematic_menu() -> None:
     """Prints a beautiful, animated systematic command menu."""
-    table = Table(show_edge=False, show_header=False, box=None, padding=(1, 4))
-    table.add_column("Command", style="bold cyan")
-    table.add_column("Description", style="dim")
+    from rich import box
     
     commands = [
-        ("🚀 [bold]check-env[/bold]", "Run full system diagnostic & dependency check"),
-        ("🖥️  [bold]server start[/bold]", "Boot the local AgentWatch API server"),
-        ("📊 [bold]server status[/bold]", "Open the real-time live performance dashboard"),
-        ("👀 [bold]session watch[/bold]", "Watch a Claude Code execution with full safety"),
-        ("⏪ [bold]session replay[/bold]", "Replay a captured session step-by-step"),
-        ("📋 [bold]session list[/bold]", "List recent agent sessions from the API"),
-        ("🛡️  [bold]safety check[/bold]", "Score the risk level of a shell command"),
+        ("[bold green][+][/bold green] [bold]check-env[/bold]", "Run full system diagnostic & dependency check"),
+        ("[bold cyan][>][/bold cyan] [bold]server start[/bold]", "Boot the local AgentWatch API server"),
+        ("[bold magenta][~][/bold magenta] [bold]server status[/bold]", "Open the real-time live performance dashboard"),
+        ("[bold yellow][*][/bold yellow] [bold]session watch[/bold]", "Watch a Claude Code execution with full safety"),
+        ("[bold blue][<][/bold blue] [bold]session replay[/bold]", "Replay a captured session step-by-step"),
+        ("[bold white][=][/bold white] [bold]session list[/bold]", "List recent agent sessions from the API"),
+        ("[bold red][!][/bold red] [bold]safety check[/bold]", "Score the risk level of a shell command"),
     ]
     
-    for cmd, desc in commands:
-        table.add_row(cmd, desc)
-        
-    panel = Panel(
-        table,
-        title="[bold green]S Y S T E M   C O M M A N D S[/bold green]",
-        border_style="cyan",
-        expand=False
-    )
-    
     console.print()
-    # A short delay before the menu pops up for cinematic pacing
     time.sleep(0.2)
-    console.print(Align.center(panel))
+    
+    # Animate the table appearing row by row inside the panel
+    with Live(console=console, refresh_per_second=20) as live:
+        for i in range(len(commands) + 1):
+            temp_table = Table(show_edge=False, show_header=False, box=None, padding=(1, 4))
+            temp_table.add_column("Command", style="bold cyan")
+            temp_table.add_column("Description", style="dim white")
+            
+            for j in range(i):
+                cmd, desc = commands[j]
+                temp_table.add_row(cmd, desc)
+                
+            panel = Panel(
+                temp_table,
+                title="[bold green]S Y S T E M   C O M M A N D S[/bold green]",
+                subtitle="[dim]Initializing Modules...[/dim]",
+                border_style="cyan",
+                box=box.DOUBLE,
+                expand=False
+            )
+            live.update(Align.center(panel))
+            time.sleep(0.12)
+            
+        # Completion cinematic flash
+        time.sleep(0.1)
+        flash_panel = Panel(
+            temp_table,
+            title="[bold white]S Y S T E M   C O M M A N D S[/bold white]",
+            subtitle="[bold green]AWAITING INPUT[/bold green]",
+            border_style="bold green",
+            box=box.DOUBLE,
+            expand=False
+        )
+        live.update(Align.center(flash_panel))
+        time.sleep(0.15)
+        
+        # Settle back to stable state
+        final_panel = Panel(
+            temp_table,
+            title="[bold green]S Y S T E M   C O M M A N D S[/bold green]",
+            subtitle="[bold green]AWAITING INPUT[/bold green]",
+            border_style="bold cyan",
+            box=box.DOUBLE,
+            expand=False
+        )
+        live.update(Align.center(final_panel))
+        
     console.print()
