@@ -439,21 +439,69 @@ def safety(
     """
     from agentwatch.core.safety import RiskScorer
     from agentwatch.core.schema import ToolCallData
+    from agentwatch.cli.animator import matrix_type_print
+    import time
+    from rich.progress import Progress, SpinnerColumn, TextColumn
+    from rich.panel import Panel
+    from rich.console import Group
+    from rich.text import Text
 
     scorer = RiskScorer()
     tool = ToolCallData(tool_name="bash", raw_command=command, arguments={"command": command})
+    
+    # Live animated analysis phase
+    with Progress(
+        SpinnerColumn(spinner_name="dots2", style="cyan"),
+        TextColumn("[cyan]{task.description}[/cyan]"),
+        transient=True,
+    ) as progress:
+        task = progress.add_task("Analyzing command vectors...", total=None)
+        time.sleep(0.4)
+        progress.update(task, description="Cross-referencing security policies...")
+        time.sleep(0.3)
+        progress.update(task, description="Evaluating what-if scenario impact...")
+        time.sleep(0.3)
+        
     level, score, reasons, policies = scorer.score(tool)
-
     color = _risk_color(level.value)
-    console.print(f"\nCommand: [bold]{command}[/bold]")
-    console.print(f"Risk:    [{color}]{level.value.upper()}[/{color}] (score: {score:.2f})")
-
-    if reasons:
-        console.print("\nMatched policies:")
-        for i, (r, p) in enumerate(zip(reasons, policies)):
-            console.print(f"  [{color}]{p}[/{color}]: {r}")
+    
+    matrix_type_print("THREAT ANALYSIS COMPLETE", color="1;96m", delay=0.02)
+    
+    # Constructing What-If scenario based on risk level
+    if score >= 0.8:
+        what_if = "If executed, this command could permanently destroy critical data, compromise host integrity, or create severe security vulnerabilities. Recovery would require full system restoration."
+    elif score >= 0.5:
+        what_if = "If executed, this command may alter important system configurations, expose sensitive network ports, or unexpectedly modify local files."
+    elif score >= 0.2:
+        what_if = "If executed, this command could result in minor data modifications or unintended side-effects. Generally recoverable."
     else:
-        console.print("[green]✓ No risk patterns matched[/green]")
+        what_if = "This command appears strictly safe. Executing it will likely result in read-only operations or isolated, non-destructive outputs."
+
+    details = [
+        f"[dim]Target:[/dim] [bold white]{command}[/bold white]",
+        f"[dim]Risk:[/dim]   [{color}][bold]{level.value.upper()}[/bold][/{color}] (Confidence: {score:.2f})",
+        "",
+    ]
+    
+    if reasons:
+        details.append(f"[bold {color}]VIOLATIONS DETECTED:[/bold {color}]")
+        for r, p in zip(reasons, policies):
+            details.append(f"  [{color}][>][/{color}] [bold]{p}[/bold]: {r}")
+    else:
+        details.append("[green][+] No heuristic violations detected.[/green]")
+        
+    details.append("")
+    details.append("[bold cyan]WHAT-IF SIMULATION:[/bold cyan]")
+    details.append(f"[italic]{what_if}[/italic]")
+    
+    console.print(
+        Panel(
+            "\n".join(details),
+            border_style=color,
+            title=f"[{color}]Security Report[/{color}]",
+            padding=(1, 2)
+        )
+    )
 
 
 # ─────────────────────────────────────────────
