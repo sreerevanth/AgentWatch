@@ -538,7 +538,7 @@ def status(
 
             layout = Layout()
             layout.split_column(
-                Layout(Panel("[bold cyan]AgentWatch Live Runtime Dashboard[/bold cyan]\\n[dim]Press Ctrl+C to exit[/dim]", justify="center"), size=4),
+                Layout(Panel(Align("[bold cyan]AgentWatch Live Runtime Dashboard[/bold cyan]\n[dim]Press Ctrl+C to exit[/dim]", align="center")), size=4),
                 Layout(name="body")
             )
             layout["body"].split_row(
