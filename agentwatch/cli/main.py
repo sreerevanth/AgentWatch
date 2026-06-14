@@ -23,12 +23,13 @@ app = typer.Typer(
 )
 console = Console()
 
-session_app = typer.Typer(name="session", help="Manage and inspect agent sessions")
-server_app = typer.Typer(name="server", help="Manage the AgentWatch API server")
+session_app = typer.Typer(name="session", help="Manage and inspect agent sessions", no_args_is_help=True)
+server_app = typer.Typer(name="server", help="Manage the AgentWatch API server", no_args_is_help=True)
 safety_app = typer.Typer(
     name="safety", 
     help="AgentWatch Safety & Risk Engine. Analyze shell commands against security policies.",
-    rich_markup_mode="rich"
+    rich_markup_mode="rich",
+    no_args_is_help=True
 )
 
 app.add_typer(session_app)
