@@ -75,22 +75,39 @@ def main_callback(ctx: typer.Context):
 
 def _start_repl_session():
     """Run an interactive REPL shell for the CLI."""
+    import os
     import shlex
 
+    from rich.panel import Panel
     from rich.prompt import Prompt
 
     from agentwatch.cli.animator import matrix_type_print
     
-    console.print("\n[bold cyan]AgentWatch Interactive Shell[/bold cyan] (type 'exit' or 'quit' to close)")
+    console.print()
+    console.print(Panel(
+        "[dim]Enter commands directly (e.g. 'safety check ...', 'session list').\n"
+        "Type [bold cyan]clear[/bold cyan] to wipe screen, or [bold red]exit[/bold red] to terminate.[/dim]",
+        title="[bold cyan]⚡ AGENTWATCH INTERACTIVE TERMINAL ⚡[/bold cyan]",
+        border_style="cyan",
+        padding=(0, 2)
+    ))
+    
     while True:
         try:
-            cmd_line = Prompt.ask("[bold green]>[/bold green]")
+            # High-end cinematic prompt
+            cmd_line = Prompt.ask("\n[bold cyan]AW[/bold cyan][dim]:[/dim][bold green]CORE[/bold green] [bold white]>[/bold white]")
             cmd_line = cmd_line.strip()
             if not cmd_line:
                 continue
-            if cmd_line.lower() in ("exit", "quit"):
+                
+            cmd_lower = cmd_line.lower()
+            if cmd_lower in ("exit", "quit"):
                 matrix_type_print("Terminating AgentWatch session...", color="dim")
                 break
+                
+            if cmd_lower in ("clear", "cls"):
+                os.system("cls" if os.name == "nt" else "clear")  # nosec # noqa: S605, S607
+                continue
                 
             args = shlex.split(cmd_line)
             try:
