@@ -27,7 +27,8 @@ from fastapi import (
 )
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import generate_latest
 from pydantic import BaseModel, Field
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
@@ -35,6 +36,11 @@ from agentwatch.api.auth import require_permission
 from agentwatch.core.event_bus import get_event_bus
 from agentwatch.core.models import Repository, init_db
 from agentwatch.core.safety import RiskScorer, SafetyEngine, SafetyPolicy
+from agentwatch.monitoring.metrics import (
+    record_api_latency,
+    record_failure,
+    update_health_score,
+)
 from agentwatch.core.schema import (
     AgentEvent,
     AgentFramework,
@@ -533,6 +539,17 @@ async def rl_headers(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def record_metrics(request: Request, call_next):
+    """Record API latency metrics for all requests."""
+    start_time = time.time()
+    response = await call_next(request)
+    duration = time.time() - start_time
+    endpoint = request.url.path
+    record_api_latency(endpoint, duration)
+    return response
+
+
 # CORS configuration.
 #
 # allow_credentials=True requires an explicit origin list -- the CORS spec
@@ -590,6 +607,12 @@ async def health(request: Request) -> dict[str, Any]:
         "safety": _safety_engine.stats(),
         "cost": _cost_tracker.stats(),
     }
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    """Expose Prometheus metrics endpoint."""
+    return Response(content=generate_latest(), media_type="text/plain; version=0.0.4")
 
 
 @app.get("/api/v1/sessions", response_model=SessionListResponse)
@@ -728,6 +751,11 @@ async def ingest_event(
 ) -> dict[str, Any]:
     _limiter.check(_rate_limit_key(request, "w"), RATE_WRITE, request)
     await get_event_bus().publish(event)
+
+    if event.agent_id and hasattr(event, "status"):
+        if getattr(event, "status", None) == ExecutionStatus.FAILURE:
+            record_failure(event.agent_id)
+
     return {"status": "accepted", "event_id": event.event_id}
 
 
