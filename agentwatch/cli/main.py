@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from enum import Enum
 from pathlib import Path
 
 import typer
@@ -300,6 +301,162 @@ def sessions(
 
         data = resp.json()
         _print_sessions_table(data["sessions"])
+
+    asyncio.run(_run())
+
+
+# ─────────────────────────────────────────────
+# export command
+# ─────────────────────────────────────────────
+
+
+class ExportFormat(str, Enum):
+    json = "json"
+    md = "md"
+
+
+@app.command()
+def export(
+    session_id: str = typer.Argument(..., help="ID of the session to export"),
+    format: ExportFormat = typer.Option(
+        ExportFormat.json, "--format", help="Export format: json or md"
+    ),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Custom output file path"),
+    api_url: str = typer.Option("http://localhost:8000", "--api"),
+) -> None:
+    """[bold]Export[/bold] a session replay to a portable JSON or Markdown file."""
+
+    async def _run() -> None:
+        try:
+            import httpx
+        except ImportError:
+            console.print("[red]httpx not installed. Run: pip install httpx[/red]")
+            raise typer.Exit(1)
+
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(
+                    f"{api_url}/api/v1/sessions/{session_id}/replay",
+                    timeout=10.0,
+                )
+                if resp.status_code == 404:
+                    console.print(f"[red]Session {session_id} not found.[/red]")
+                    raise typer.Exit(1)
+                resp.raise_for_status()
+            except httpx.HTTPError as exc:
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
+                raise typer.Exit(1)
+
+        data = resp.json()
+
+        if format == ExportFormat.json:
+            out_path = output or Path(f"agentwatch-session-{session_id}.json")
+            with open(out_path, "w") as f:
+                json.dump(data, f, indent=2)
+            console.print(f"[green]{out_path.name} created successfully[/green]")
+
+        elif format == ExportFormat.md:
+            out_path = output or Path(f"agentwatch-session-{session_id}.md")
+
+            session = data.get("session", {})
+            steps = data.get("steps", [])
+
+            lines = [
+                f"# AgentWatch Session: {session.get('session_id', session_id)}",
+                "",
+                "## Session Overview",
+                f"- **Status**: {session.get('status', 'unknown')}",
+                f"- **Framework**: {session.get('framework', 'unknown')}",
+                f"- **Started at**: {session.get('started_at', 'unknown')}",
+                f"- **Ended at**: {session.get('ended_at', 'unknown')}",
+                f"- **Total Steps**: {len(steps)}",
+            ]
+
+            if session.get("goal"):
+                lines.extend(["", "### Goal", session.get("goal")])
+
+            fa = data.get("failure_analysis")
+            if fa:
+                lines.extend(
+                    [
+                        "",
+                        "## Failure Analysis",
+                        f"- **Primary Cause**: {fa.get('primary_cause', 'unknown')}",
+                    ]
+                )
+                if fa.get("recommendations"):
+                    lines.append("- **Recommendations**:")
+                    for rec in fa.get("recommendations", []):
+                        lines.append(f"  - {rec}")
+
+            lines.extend(["", "## Execution Timeline"])
+            for step in steps:
+                event = step.get("event", {})
+                idx = step.get("index", 0)
+                etype = event.get("event_type", "unknown")
+                status = event.get("status", "")
+
+                status_str = f" ({status})" if status else ""
+                lines.extend(
+                    [
+                        "",
+                        f"### Step {idx}",
+                        f"- **Type**: {etype}{status_str}",
+                    ]
+                )
+
+                tool_call = event.get("tool_call")
+                if tool_call:
+                    lines.extend(
+                        [
+                            f"- **Tool**: {tool_call.get('tool_name', 'unknown')}",
+                            "",
+                            "**Command**:",
+                            "```",
+                            tool_call.get("raw_command", ""),
+                            "```",
+                        ]
+                    )
+
+                tool_result = event.get("tool_result")
+                if tool_result:
+                    if tool_result.get("output"):
+                        lines.extend(
+                            [
+                                "",
+                                "**Output**:",
+                                "```",
+                                tool_result.get("output", ""),
+                                "```",
+                            ]
+                        )
+                    if tool_result.get("error"):
+                        lines.extend(
+                            [
+                                "",
+                                "**Error**:",
+                                "```",
+                                tool_result.get("error", ""),
+                                "```",
+                            ]
+                        )
+
+                safety = event.get("safety")
+                if safety and safety.get("blocked"):
+                    lines.extend(
+                        [
+                            "",
+                            "**Safety Block**:",
+                            f"- **Risk Level**: {safety.get('risk_level', 'unknown').upper()}",
+                            "- **Reasons**:",
+                        ]
+                    )
+                    for r in safety.get("reasons", []):
+                        lines.append(f"  - {r}")
+
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+            console.print(f"[green]{out_path.name} created successfully[/green]")
 
     asyncio.run(_run())
 
