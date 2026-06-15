@@ -7,8 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import json
-from enum import Enum
 import time
+from enum import Enum
 from pathlib import Path
 
 import typer
