@@ -979,7 +979,7 @@ async def seed_demo(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
 
 def _sanitize_event(event_dict: dict[str, Any]) -> dict[str, Any]:
     """Escape HTML tags in user-facing preview strings to prevent XSS in the dashboard.
-    
+
     Creates and returns a new sanitized dictionary to avoid mutating the original input.
     """
     import html
