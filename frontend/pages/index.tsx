@@ -224,7 +224,20 @@ function SessionsTable({ sessions, loading }: { sessions: AgentSession[]; loadin
               ))
             ) : (
               sessions.map((session) => (
-                <tr key={session.session_id} className="cursor-pointer border-t border-white/5 transition-colors hover:bg-white/5" onClick={() => router.push(`/sessions/${session.session_id}`)}>
+                <tr
+                  key={session.session_id}
+                  className="cursor-pointer border-t border-white/5 transition-colors hover:bg-white/5 focus:outline-none focus:bg-white/10"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`View details for session ${session.session_id.slice(0, 8)}`}
+                  onClick={() => router.push(`/sessions/${session.session_id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      router.push(`/sessions/${session.session_id}`);
+                    }
+                  }}
+                >
                   <td className="px-5 py-3">
                     <div className="font-mono text-xs text-zinc-200">{session.session_id.slice(0, 16)}…</div>
                     <div className="max-w-[20rem] truncate text-xs text-zinc-500">{session.goal ?? session.agent_name ?? session.agent_id}</div>
@@ -317,7 +330,7 @@ export default function DashboardPage() {
             <div className="text-xs uppercase tracking-[0.32em] text-zinc-500">AgentWatch</div>
             <h1 className="text-2xl font-semibold text-white">Reliability, safety, and observability</h1>
           </div>
-          <button onClick={() => { refreshSummary(); refreshSessions() }} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/10 hover:text-white">
+          <button onClick={() => { refreshSummary(); refreshSessions() }} aria-label="Refresh dashboard data" className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/10 hover:text-white">
             <RefreshCw size={14} />
             Refresh
           </button>
