@@ -56,10 +56,12 @@ class CostTracker:
     ):
         self._default_token_budget = default_token_budget
         self._default_usd_budget = default_usd_budget
-        
+
         # Configure TTL
         if ttl_seconds is None:
-            env_val = os.getenv("AGENTWATCH_SESSION_TTL_SECONDS") or os.getenv("SESSION_TTL_SECONDS")
+            env_val = os.getenv("AGENTWATCH_SESSION_TTL_SECONDS") or os.getenv(
+                "SESSION_TTL_SECONDS"
+            )
             if env_val is not None:
                 try:
                     self.ttl_seconds = float(env_val)
@@ -87,7 +89,9 @@ class CostTracker:
             self._cleanup_stale_sessions()
             budget = SessionBudget(
                 session_id=session_id,
-                token_budget=token_budget if token_budget is not None else self._default_token_budget,
+                token_budget=token_budget
+                if token_budget is not None
+                else self._default_token_budget,
                 usd_budget=usd_budget if usd_budget is not None else self._default_usd_budget,
             )
             budget.last_accessed = time.monotonic()
@@ -119,7 +123,9 @@ class CostTracker:
         with self._lock:
             return {
                 "tracked_sessions": len(self._budgets),
-                "sessions_over_budget": sum(1 for budget in self._budgets.values() if budget.exceeded),
+                "sessions_over_budget": sum(
+                    1 for budget in self._budgets.values() if budget.exceeded
+                ),
             }
 
     def _cleanup_stale_sessions(self, force: bool = False) -> None:
