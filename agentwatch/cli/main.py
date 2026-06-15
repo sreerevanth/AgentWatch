@@ -822,12 +822,19 @@ def compare(
         if m1["overall"] is not None and m2["overall"] is not None:
             diff = m2["overall"] - m1["overall"]
             if diff > 0:
-                pct = (diff / m1["overall"] * 100) if m1["overall"] > 0 else float("inf")
-                conf_sum = f"[green]+{pct:.0f}%[/green]"
+                if m1["overall"] > 0:
+                    pct = diff / m1["overall"] * 100
+                    conf_sum = f"[green]+{pct:.0f}%[/green]"
+                else:
+                    conf_sum = "N/A"
             elif diff < 0:
-                pct = (-diff / m1["overall"] * 100) if m1["overall"] > 0 else float("inf")
-                conf_sum = f"[red]-{pct:.0f}%[/red]"
+                if m1["overall"] > 0:
+                    pct = -diff / m1["overall"] * 100
+                    conf_sum = f"[red]-{pct:.0f}%[/red]"
+                else:
+                    conf_sum = "N/A"
             else:
+                conf_sum = "Unchanged"
                 conf_sum = "Unchanged"
         else:
             conf_sum = "N/A"
