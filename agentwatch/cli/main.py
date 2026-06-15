@@ -748,12 +748,24 @@ def compare(
                     f"{api_url}/api/v1/sessions/{session_id_2}/replay", timeout=10.0
                 )
 
+                if rep1_resp.status_code == 404:
+                    console.print(f"[red]Session {session_id_1} replay not found.[/red]")
+                    raise typer.Exit(1)
+                if rep2_resp.status_code == 404:
+                    console.print(f"[red]Session {session_id_2} replay not found.[/red]")
+                    raise typer.Exit(1)
+
                 rep1_resp.raise_for_status()
                 rep2_resp.raise_for_status()
 
                 rep1 = rep1_resp.json()
                 rep2 = rep2_resp.json()
 
+            except httpx.HTTPStatusError as exc:
+                console.print(
+                    f"[red]API request failed with status {exc.response.status_code}: {exc.response.text}[/red]"
+                )
+                raise typer.Exit(1)
             except httpx.HTTPError as exc:
                 console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
@@ -780,6 +792,8 @@ def compare(
             failed_steps = 0
             safety_blocks = 0
 
+            from pydantic import ValidationError
+
             from agentwatch.core.schema import AgentEvent
             from agentwatch.reasoning.hallucination import (
                 HallucinationClassifier,
@@ -797,7 +811,7 @@ def compare(
 
             for step in steps:
                 ev_data = step.get("event", {})
-                
+
                 # Check for failures and safety blocks
                 etype = ev_data.get("event_type", "").lower()
                 status = ev_data.get("status", "").lower()
@@ -816,9 +830,12 @@ def compare(
                         f = classifier.classify(ev)
                         if f.risk == HallucinationRisk.HIGH:
                             highest_risk = HallucinationRisk.HIGH
-                        elif f.risk == HallucinationRisk.MEDIUM and highest_risk == HallucinationRisk.LOW:
+                        elif (
+                            f.risk == HallucinationRisk.MEDIUM
+                            and highest_risk == HallucinationRisk.LOW
+                        ):
                             highest_risk = HallucinationRisk.MEDIUM
-                    except Exception:  # noqa: S112
+                    except (ValidationError, TypeError, ValueError):
                         continue
 
             if compute_hrisk:
