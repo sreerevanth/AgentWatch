@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from agentwatch.alerting.channels import validate_channels
 from agentwatch.core.schema import AgentEvent, RiskLevel
 
 logger = logging.getLogger(__name__)
@@ -24,14 +25,17 @@ class AlertingConfig:
 class AlertingEngine:
     def __init__(self, config: AlertingConfig | None = None):
         self._config = config or AlertingConfig()
+        validate_channels(
+            slack_webhook_url=self._config.slack_webhook_url,
+            pagerduty_webhook_url=self._config.pagerduty_webhook_url,
+            pagerduty_routing_key=self._config.pagerduty_routing_key,
+        )
 
     async def alert_event(self, event: AgentEvent) -> dict[str, bool]:
         payload = self._build_payload(event)
         sent = {"slack": False, "pagerduty": False}
-
         if self._config.slack_webhook_url:
             sent["slack"] = await self._post(self._config.slack_webhook_url, payload["slack"])
-
         risk_level = event.safety.risk_level if event.safety else RiskLevel.SAFE
         if self._config.pagerduty_webhook_url and self._should_page(risk_level):
             sent["pagerduty"] = await self._post(
