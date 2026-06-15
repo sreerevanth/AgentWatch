@@ -1,19 +1,35 @@
 # Troubleshooting Guide
 
-This document helps resolve common setup, installation, and runtime issues in AgentWatch.
+## Environment Setup Issues
+- Missing .env file
+- Invalid environment variables
 
----
+## PostgreSQL Issues
+- Connection refused
+- Incorrect DATABASE_URL
 
-## 1. Environment Setup Issues
+## Redis Issues
+- Redis not running
+- Connection refused
+- Redis timeout errors
 
-### ❌ Missing `.env` file
+## Celery Issues
+- Worker not starting
+- Broker connection problems
 
-**Problem:**
-Application fails to start with missing configuration errors.
+## Docker Issues
+- docker compose up failures
+- Port already in use
 
-**Solution:**
+## Python Dependency Issues
+- ModuleNotFoundError
+- pip install failures
 
-Copy the example environment file:
+## Frontend Issues
+- npm install errors
+- Dashboard not loading
 
-```bash
-cp .env.example .env
+## API Authentication Issues
+- Missing AGENTWATCH_API_KEY
+
+## Getting Additional Help
