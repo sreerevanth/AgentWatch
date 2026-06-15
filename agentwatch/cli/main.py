@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from enum import Enum
 from pathlib import Path
 
 import typer
@@ -305,6 +306,162 @@ def sessions(
 
 
 # ─────────────────────────────────────────────
+# export command
+# ─────────────────────────────────────────────
+
+
+class ExportFormat(str, Enum):
+    json = "json"
+    md = "md"
+
+
+@app.command()
+def export(
+    session_id: str = typer.Argument(..., help="ID of the session to export"),
+    format: ExportFormat = typer.Option(
+        ExportFormat.json, "--format", help="Export format: json or md"
+    ),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Custom output file path"),
+    api_url: str = typer.Option("http://localhost:8000", "--api"),
+) -> None:
+    """[bold]Export[/bold] a session replay to a portable JSON or Markdown file."""
+
+    async def _run() -> None:
+        try:
+            import httpx
+        except ImportError:
+            console.print("[red]httpx not installed. Run: pip install httpx[/red]")
+            raise typer.Exit(1)
+
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(
+                    f"{api_url}/api/v1/sessions/{session_id}/replay",
+                    timeout=10.0,
+                )
+                if resp.status_code == 404:
+                    console.print(f"[red]Session {session_id} not found.[/red]")
+                    raise typer.Exit(1)
+                resp.raise_for_status()
+            except httpx.HTTPError as exc:
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
+                raise typer.Exit(1)
+
+        data = resp.json()
+
+        if format == ExportFormat.json:
+            out_path = output or Path(f"agentwatch-session-{session_id}.json")
+            with open(out_path, "w") as f:
+                json.dump(data, f, indent=2)
+            console.print(f"[green]{out_path.name} created successfully[/green]")
+
+        elif format == ExportFormat.md:
+            out_path = output or Path(f"agentwatch-session-{session_id}.md")
+
+            session = data.get("session", {})
+            steps = data.get("steps", [])
+
+            lines = [
+                f"# AgentWatch Session: {session.get('session_id', session_id)}",
+                "",
+                "## Session Overview",
+                f"- **Status**: {session.get('status', 'unknown')}",
+                f"- **Framework**: {session.get('framework', 'unknown')}",
+                f"- **Started at**: {session.get('started_at', 'unknown')}",
+                f"- **Ended at**: {session.get('ended_at', 'unknown')}",
+                f"- **Total Steps**: {len(steps)}",
+            ]
+
+            if session.get("goal"):
+                lines.extend(["", "### Goal", session.get("goal")])
+
+            fa = data.get("failure_analysis")
+            if fa:
+                lines.extend(
+                    [
+                        "",
+                        "## Failure Analysis",
+                        f"- **Primary Cause**: {fa.get('primary_cause', 'unknown')}",
+                    ]
+                )
+                if fa.get("recommendations"):
+                    lines.append("- **Recommendations**:")
+                    for rec in fa.get("recommendations", []):
+                        lines.append(f"  - {rec}")
+
+            lines.extend(["", "## Execution Timeline"])
+            for step in steps:
+                event = step.get("event", {})
+                idx = step.get("index", 0)
+                etype = event.get("event_type", "unknown")
+                status = event.get("status", "")
+
+                status_str = f" ({status})" if status else ""
+                lines.extend(
+                    [
+                        "",
+                        f"### Step {idx}",
+                        f"- **Type**: {etype}{status_str}",
+                    ]
+                )
+
+                tool_call = event.get("tool_call")
+                if tool_call:
+                    lines.extend(
+                        [
+                            f"- **Tool**: {tool_call.get('tool_name', 'unknown')}",
+                            "",
+                            "**Command**:",
+                            "```",
+                            tool_call.get("raw_command", ""),
+                            "```",
+                        ]
+                    )
+
+                tool_result = event.get("tool_result")
+                if tool_result:
+                    if tool_result.get("output"):
+                        lines.extend(
+                            [
+                                "",
+                                "**Output**:",
+                                "```",
+                                tool_result.get("output", ""),
+                                "```",
+                            ]
+                        )
+                    if tool_result.get("error"):
+                        lines.extend(
+                            [
+                                "",
+                                "**Error**:",
+                                "```",
+                                tool_result.get("error", ""),
+                                "```",
+                            ]
+                        )
+
+                safety = event.get("safety")
+                if safety and safety.get("blocked"):
+                    lines.extend(
+                        [
+                            "",
+                            "**Safety Block**:",
+                            f"- **Risk Level**: {safety.get('risk_level', 'unknown').upper()}",
+                            "- **Reasons**:",
+                        ]
+                    )
+                    for r in safety.get("reasons", []):
+                        lines.append(f"  - {r}")
+
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+            console.print(f"[green]{out_path.name} created successfully[/green]")
+
+    asyncio.run(_run())
+
+
+# ─────────────────────────────────────────────
 # confidence command
 # ─────────────────────────────────────────────
 
@@ -475,6 +632,69 @@ def serve(
 
 
 # ─────────────────────────────────────────────
+# status command
+# ─────────────────────────────────────────────
+
+
+@app.command()
+def status(
+    api_url: str = typer.Option("http://localhost:8000", "--api"),
+) -> None:
+    """[bold]Show[/bold] a real-time summary of AgentWatch runtime status."""
+
+    async def _run() -> None:
+        try:
+            import httpx
+        except ImportError:
+            console.print("[red]httpx not installed. Run: pip install httpx[/red]")
+            raise typer.Exit(1)
+
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(
+                    f"{api_url}/api/v1/dashboard/summary",
+                    timeout=10.0,
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 401:
+                    console.print(
+                        f"[red]Authentication failed. Check your API key or permissions for {api_url}[/red]"
+                    )
+                else:
+                    console.print(
+                        f"[red]API request failed with status {exc.response.status_code}: {exc.response.text}[/red]"
+                    )
+                raise typer.Exit(1)
+            except Exception as exc:
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
+                raise typer.Exit(1)
+
+        data = resp.json()
+
+        console.print("\n[bold cyan]AgentWatch Runtime Status[/bold cyan]")
+        console.print("────────────────────────────────\n")
+
+        console.print("[bold]Agent Activity[/bold]")
+        console.print(f"  Active sessions:        {data.get('active_sessions', 0)}")
+        console.print(f"  Failed sessions:        {data.get('failed_sessions', 0)}")
+        console.print(f"  Safety-blocked sessions: {data.get('blocked_sessions', 0)}\n")
+
+        console.print("[bold]Resource Utilization[/bold]")
+        console.print(f"  Total tokens consumed:  {data.get('total_tokens', 0):,}")
+        console.print(f"  Estimated cost:         ${data.get('estimated_cost_usd', 0.0):.4f}\n")
+
+        safety_stats = data.get("safety_stats", {})
+        eb_stats = data.get("event_bus_stats", {})
+
+        console.print("[bold]Safety & Event Pipeline[/bold]")
+        console.print(f"  Blocked operations:     {safety_stats.get('blocked', 0)}")
+        console.print(f"  Event throughput:       {eb_stats.get('total_published', 0):,} processed")
+        console.print(f"  Active subscribers:     {eb_stats.get('active_subscribers', 0)}\n")
+
+    asyncio.run(_run())
+
+
 # verify-env command
 # ─────────────────────────────────────────────
 

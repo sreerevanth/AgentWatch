@@ -81,3 +81,37 @@ def test_telemetry_record_methods():
     provider.record_blocked("framework", "high")
     provider.record_tokens(100, "framework")
     provider.record_session_duration(1.5, "framework", "success")
+
+
+def test_export_retries_until_success():
+    provider = TelemetryProvider()
+
+    exporter = MagicMock()
+    exporter.export.side_effect = [
+        Exception("network"),
+        Exception("network"),
+        None,
+    ]
+
+    provider._initialized = True
+    provider._exporter = exporter
+
+    span = MagicMock()
+    provider.export(span)
+
+    assert exporter.export.call_count == 3
+
+
+def test_export_gives_up_after_max_retries():
+    provider = TelemetryProvider()
+
+    exporter = MagicMock()
+    exporter.export.side_effect = Exception("network")
+
+    provider._initialized = True
+    provider._exporter = exporter
+
+    span = MagicMock()
+    provider.export(span)
+
+    assert exporter.export.call_count == 3

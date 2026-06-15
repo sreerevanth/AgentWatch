@@ -7,6 +7,7 @@ Exports spans to OTLP, Jaeger, or stdout.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
@@ -81,6 +82,41 @@ class TelemetryProvider:
         self._session_duration = None
         self._token_counter = None
 
+    def _export_with_retry(
+        self,
+        spans: list[Any],
+        max_retries: int = 3,
+        initial_delay: float = 1.0,
+    ) -> None:
+        """Export spans with exponential backoff retry."""
+        if not self._exporter:
+            return
+
+        delay = initial_delay
+
+        for attempt in range(max_retries):
+            try:
+                self._exporter.export(spans)
+                return
+
+            except Exception as exc:
+                logger.warning(
+                    "Span export failed (attempt %s/%s): %s",
+                    attempt + 1,
+                    max_retries,
+                    exc,
+                )
+
+            if attempt == max_retries - 1:
+                logger.error(
+                    "Span export failed after %s retries",
+                    max_retries,
+                )
+                return
+
+            time.sleep(delay)
+            delay *= 2
+
     def export(self, span: Any) -> None:
         """Export a span to the configured backend (or buffer if failing)."""
         if not self._initialized:
@@ -93,7 +129,7 @@ class TelemetryProvider:
         if self._exporter and hasattr(self._exporter, "export"):
             try:
                 # OTel exporters usually expect a sequence of spans
-                self._exporter.export([span])
+                self._export_with_retry([span])
             except Exception as exc:
                 logger.debug("Manual span export failed: %s", exc)
         else:
