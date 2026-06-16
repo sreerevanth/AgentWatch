@@ -984,7 +984,12 @@ def _print_live_event(event) -> None:
         if event.safety:
             rc = _risk_color(event.safety.risk_level.value)
             risk_str = f" [{rc}][{event.safety.risk_level.value}][/{rc}]"
-        status_str = " [red][BLOCKED][/red]" if event.is_blocked else ""
+        status_str = ""
+        if event.is_blocked:
+            status_str = " [red][BLOCKED][/red]"
+            from agentwatch.cli._utils.speech import speak
+
+            speak(f"Safety block triggered for tool {name}")
         console.print(f"[dim]{ts}[/dim] {icon} [bold]{name}[/bold]{risk_str}{status_str}")
         if cmd:
             console.print(f"         [dim]{cmd}[/dim]")

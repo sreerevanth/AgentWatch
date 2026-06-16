@@ -19,6 +19,12 @@ from pathlib import Path
 # Make agentwatch importable from repo root
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Reconfigure stdout/stderr to UTF-8 to support Unicode/emojis on Windows consoles
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
 from agentwatch.core.event_bus import EventBus
 from agentwatch.core.safety import SafetyEngine
 from agentwatch.core.schema import (
@@ -239,6 +245,10 @@ async def demo_safety():
             }.get(safety.risk_level.value, str)
 
             status_icon = "🚫" if result.is_blocked else "✓"
+            if result.is_blocked:
+                from agentwatch.cli._utils.speech import speak
+
+                speak(f"Safety block triggered for command {cmd[:30]}")
             print(
                 f"  {status_icon}  {level_color(f'[{safety.risk_level.value.upper():8}]')} "
                 f"{dim(cmd[:50])} {dim('→')} {label}"
@@ -548,10 +558,10 @@ async def demo_orchestration():
 async def main():
     print(
         bold("""
-╔══════════════════════════════════════════════════════════════╗
-║         AgentWatch — Demo Suite v0.1.0                       ║
-║  Reliability, Safety & Observability Layer for AI Agents     ║
-╚══════════════════════════════════════════════════════════════╝
++--------------------------------------------------------------+
+|         AgentWatch - Demo Suite v0.1.0                       |
+|  Reliability, Safety & Observability Layer for AI Agents     |
++--------------------------------------------------------------+
 """)
     )
 
@@ -563,10 +573,12 @@ async def main():
 
     print(f"\n{bold(green('✓ All demos complete'))}\n")
     print("Next steps:")
+    watch_str = bold('agentwatch watch "<prompt>"')
+    safety_str = bold('agentwatch safety "<cmd>"')
     print(f"  {bold('agentwatch serve')}           — Start the API server")
-    print(f"  {bold('agentwatch watch "<prompt>"')} — Watch a Claude Code session")
+    print(f"  {watch_str} — Watch a Claude Code session")
     print(f"  {bold('agentwatch replay <file>')}   — Replay a saved session")
-    print(f"  {bold('agentwatch safety "<cmd>"')}  — Risk-score a command")
+    print(f"  {safety_str}  — Risk-score a command")
     print(f"  {bold('agentwatch sessions')}         — List sessions via API\n")
 
 

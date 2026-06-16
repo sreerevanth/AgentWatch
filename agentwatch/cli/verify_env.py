@@ -76,3 +76,6 @@ def verify_environment() -> None:
 
     console.print(var_table)
     console.print("\n[bold green]Diagnostics complete[/bold green]\n")
+    from agentwatch.cli._utils.speech import speak
+
+    speak("Diagnostics complete")
