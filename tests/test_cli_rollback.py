@@ -1,3 +1,4 @@
+import re
 from unittest.mock import AsyncMock, patch
 
 from typer.testing import CliRunner
@@ -54,4 +55,5 @@ def test_rollback_failure(mock_rollback):
 def test_rollback_missing_to_step():
     result = runner.invoke(app, ["session", "rollback", "test_session"])
     assert result.exit_code != 0
-    assert "to-step" in result.output
+    clean_output = re.sub(r"\x1b\[.*?m", "", result.output)
+    assert "--to-step" in clean_output
