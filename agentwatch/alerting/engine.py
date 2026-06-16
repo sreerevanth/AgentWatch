@@ -104,14 +104,18 @@ class AlertingEngine:
 
         from agentwatch.security.webhook_signing import generate_webhook_signature
 
-        payload_bytes = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
-        headers = {"Content-Type": "application/json"}
-
-        if self._config.webhook_signing_secret:
-            signature = generate_webhook_signature(
-                payload_bytes, self._config.webhook_signing_secret
-            )
-            headers["X-AgentWatch-Signature"] = signature
+        try:
+            payload_bytes = json.dumps(
+                payload, separators=(",", ":"), sort_keys=True
+            ).encode("utf-8")
+            headers = {"Content-Type": "application/json"}
+            if self._config.webhook_signing_secret:
+                headers["X-AgentWatch-Signature"] = generate_webhook_signature(
+                    payload_bytes, self._config.webhook_signing_secret
+                )
+        except Exception:
+            logger.warning("Webhook signing/serialization failed", exc_info=True)
+            return False
 
         delay = 0.5
         for attempt in range(max_retries):
