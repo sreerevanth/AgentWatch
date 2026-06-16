@@ -40,6 +40,7 @@ from agentwatch.core.schema import (
     AgentSession,
     EventType,
     ExecutionStatus,
+    RiskLevel,
     SafetyCheckData,
     TokenUsage,
     ToolCallData,
@@ -432,7 +433,7 @@ def _seed_demo_data() -> None:
                 arguments={"command": "rm -rf /var/log/*"},
             ),
             safety=SafetyCheckData(
-                risk_level="critical",
+                risk_level=RiskLevel.CRITICAL,
                 risk_score=1.0,
                 blocked=True,
                 reasons=["Recursive deletion of critical filesystem path"],

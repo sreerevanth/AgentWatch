@@ -11,7 +11,7 @@ import hashlib
 import json
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, cast
 
 from agentwatch.memory.causal_graph import CausalGraph
 
@@ -79,7 +79,7 @@ def attribute(
     return AttributionReport(
         outcome=outcome,
         chain=chain,
-        remediation=machine["remediation"],
+        remediation=cast(list[str], machine["remediation"]),
         machine_readable=machine,
         signature=sig,
     )

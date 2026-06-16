@@ -10,7 +10,7 @@ import asyncio
 import fnmatch
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from agentwatch.core.blast_radius import BlastRadiusEstimator
@@ -562,7 +562,7 @@ class RiskScorer:
 # Safety Engine
 # ─────────────────────────────────────────────
 
-ApprovalCallback = Callable[[AgentEvent, SafetyCheckData], asyncio.Future[bool]]
+ApprovalCallback = Callable[[AgentEvent, SafetyCheckData], Awaitable[bool]]
 
 
 class SafetyEngine:
@@ -678,7 +678,7 @@ class SafetyEngine:
         """
         tool_call = event.tool_call
         if not tool_call:
-            return SafetyCheckData(), False
+            return SafetyCheckData(risk_level=RiskLevel.SAFE, risk_score=0.0), False
 
         # 1. Pattern-based risk scoring
         risk_level, risk_score, reasons, policies = self._scorer.score(tool_call)

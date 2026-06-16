@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import statistics
 from collections import Counter
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from agentwatch.core.schema import AgentEvent, AgentSession, EventType, ExecutionStatus
@@ -70,7 +71,7 @@ class SilentFailureDetector:
                 if e.tool_call:
                     tool_freq[e.tool_call.tool_name] += 1
 
-        def _safe_stdev(xs: list[float]) -> float:
+        def _safe_stdev(xs: Sequence[float]) -> float:
             return statistics.stdev(xs) if len(xs) > 1 else 0.0
 
         self._baseline = SilenceBaseline(

@@ -93,8 +93,11 @@ class ToolAuditLog:
             if tr is None:
                 return None
             tool_id = tr.tool_id or ""
-            entry = self._pending.pop(tool_id, None)
-            if entry is None:
+            maybe_entry = self._pending.get(tool_id)
+            if maybe_entry is not None:
+                del self._pending[tool_id]
+                entry = maybe_entry
+            else:
                 # Unmatched — create a standalone record
                 entry = AuditEntry(
                     timestamp=datetime.now(UTC).isoformat(),

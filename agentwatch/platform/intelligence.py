@@ -115,7 +115,7 @@ class AgentWatchIntelligence:
         # Day-of-week insight
         dow_rate = {d: dow_fail[d] / dow_total[d] for d in dow_total if dow_total[d] >= 3}
         if dow_rate:
-            worst_day = max(dow_rate, key=dow_rate.get)
+            worst_day = max(dow_rate, key=lambda k: dow_rate[k])
             if dow_rate[worst_day] >= 0.25:
                 names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
                 insights.append(

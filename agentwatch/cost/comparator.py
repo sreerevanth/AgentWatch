@@ -9,6 +9,7 @@ table; callers can override with their negotiated rates.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 # $ per 1M tokens. Updated to public list prices as of 2025-Q4.
 DEFAULT_PRICING: dict[str, tuple[float, float]] = {
@@ -30,7 +31,7 @@ class CostEstimate:
     output_cost: float
     total: float
 
-    def to_dict(self) -> dict[str, float]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "model": self.model,
             "input_cost": self.input_cost,

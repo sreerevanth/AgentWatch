@@ -353,7 +353,7 @@ class MemoryEngine:
         results = await self.retrieve(agent_id, query, top_k=20)
 
         context_parts: list[str] = []
-        estimated_tokens = 0
+        estimated_tokens: float = 0.0
         tokens_per_char = 0.25
 
         ordered = sorted(

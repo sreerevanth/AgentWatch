@@ -241,15 +241,12 @@ class EventBus:
             handler_ids: set[str] = set()
             handler_ids.update(self._global_handlers)
             handler_ids.update(self._type_index.get(event.event_type, set()))
-            handlers_to_dispatch = [
-                self._handlers[hid]
-                for hid in handler_ids
-                if hid in self._handlers
-                and not (
-                    self._handlers[hid].event_filter
-                    and not self._handlers[hid].event_filter.matches(event)
-                )
-            ]
+            handlers_to_dispatch = []
+            for hid in handler_ids:
+                if hid in self._handlers:
+                    f = self._handlers[hid].event_filter
+                    if not (f and not f.matches(event)):
+                        handlers_to_dispatch.append(self._handlers[hid])
 
         # Dispatch outside the lock to avoid holding it during handler I/O
         tasks = [self._dispatch(reg, event) for reg in handlers_to_dispatch]
