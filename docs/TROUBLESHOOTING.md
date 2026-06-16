@@ -37,7 +37,7 @@ Verify the values in `.env`:
 ```env
 DATABASE_URL=postgresql+asyncpg://postgres:password@localhost:5432/agentwatch
 REDIS_URL=redis://localhost:6379/0
-AGENTWATCH_API_URL=http://localhost:8000
+NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
 Ensure there are no extra spaces or invalid characters.
@@ -306,7 +306,7 @@ Dependency installation or runtime errors occur.
 
 **Solution**
 
-Use Python 3.10 or newer as recommended by the project.
+Use Python 3.12 or newer as required by the project.
 
 Check version:
 
