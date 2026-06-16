@@ -242,3 +242,26 @@ class TraceCollector:
 
         logger.info("Loaded %d traces from disk", count)
         return count
+
+    async def prune(self, session_ids: list[str], dry_run: bool = False) -> int:
+        """Remove traces for specific sessions from memory and disk.
+        Returns the number of files that were (or would be) deleted."""
+        count = 0
+        async with self._lock:
+            for session_id in session_ids:
+                if not dry_run:
+                    self._traces.pop(session_id, None)
+                    self._session_index.pop(session_id, None)
+
+                if self._storage_path:
+                    path = self._storage_path / f"{session_id}.json"
+                    if path.exists():
+                        if not dry_run:
+                            try:
+                                path.unlink()
+                                count += 1
+                            except Exception as exc:
+                                logger.error("Failed to delete trace file %s: %s", path, exc)
+                        else:
+                            count += 1
+        return count

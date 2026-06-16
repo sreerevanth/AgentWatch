@@ -407,3 +407,46 @@ class RollbackEngine:
             cp.snapshot_path = Path(data["snapshot_path"])
         cp.git_commit_ref = data.get("git_commit_ref")
         return cp
+
+    async def prune_checkpoints(self, session_ids: list[str], dry_run: bool = False) -> int:
+        """Remove checkpoints for specific sessions from memory and disk.
+        Returns the number of files (metadata and snapshots) that were (or would be) deleted."""
+        import shutil
+
+        count = 0
+        for session_id in session_ids:
+            checkpoint_ids = self._session_checkpoints.get(session_id, [])
+            for cid in list(checkpoint_ids):
+                # Delete metadata JSON
+                meta_path = self._checkpoints_dir / "meta" / f"{cid}.json"
+                if meta_path.exists():
+                    if not dry_run:
+                        try:
+                            meta_path.unlink()
+                            count += 1
+                        except Exception as exc:
+                            logger.error("Failed to delete checkpoint meta %s: %s", meta_path, exc)
+                    else:
+                        count += 1
+
+                # Delete snapshot directory and tarball
+                snapshot_dir = self._checkpoints_dir / "snapshots" / cid
+                snapshot_file = snapshot_dir / f"{cid}.tar.gz"
+                if snapshot_dir.exists():
+                    if snapshot_file.exists():
+                        count += 1
+                    if not dry_run:
+                        try:
+                            shutil.rmtree(snapshot_dir)
+                        except Exception as exc:
+                            logger.error(
+                                "Failed to delete snapshot directory %s: %s", snapshot_dir, exc
+                            )
+
+                if not dry_run:
+                    self._checkpoints.pop(cid, None)
+
+            if not dry_run:
+                self._session_checkpoints.pop(session_id, None)
+
+        return count

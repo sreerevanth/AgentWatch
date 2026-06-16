@@ -289,6 +289,24 @@ class Repository:
         result = await self._session.execute(q)
         return list(result.scalars())
 
+    async def get_sessions_older_than(self, cutoff: datetime) -> list[str]:
+        from sqlalchemy import select
+
+        q = select(SessionRecord.session_id).where(SessionRecord.started_at < cutoff)
+        result = await self._session.execute(q)
+        return list(result.scalars())
+
+    async def prune_sessions(self, session_ids: list[str]) -> int:
+        if not session_ids:
+            return 0
+
+        from sqlalchemy import delete
+
+        d = delete(SessionRecord).where(SessionRecord.session_id.in_(session_ids))
+        result = await self._session.execute(d)
+        await self._session.flush()
+        return result.rowcount
+
 
 # ─────────────────────────────────────────────
 # Database initialization
