@@ -11,7 +11,9 @@ import hashlib
 import logging
 import os
 from base64 import b64decode, b64encode
+from datetime import UTC, datetime
 from typing import Any
+from uuid import uuid4
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -100,7 +102,6 @@ class KeyRotationManager:
     def __init__(self, db_session: Any = None) -> None:
         """Initialize rotation manager with database session."""
         self.db_session = db_session
-        self.encryption = APIKeyEncryption()
 
     def rotate_key(self, agent_id: str, new_key: str, rotated_by: str = "system", reason: str | None = None) -> dict[str, Any]:
         """
@@ -118,8 +119,6 @@ class KeyRotationManager:
         if not self.db_session:
             raise RuntimeError("Database session required for key rotation")
 
-        from datetime import UTC, datetime
-        from uuid import uuid4
         from agentwatch.security.key_storage import EncryptedAPIKey, KeyRotationAudit
 
         # Get current key to retrieve old key hash
@@ -130,7 +129,8 @@ class KeyRotationManager:
         old_key_hash = current_key.key_hash if current_key else None
 
         # Encrypt new key
-        encrypted_key, nonce = self.encryption.encrypt_key(new_key)
+        encryption = APIKeyEncryption()
+        encrypted_key, nonce = encryption.encrypt_key(new_key)
         new_key_hash = APIKeyEncryption.hash_key(new_key)
 
         # Update or create key record
