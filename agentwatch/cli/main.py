@@ -1106,6 +1106,8 @@ def _print_sessions_table(sessions: list) -> None:
 
 
 def _parse_older_than_to_hours(val: str) -> int:
+    import math
+
     val = val.strip().lower()
     if not val:
         raise typer.BadParameter("Empty duration")
@@ -1116,7 +1118,10 @@ def _parse_older_than_to_hours(val: str) -> int:
             days = float(num)
             if days <= 0:
                 raise ValueError()
-            return int(days * 24)
+            hours = math.ceil(days * 24)
+            if hours < 1:
+                raise ValueError()
+            return hours
         except ValueError:
             raise typer.BadParameter(
                 f"Invalid format '{val}'. Expected positive number followed by 'd' (e.g. 30d)"
@@ -1128,7 +1133,10 @@ def _parse_older_than_to_hours(val: str) -> int:
             hours = float(num)
             if hours <= 0:
                 raise ValueError()
-            return int(hours)
+            hours_i = math.ceil(hours)
+            if hours_i < 1:
+                raise ValueError()
+            return hours_i
         except ValueError:
             raise typer.BadParameter(
                 f"Invalid format '{val}'. Expected positive number followed by 'h' (e.g. 12h)"
@@ -1201,7 +1209,9 @@ def session_prune(
 
         table.add_row("Database Sessions", str(data.get("pruned_db_sessions", 0)))
         table.add_row("Trace Files (.json)", str(data.get("pruned_trace_files", 0)))
-        table.add_row("Checkpoints (.tar.gz)", str(data.get("pruned_checkpoint_files", 0)))
+        table.add_row(
+            "Checkpoints (Snapshots + Metadata)", str(data.get("pruned_checkpoint_files", 0))
+        )
 
         console.print(table)
 

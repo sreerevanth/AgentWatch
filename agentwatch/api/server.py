@@ -617,6 +617,17 @@ async def prune_sessions_api(
     dry_run: bool = Query(False),
     _auth: None = Depends(_require_api_key),
 ) -> PruneResponse:
+    """Delete old sessions, traces, and checkpoints.
+
+    Args:
+        request: The FastAPI request object.
+        older_than_hours: Threshold in hours. Sessions older than this are pruned.
+        dry_run: If True, do not actually delete anything, just return the counts.
+        _auth: API key dependency.
+
+    Returns:
+        PruneResponse: The counts of pruned resources.
+    """
     _limiter.check(_rate_limit_key(request, "w"), RATE_WRITE, request)
     cutoff = datetime.now(UTC) - timedelta(hours=older_than_hours)
 
@@ -624,8 +635,8 @@ async def prune_sessions_api(
     pruned_trace_files = 0
     pruned_checkpoint_files = 0
 
-    if _db_session_factory:
-        try:
+    try:
+        if _db_session_factory:
             async with _db_session_factory() as db:
                 repo = Repository(db)
                 session_ids = await repo.get_sessions_older_than(cutoff)
@@ -641,9 +652,20 @@ async def prune_sessions_api(
                         await db.commit()
                     else:
                         pruned_db_sessions = len(session_ids)
-        except Exception as exc:
-            logger.error("Failed to prune sessions: %s", exc)
-            raise HTTPException(status_code=500, detail="Failed to prune sessions")
+        else:
+            # Fallback to filesystem discovery if no DB
+            c_ids = set(await _collector.get_sessions_older_than(cutoff))
+            r_ids = set(await _rollback_engine.get_sessions_older_than(cutoff))
+            session_ids = list(c_ids.union(r_ids))
+
+            if session_ids:
+                pruned_trace_files = await _collector.prune(session_ids, dry_run=dry_run)
+                pruned_checkpoint_files = await _rollback_engine.prune_checkpoints(
+                    session_ids, dry_run=dry_run
+                )
+    except Exception as exc:
+        logger.error("Failed to prune sessions: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to prune sessions")
 
     return PruneResponse(
         pruned_db_sessions=pruned_db_sessions,

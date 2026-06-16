@@ -410,12 +410,37 @@ class RollbackEngine:
 
     async def prune_checkpoints(self, session_ids: list[str], dry_run: bool = False) -> int:
         """Remove checkpoints for specific sessions from memory and disk.
-        Returns the number of files (metadata and snapshots) that were (or would be) deleted."""
+
+        Args:
+            session_ids (list[str]): The IDs of the sessions to delete checkpoints for.
+            dry_run (bool): If True, only return the count of files that would be deleted.
+
+        Returns:
+            int: The number of files (metadata and snapshots) that were (or would be) deleted.
+        """
         import shutil
+
+        # Scan all meta files to discover checkpoints on disk not in memory
+        meta_dir = self._checkpoints_dir / "meta"
+        disk_checkpoints = {}
+        if meta_dir.exists():
+            for path in meta_dir.glob("*.json"):
+                try:
+                    with open(path) as f:
+                        data = json.load(f)
+                    sid = data.get("session_id")
+                    if sid:
+                        if sid not in disk_checkpoints:
+                            disk_checkpoints[sid] = []
+                        disk_checkpoints[sid].append(path.stem)
+                except Exception as exc:
+                    logger.warning("Failed to read checkpoint meta %s: %s", path, exc)
 
         count = 0
         for session_id in session_ids:
-            checkpoint_ids = self._session_checkpoints.get(session_id, [])
+            checkpoint_ids = set(self._session_checkpoints.get(session_id, []))
+            checkpoint_ids.update(disk_checkpoints.get(session_id, []))
+
             for cid in list(checkpoint_ids):
                 # Delete metadata JSON
                 meta_path = self._checkpoints_dir / "meta" / f"{cid}.json"
@@ -450,3 +475,33 @@ class RollbackEngine:
                 self._session_checkpoints.pop(session_id, None)
 
         return count
+
+    async def get_sessions_older_than(self, cutoff: datetime) -> list[str]:
+        """Find IDs of sessions that have checkpoints older than the cutoff time.
+
+        This checks the modification time of the checkpoint metadata files on disk.
+
+        Args:
+            cutoff (datetime): The threshold date/time.
+
+        Returns:
+            list[str]: A list of session IDs older than the cutoff.
+        """
+        session_ids = set()
+        meta_dir = self._checkpoints_dir / "meta"
+        if not meta_dir.exists():
+            return list(session_ids)
+
+        cutoff_timestamp = cutoff.timestamp()
+        for path in meta_dir.glob("*.json"):
+            try:
+                if path.stat().st_mtime < cutoff_timestamp:
+                    with open(path) as f:
+                        data = json.load(f)
+                    sid = data.get("session_id")
+                    if sid:
+                        session_ids.add(sid)
+            except Exception as exc:
+                logger.warning("Failed to check modification time for %s: %s", path, exc)
+
+        return list(session_ids)
