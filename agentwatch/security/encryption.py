@@ -103,7 +103,9 @@ class KeyRotationManager:
         """Initialize rotation manager with database session."""
         self.db_session = db_session
 
-    def rotate_key(self, agent_id: str, new_key: str, rotated_by: str = "system", reason: str | None = None) -> dict[str, Any]:
+    def rotate_key(
+        self, agent_id: str, new_key: str, rotated_by: str = "system", reason: str | None = None
+    ) -> dict[str, Any]:
         """
         Rotate an agent's API key.
 
@@ -122,9 +124,11 @@ class KeyRotationManager:
         from agentwatch.security.key_storage import EncryptedAPIKey, KeyRotationAudit
 
         # Get current key to retrieve old key hash
-        current_key = self.db_session.query(EncryptedAPIKey).filter(
-            EncryptedAPIKey.agent_id == agent_id
-        ).first()
+        current_key = (
+            self.db_session.query(EncryptedAPIKey)
+            .filter(EncryptedAPIKey.agent_id == agent_id)
+            .first()
+        )
 
         old_key_hash = current_key.key_hash if current_key else None
 
@@ -179,9 +183,12 @@ class KeyRotationManager:
 
         from agentwatch.security.key_storage import KeyRotationAudit
 
-        rotations = self.db_session.query(KeyRotationAudit).filter(
-            KeyRotationAudit.agent_id == agent_id
-        ).order_by(KeyRotationAudit.rotated_at.desc()).all()
+        rotations = (
+            self.db_session.query(KeyRotationAudit)
+            .filter(KeyRotationAudit.agent_id == agent_id)
+            .order_by(KeyRotationAudit.rotated_at.desc())
+            .all()
+        )
 
         return [
             {
