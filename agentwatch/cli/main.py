@@ -22,6 +22,9 @@ app = typer.Typer(
     add_completion=False,
     rich_markup_mode="rich",
 )
+session_app = typer.Typer(name="session", help="Manage AgentWatch sessions.")
+app.add_typer(session_app)
+
 console = Console()
 
 
@@ -1095,6 +1098,131 @@ def _print_sessions_table(sessions: list) -> None:
         )
 
     console.print(table)
+
+
+# ─────────────────────────────────────────────
+# session prune command
+# ─────────────────────────────────────────────
+
+
+def _parse_older_than_to_hours(val: str) -> int:
+    import math
+
+    val = val.strip().lower()
+    if not val:
+        raise typer.BadParameter("Empty duration")
+
+    if val.endswith("d"):
+        num = val[:-1]
+        try:
+            days = float(num)
+            if days <= 0:
+                raise ValueError()
+            hours = math.ceil(days * 24)
+            if hours < 1:
+                raise ValueError()
+            return hours
+        except ValueError:
+            raise typer.BadParameter(
+                f"Invalid format '{val}'. Expected positive number followed by 'd' (e.g. 30d)"
+            )
+
+    elif val.endswith("h"):
+        num = val[:-1]
+        try:
+            hours = float(num)
+            if hours <= 0:
+                raise ValueError()
+            hours_i = math.ceil(hours)
+            if hours_i < 1:
+                raise ValueError()
+            return hours_i
+        except ValueError:
+            raise typer.BadParameter(
+                f"Invalid format '{val}'. Expected positive number followed by 'h' (e.g. 12h)"
+            )
+
+    else:
+        raise typer.BadParameter(
+            f"Invalid duration format '{val}'. Must end with 'd' for days or 'h' for hours (e.g. 30d, 12h)"
+        )
+
+
+@session_app.command("prune")
+def session_prune(
+    older_than: str = typer.Option(
+        ..., "--older-than", help="Age of sessions to prune (e.g. 30d, 12h)"
+    ),
+    api_url: str = typer.Option("http://localhost:8000", "--api"),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview what would be deleted without taking action"
+    ),
+) -> None:
+    """[bold]Prune[/bold] old sessions, traces, and checkpoints to free up disk space."""
+
+    hours = _parse_older_than_to_hours(older_than)
+
+    async def _run() -> None:
+        try:
+            import httpx
+        except ImportError:
+            console.print("[red]httpx not installed. Run: pip install httpx[/red]")
+            raise typer.Exit(1)
+
+        console.print(
+            Panel(
+                f"[bold cyan]Session Prune[/bold cyan]\n"
+                f"[dim]Threshold:[/dim] older than {older_than}\n"
+                f"[dim]Dry-run:[/dim]   {'Yes' if dry_run else 'No'}",
+                border_style="cyan",
+            )
+        )
+
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.request(
+                    "DELETE",
+                    f"{api_url}/api/v1/sessions/prune",
+                    params={"older_than_hours": hours, "dry_run": dry_run},
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 401:
+                    console.print(
+                        f"[red]Authentication failed. Check your API key or permissions for {api_url}[/red]"
+                    )
+                else:
+                    console.print(
+                        f"[red]API request failed with status {exc.response.status_code}: {exc.response.text}[/red]"
+                    )
+                raise typer.Exit(1)
+            except Exception as exc:
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
+                raise typer.Exit(1)
+
+        data = resp.json()
+
+        table = Table(box=box.ROUNDED)
+        table.add_column("Resource Type")
+        table.add_column("Deleted Count", justify="right")
+
+        table.add_row("Database Sessions", str(data.get("pruned_db_sessions", 0)))
+        table.add_row("Trace Files (.json)", str(data.get("pruned_trace_files", 0)))
+        table.add_row(
+            "Checkpoints (Snapshots + Metadata)", str(data.get("pruned_checkpoint_files", 0))
+        )
+
+        console.print(table)
+
+        if dry_run:
+            console.print(
+                "\n[yellow]Dry-run complete. No files or database records were actually deleted.[/yellow]"
+            )
+        else:
+            console.print("\n[green]Prune complete.[/green]")
+
+    asyncio.run(_run())
 
 
 # ─────────────────────────────────────────────

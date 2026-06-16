@@ -242,3 +242,70 @@ class TraceCollector:
 
         logger.info("Loaded %d traces from disk", count)
         return count
+
+    async def prune(self, session_ids: list[str], dry_run: bool = False) -> int:
+        """Remove traces for specific sessions from memory and disk.
+
+        Args:
+            session_ids (list[str]): The IDs of the sessions to delete.
+            dry_run (bool): If True, only return the count of files that would be deleted.
+
+        Returns:
+            int: The number of files that were (or would be) deleted.
+        """
+        count = 0
+        paths_to_check: list[Path] = []
+
+        async with self._lock:
+            for session_id in session_ids:
+                if not dry_run:
+                    self._traces.pop(session_id, None)
+                    self._session_index.pop(session_id, None)
+
+                if self._storage_path:
+                    base = self._storage_path.resolve()
+                    path = (base / f"{session_id}.json").resolve()
+                    if base not in path.parents:
+                        logger.warning(
+                            "Skipping suspicious session_id during prune: %s", session_id
+                        )
+                        continue
+                    paths_to_check.append(path)
+
+        for path in paths_to_check:
+            if path.exists():
+                if not dry_run:
+                    try:
+                        path.unlink()
+                        count += 1
+                    except Exception as exc:
+                        logger.error("Failed to delete trace file %s: %s", path, exc)
+                else:
+                    count += 1
+
+        return count
+
+    async def get_sessions_older_than(self, cutoff: datetime) -> list[str]:
+        """Find IDs of sessions that started before the cutoff time.
+
+        This checks the modification time of the trace files on disk to determine age.
+
+        Args:
+            cutoff (datetime): The threshold date/time.
+
+        Returns:
+            list[str]: A list of session IDs older than the cutoff.
+        """
+        session_ids = []
+        if not self._storage_path or not self._storage_path.exists():
+            return session_ids
+
+        cutoff_timestamp = cutoff.timestamp()
+        for path in self._storage_path.glob("*.json"):
+            try:
+                if path.stat().st_mtime < cutoff_timestamp:
+                    session_ids.append(path.stem)
+            except Exception as exc:
+                logger.warning("Failed to check modification time for %s: %s", path, exc)
+
+        return session_ids
