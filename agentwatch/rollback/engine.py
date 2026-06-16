@@ -124,7 +124,7 @@ class FilesystemSnapshot:
         def _restore() -> None:
             with tarfile.open(snapshot_path, "r:gz") as tar:
                 members = tar.getmembers()
-                tar.extractall(str(target_path))
+                tar.extractall(str(target_path), filter="data")
                 restored.extend([m.name for m in members if m.isfile()])
 
         await asyncio.get_event_loop().run_in_executor(None, _restore)

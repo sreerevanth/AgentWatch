@@ -353,7 +353,9 @@ class EventBus:
         Returns:
             Copy of internal stats (e.g. ``total_published``, ``type.*``).
         """
-        return dict(self._stats)
+        result = dict(self._stats)
+        result["active_subscribers"] = self.handler_count()
+        return result
 
     def handler_count(self) -> int:
         """Return the number of registered handlers."""
