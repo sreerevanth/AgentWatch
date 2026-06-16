@@ -100,25 +100,97 @@ class KeyRotationManager:
     def __init__(self, db_session: Any = None) -> None:
         """Initialize rotation manager with database session."""
         self.db_session = db_session
+        self.encryption = APIKeyEncryption()
 
-    def rotate_key(self, agent_id: str, new_key: str) -> dict[str, Any]:
+    def rotate_key(self, agent_id: str, new_key: str, rotated_by: str = "system", reason: str | None = None) -> dict[str, Any]:
         """
         Rotate an agent's API key.
 
         Args:
             agent_id: ID of the agent
             new_key: New API key
+            rotated_by: User or system that initiated rotation
+            reason: Reason for rotation (e.g., "periodic", "security_incident")
 
         Returns:
-            Rotation audit entry
+            Rotation audit entry with timestamps and hashes
         """
+        if not self.db_session:
+            raise RuntimeError("Database session required for key rotation")
+
+        from datetime import UTC, datetime
+        from uuid import uuid4
+        from agentwatch.security.key_storage import EncryptedAPIKey, KeyRotationAudit
+
+        # Get current key to retrieve old key hash
+        current_key = self.db_session.query(EncryptedAPIKey).filter(
+            EncryptedAPIKey.agent_id == agent_id
+        ).first()
+
+        old_key_hash = current_key.key_hash if current_key else None
+
+        # Encrypt new key
+        encrypted_key, nonce = self.encryption.encrypt_key(new_key)
+        new_key_hash = APIKeyEncryption.hash_key(new_key)
+
+        # Update or create key record
+        if current_key:
+            current_key.encrypted_key = encrypted_key
+            current_key.nonce = nonce
+            current_key.key_hash = new_key_hash
+            current_key.rotated_at = datetime.now(UTC)
+        else:
+            current_key = EncryptedAPIKey(
+                agent_id=agent_id,
+                key_hash=new_key_hash,
+                encrypted_key=encrypted_key,
+                nonce=nonce,
+                created_at=datetime.now(UTC),
+            )
+            self.db_session.add(current_key)
+
+        # Create audit entry
+        rotation_entry = KeyRotationAudit(
+            rotation_id=str(uuid4()),
+            agent_id=agent_id,
+            old_key_hash=old_key_hash or "initial",
+            new_key_hash=new_key_hash,
+            rotated_by=rotated_by,
+            rotated_at=datetime.now(UTC),
+            reason=reason,
+        )
+        self.db_session.add(rotation_entry)
+        self.db_session.commit()
+
         return {
+            "rotation_id": rotation_entry.rotation_id,
             "agent_id": agent_id,
-            "rotated_at": None,  # Would use datetime in actual implementation
-            "old_key_hash": None,  # Would hash old key
-            "new_key_hash": APIKeyEncryption.hash_key(new_key),
+            "old_key_hash": old_key_hash,
+            "new_key_hash": new_key_hash,
+            "rotated_at": rotation_entry.rotated_at.isoformat(),
+            "rotated_by": rotated_by,
+            "reason": reason,
         }
 
     def get_rotation_history(self, agent_id: str) -> list[dict[str, Any]]:
         """Get rotation history for an agent."""
-        return []  # Would query database
+        if not self.db_session:
+            return []
+
+        from agentwatch.security.key_storage import KeyRotationAudit
+
+        rotations = self.db_session.query(KeyRotationAudit).filter(
+            KeyRotationAudit.agent_id == agent_id
+        ).order_by(KeyRotationAudit.rotated_at.desc()).all()
+
+        return [
+            {
+                "rotation_id": r.rotation_id,
+                "old_key_hash": r.old_key_hash,
+                "new_key_hash": r.new_key_hash,
+                "rotated_at": r.rotated_at.isoformat(),
+                "rotated_by": r.rotated_by,
+                "reason": r.reason,
+            }
+            for r in rotations
+        ]
