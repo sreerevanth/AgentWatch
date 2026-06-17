@@ -6,8 +6,8 @@ layered :class:`~agentwatch.memory.engine.MemoryEngine`. The manager:
 
 - computes a decayed-importance factor for each memory entry,
 - deprioritizes stale episodic memories during retrieval, and
-- selects low-importance, decayed entries for background cleanup while keeping
-  CRITICAL memories persistent.
+- selects decayed entries for background cleanup (by strength, not importance
+  level) while keeping CRITICAL memories persistent.
 
 It is intentionally stateless and synchronous — callers (or the engine) own the
 entries and decide when to refresh factors or prune. Decay is measured from

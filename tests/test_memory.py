@@ -193,7 +193,7 @@ def test_refresh_populates_decay_factor():
     assert 0.0 <= factor < 1.0
 
 
-def test_engine_prune_decayed_evicts_only_decayed_low_importance():
+def test_engine_prune_decayed_evicts_decayed_keeps_critical():
     import asyncio
 
     from agentwatch.memory.engine import ImportanceLevel, MemoryEngine
@@ -202,20 +202,25 @@ def test_engine_prune_decayed_evicts_only_decayed_low_importance():
 
     async def _setup():
         low = await engine.store("agent", "stale chatter", importance=ImportanceLevel.LOW)
+        # Eligibility is by decayed strength, not importance: a sufficiently old
+        # MEDIUM entry is prunable too (only CRITICAL is exempt).
+        medium = await engine.store("agent", "old note", importance=ImportanceLevel.MEDIUM)
         critical = await engine.store(
             "agent", "rotated prod credentials", importance=ImportanceLevel.CRITICAL
         )
-        old = datetime.now(UTC) - timedelta(days=120)
-        low.last_accessed = old
-        critical.last_accessed = old
-        return low, critical
+        low.last_accessed = datetime.now(UTC) - timedelta(days=120)
+        medium.last_accessed = datetime.now(UTC) - timedelta(days=200)
+        critical.last_accessed = datetime.now(UTC) - timedelta(days=3650)
+        return low, medium, critical
 
-    low, critical = asyncio.run(_setup())
+    low, medium, critical = asyncio.run(_setup())
     removed = engine.prune_decayed("agent")
 
     assert low.entry_id in removed
+    assert medium.entry_id in removed
     assert critical.entry_id not in removed
     assert engine._store.get(low.entry_id) is None
+    assert engine._store.get(medium.entry_id) is None
     assert engine._store.get(critical.entry_id) is not None
 
 
@@ -235,9 +240,11 @@ def test_engine_retrieval_deprioritizes_stale_episodic():
 
     fresh, stale, results = asyncio.run(_run())
     by_id = {r.entry.entry_id: r.similarity_score for r in results}
+    # Stale memory scored lower: pre-rehearsal strength deprioritizes it.
     assert by_id[fresh.entry_id] > by_id[stale.entry_id]
-    # decay_factor cached on the stale entry during retrieval scoring
-    assert stale.decay_factor < fresh.decay_factor
+    # After retrieval both are rehearsed (last_accessed=now), so the cached
+    # decay_factor reflects the consistent post-access state, not stale values.
+    assert stale.decay_factor == fresh.decay_factor == 1.0
 
 
 # ─────────────────────────────────────────────

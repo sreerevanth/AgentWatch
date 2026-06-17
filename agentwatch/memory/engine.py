@@ -335,9 +335,10 @@ class MemoryEngine:
             score = similarity
             if recency_boost and entry.memory_type == MemoryType.EPISODIC:
                 # Deprioritize stale episodic memories using the importance-
-                # weighted forgetting curve. refresh() also caches the value on
-                # entry.decay_factor for later inspection and pruning.
-                strength = self._decay.refresh(entry, now)
+                # weighted forgetting curve. Read strength before the rehearsal
+                # bump below so older memories score lower; decay_factor is
+                # refreshed afterwards to reflect the post-access state.
+                strength = self._decay.strength(entry, now)
                 score = score * 0.7 + strength * 0.3
 
             importance_boost = {
@@ -357,6 +358,7 @@ class MemoryEngine:
 
             entry.last_accessed = now
             entry.access_count += 1
+            self._decay.refresh(entry, now)
             self._store.update(entry)
 
         results.sort(key=lambda r: r.similarity_score, reverse=True)
@@ -476,12 +478,14 @@ class MemoryEngine:
         *,
         now: datetime | None = None,
     ) -> list[str]:
-        """Evict low-importance memories that have decayed below the threshold.
+        """Evict memories that have decayed below the strength threshold.
 
-        Background cleanup pass for the forgetting curve. CRITICAL memories (and,
-        by default, non-episodic knowledge) are never evicted. Pass ``agent_id``
-        to scope the sweep to a single agent, or omit it to sweep all agents.
-        Returns the entry IDs that were removed.
+        Background cleanup pass for the forgetting curve. Eligibility is by
+        decayed strength, not importance level directly — but importance sets
+        the half-life, so higher-importance entries decay slower and survive
+        longer. CRITICAL memories (and, by default, non-episodic knowledge) are
+        never evicted. Pass ``agent_id`` to scope the sweep to a single agent,
+        or omit it to sweep all agents. Returns the entry IDs that were removed.
         """
         now = now or datetime.now(UTC)
         if agent_id is not None:
