@@ -11,6 +11,7 @@ file and uses it as the GitHub Release body, so keep each version's notes here.
 ## [Unreleased]
 
 ### Added
+- Temporal decay curve manager for episodic memory: importance-weighted exponential forgetting wired into `MemoryEngine` retrieval scoring, plus `prune_decayed()` background cleanup of stale low-importance entries (critical memories persist).
 - Locust load-test suite (`tests/load/`) simulating weighted agent traffic.
 - Auto-updating contributors wall (scheduled workflow + `contributors.json`).
 - PyPI auto-publish workflow on `v*` tags and a PR test/coverage workflow.
