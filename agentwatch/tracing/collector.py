@@ -296,7 +296,7 @@ class TraceCollector:
         Returns:
             list[str]: A list of session IDs older than the cutoff.
         """
-        session_ids = []
+        session_ids: list[str] = []
         if not self._storage_path or not self._storage_path.exists():
             return session_ids
 

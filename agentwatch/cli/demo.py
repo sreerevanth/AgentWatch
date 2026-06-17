@@ -545,7 +545,7 @@ async def demo_orchestration():
 # ─────────────────────────────────────────────
 
 
-async def main():
+async def run_demo():
     print(
         bold("""
 ╔══════════════════════════════════════════════════════════════╗
@@ -571,4 +571,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(run_demo())
