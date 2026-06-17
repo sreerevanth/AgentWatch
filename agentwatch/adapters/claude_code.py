@@ -79,7 +79,7 @@ class ClaudeCodeEventParser:
         try:
             data = json.loads(raw_line)
         except json.JSONDecodeError:
-            logger.debug("Non-JSON line from Claude Code: %s", raw_line[:100])
+            logger.debug("Skipping non-JSON output from Claude Code")
             return None
 
         return self._dispatch(data)
