@@ -40,7 +40,7 @@
 | MEM-002 | Causal memory graph | ✅ done | `test_memory::test_causal_graph_*` |
 | MEM-003 | Cross-session identity | ✅ done | `test_memory::test_identity_*` |
 | MEM-004 | Memory conflict resolver | ✅ done | `test_memory::test_resolver_*` |
-| MEM-005 | Forgetting curve engine | ✅ done | `test_memory::test_*_decay`, `test_critical_memories_*` |
+| MEM-005 | Forgetting curve engine + temporal decay manager (engine-integrated retrieval decay & cleanup) | ✅ done | `test_memory::test_*_decay`, `test_critical_memories_*`, `test_decay_manager_*`, `test_engine_prune_decayed_*`, `test_engine_retrieval_deprioritizes_*` |
 | MEM-006 | Memory health monitor | ✅ done | `test_memory::test_health_monitor_*` |
 | MEM-007 | Natural-language memory query | ✅ done | `test_memory::test_parse_*`, `test_query_*` |
 | MEM-008 | Memory governance | ✅ done | `test_memory::test_retention_*`, `test_erasure_*` |

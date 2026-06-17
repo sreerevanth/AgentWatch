@@ -124,6 +124,123 @@ def test_low_importance_prune_after_long_idle():
 
 
 # ─────────────────────────────────────────────
+# MEM-005 — Temporal decay manager (engine integration)
+# ─────────────────────────────────────────────
+
+
+def _episodic_entry(importance, *, age_days=0.0):
+    from agentwatch.memory.engine import MemoryEntry as EngineEntry
+    from agentwatch.memory.engine import MemoryType
+
+    accessed = datetime.now(UTC) - timedelta(days=age_days)
+    return EngineEntry(
+        entry_id=f"e-{importance.value}-{age_days}",
+        agent_id="agent",
+        memory_type=MemoryType.EPISODIC,
+        content="x",
+        importance=importance,
+        last_accessed=accessed,
+    )
+
+
+def test_decay_manager_strength_decreases_with_age():
+    from agentwatch.memory.engine import ImportanceLevel
+    from agentwatch.memory.temporal_decay import TemporalDecayManager
+
+    mgr = TemporalDecayManager()
+    fresh = _episodic_entry(ImportanceLevel.MEDIUM, age_days=0)
+    stale = _episodic_entry(ImportanceLevel.MEDIUM, age_days=60)
+    assert mgr.strength(fresh) > mgr.strength(stale)
+    assert 0.0 <= mgr.strength(stale) <= 1.0
+
+
+def test_decay_manager_keeps_critical_persistent():
+    from agentwatch.memory.engine import ImportanceLevel
+    from agentwatch.memory.temporal_decay import TemporalDecayManager
+
+    mgr = TemporalDecayManager()
+    critical = _episodic_entry(ImportanceLevel.CRITICAL, age_days=3650)
+    assert mgr.strength(critical) == 1.0
+    assert mgr.is_prunable(critical) is False
+
+
+def test_decay_manager_does_not_decay_semantic_by_default():
+    from agentwatch.memory.engine import ImportanceLevel, MemoryType
+    from agentwatch.memory.engine import MemoryEntry as EngineEntry
+    from agentwatch.memory.temporal_decay import TemporalDecayManager
+
+    mgr = TemporalDecayManager()
+    semantic = EngineEntry(
+        entry_id="s1",
+        agent_id="agent",
+        memory_type=MemoryType.SEMANTIC,
+        content="postgres is the chosen db",
+        importance=ImportanceLevel.LOW,
+        last_accessed=datetime.now(UTC) - timedelta(days=365),
+    )
+    assert mgr.strength(semantic) == 1.0
+    assert mgr.is_prunable(semantic) is False
+
+
+def test_refresh_populates_decay_factor():
+    from agentwatch.memory.engine import ImportanceLevel
+    from agentwatch.memory.temporal_decay import TemporalDecayManager
+
+    mgr = TemporalDecayManager()
+    entry = _episodic_entry(ImportanceLevel.LOW, age_days=21)
+    factor = mgr.refresh(entry)
+    assert entry.decay_factor == factor
+    assert 0.0 <= factor < 1.0
+
+
+def test_engine_prune_decayed_evicts_only_decayed_low_importance():
+    import asyncio
+
+    from agentwatch.memory.engine import ImportanceLevel, MemoryEngine
+
+    engine = MemoryEngine()
+
+    async def _setup():
+        low = await engine.store("agent", "stale chatter", importance=ImportanceLevel.LOW)
+        critical = await engine.store(
+            "agent", "rotated prod credentials", importance=ImportanceLevel.CRITICAL
+        )
+        old = datetime.now(UTC) - timedelta(days=120)
+        low.last_accessed = old
+        critical.last_accessed = old
+        return low, critical
+
+    low, critical = asyncio.run(_setup())
+    removed = engine.prune_decayed("agent")
+
+    assert low.entry_id in removed
+    assert critical.entry_id not in removed
+    assert engine._store.get(low.entry_id) is None
+    assert engine._store.get(critical.entry_id) is not None
+
+
+def test_engine_retrieval_deprioritizes_stale_episodic():
+    import asyncio
+
+    from agentwatch.memory.engine import ImportanceLevel, MemoryEngine
+
+    engine = MemoryEngine()
+
+    async def _run():
+        fresh = await engine.store("agent", "alpha beta gamma", importance=ImportanceLevel.MEDIUM)
+        stale = await engine.store("agent", "alpha beta gamma", importance=ImportanceLevel.MEDIUM)
+        stale.last_accessed = datetime.now(UTC) - timedelta(days=90)
+        results = await engine.retrieve("agent", "alpha beta gamma", min_similarity=0.1)
+        return fresh, stale, results
+
+    fresh, stale, results = asyncio.run(_run())
+    by_id = {r.entry.entry_id: r.similarity_score for r in results}
+    assert by_id[fresh.entry_id] > by_id[stale.entry_id]
+    # decay_factor cached on the stale entry during retrieval scoring
+    assert stale.decay_factor < fresh.decay_factor
+
+
+# ─────────────────────────────────────────────
 # MEM-006 — Health monitor
 # ─────────────────────────────────────────────
 
