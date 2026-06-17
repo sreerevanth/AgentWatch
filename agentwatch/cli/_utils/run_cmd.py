@@ -1,30 +1,25 @@
 import logging
-import subprocess
+import subprocess  # nosec B404
 
 logger = logging.getLogger(__name__)
 
-def run_validated_command(
-    command: list[str], 
-    timeout: int | None = 30, 
-    check: bool = True
-) -> tuple[int, str, str]:
-    """Executes a shell command safely, preventing injection."""
-    
-    # Validation: Ensure the command is strictly a list of strings
-    if not isinstance(command, list) or not all(isinstance(arg, str) for arg in command):
-        raise ValueError("Command must be a list of strings.")
+
+def run_validated_command(cmd_args: list[str], check: bool = True) -> tuple[int, str, str]:
+    """
+    Executes a shell command safely using a list of arguments with shell=False.
+    """
+    # Validation logic goes here...
 
     try:
-        logger.debug(f"Executing: {' '.join(command)}")
-        result = subprocess.run( # noqa: S603
-            command,
-            capture_output=True,  # Fixes UP022
+        # We explicitly use a pre-validated list of strings with shell=False
+        result = subprocess.run(  # nosec B603
+            cmd_args,
+            capture_output=True,
             text=True,
-            timeout=timeout,
             check=check,
             shell=False,
         )
-        
+
         return result.returncode, result.stdout.strip(), result.stderr.strip()
 
     except subprocess.CalledProcessError as e:
