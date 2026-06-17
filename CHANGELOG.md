@@ -11,6 +11,7 @@ file and uses it as the GitHub Release body, so keep each version's notes here.
 ## [Unreleased]
 
 ### Added
+- Automated red-team safety harness (`agentwatch.security.redteam` + `agentwatch redteam` CLI): runs a curated corpus of simulated prompt-injection, path-traversal, credential-scan, and tool-misuse attacks through the detection layer (payloads scored, never executed) and emits a structured resilience report scoring how many attacks are defended vs. bypassed.
 - Temporal decay curve manager for episodic memory: importance-weighted exponential forgetting wired into `MemoryEngine` retrieval scoring, plus `prune_decayed()` background cleanup of stale low-importance entries (critical memories persist).
 - Locust load-test suite (`tests/load/`) simulating weighted agent traffic.
 - Auto-updating contributors wall (scheduled workflow + `contributors.json`).
