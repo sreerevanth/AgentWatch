@@ -19,6 +19,7 @@ runner = CliRunner()
 
 
 def test_default_corpus_covers_all_categories():
+    """The default corpus is non-empty and spans every attack category."""
     corpus = default_corpus()
     assert corpus
     covered = {s.category for s in corpus}
@@ -26,6 +27,7 @@ def test_default_corpus_covers_all_categories():
 
 
 def test_run_scores_every_scenario():
+    """Every scenario is scored and defended + bypassed tallies are consistent."""
     report = RedTeamHarness().run()
     assert report.total == len(default_corpus())
     assert report.defended_count + len(report.bypassed) == report.total
@@ -33,6 +35,7 @@ def test_run_scores_every_scenario():
 
 
 def test_known_attacks_are_defended():
+    """Clearly malicious payloads are detected/blocked by the harness."""
     report = RedTeamHarness().run()
     by_id = {r.scenario.id: r for r in report.results}
     # Destructive command, RCE pipe, and an explicit injection must be caught.
@@ -43,6 +46,7 @@ def test_known_attacks_are_defended():
 
 
 def test_harness_surfaces_a_known_gap():
+    """A payload the detectors miss is reported as bypassed, not hidden."""
     # A read-only traversal slips past the command risk patterns; the harness
     # should report it as bypassed rather than hide the gap.
     report = RedTeamHarness().run()
@@ -52,6 +56,7 @@ def test_harness_surfaces_a_known_gap():
 
 
 def test_by_category_counts_consistent():
+    """Per-category tallies sum to the overall totals."""
     report = RedTeamHarness().run()
     cats = report.by_category()
     assert set(cats) == {c.value for c in AttackCategory}
@@ -60,6 +65,7 @@ def test_by_category_counts_consistent():
 
 
 def test_custom_scenarios_are_honored():
+    """A caller-supplied corpus replaces the default one."""
     scenarios = [
         AttackScenario(
             "custom-rm",
@@ -75,18 +81,21 @@ def test_custom_scenarios_are_honored():
 
 
 def test_empty_corpus_scores_one():
+    """An empty corpus yields a perfect (vacuous) resilience score of 1.0."""
     report = RedTeamHarness([]).run()
     assert report.total == 0
     assert report.resilience_score == 1.0
 
 
 def test_cli_redteam_runs():
+    """`agentwatch redteam` exits 0 and renders the resilience panel."""
     result = runner.invoke(app, ["redteam"])
     assert result.exit_code == 0
     assert "Red-Team Resilience" in result.stdout
 
 
 def test_cli_redteam_json():
+    """`agentwatch redteam --json` emits a parseable report with expected keys."""
     result = runner.invoke(app, ["redteam", "--json"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)

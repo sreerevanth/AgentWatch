@@ -27,6 +27,8 @@ from agentwatch.security.owasp import OwaspVector
 
 
 class AttackCategory(str, Enum):
+    """Families of simulated attack the harness exercises."""
+
     PROMPT_INJECTION = "prompt_injection"
     PATH_TRAVERSAL = "path_traversal"
     CREDENTIAL_SCAN = "credential_scan"
@@ -40,6 +42,8 @@ _BLOCKING_LEVELS: frozenset[RiskLevel] = frozenset({RiskLevel.HIGH, RiskLevel.CR
 
 @dataclass(frozen=True)
 class AttackScenario:
+    """A single simulated attack: a payload and the vector it targets."""
+
     id: str
     category: AttackCategory
     vector: OwaspVector
@@ -49,11 +53,14 @@ class AttackScenario:
 
 @dataclass
 class AttackResult:
+    """Outcome of running one scenario through the detection layer."""
+
     scenario: AttackScenario
     defended: bool
     detail: str
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the result to a JSON-friendly dict."""
         return {
             "id": self.scenario.id,
             "category": self.scenario.category.value,
@@ -65,18 +72,23 @@ class AttackResult:
 
 @dataclass
 class ResilienceReport:
+    """Aggregate outcome of a red-team run across all scenarios."""
+
     results: list[AttackResult]
 
     @property
     def total(self) -> int:
+        """Number of scenarios run."""
         return len(self.results)
 
     @property
     def defended_count(self) -> int:
+        """Number of scenarios whose payload was detected/blocked."""
         return sum(1 for r in self.results if r.defended)
 
     @property
     def bypassed(self) -> list[AttackResult]:
+        """Scenarios whose payload slipped past the detectors."""
         return [r for r in self.results if not r.defended]
 
     @property
@@ -96,6 +108,7 @@ class ResilienceReport:
         return out
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize the full report (score, per-category, results) to a dict."""
         return {
             "resilience_score": round(self.resilience_score, 4),
             "defended": self.defended_count,
@@ -209,6 +222,7 @@ class RedTeamHarness:
         scorer: RiskScorer | None = None,
         blocking_levels: frozenset[RiskLevel] = _BLOCKING_LEVELS,
     ) -> None:
+        """Configure the corpus, scorer, and which risk levels count as defended."""
         self.scenarios: list[AttackScenario] = (
             list(scenarios) if scenarios is not None else default_corpus()
         )
@@ -216,9 +230,11 @@ class RedTeamHarness:
         self._blocking = blocking_levels
 
     def run(self) -> ResilienceReport:
+        """Score every scenario and return the resilience report."""
         return ResilienceReport([self._evaluate(s) for s in self.scenarios])
 
     def _evaluate(self, scenario: AttackScenario) -> AttackResult:
+        """Run one scenario through the matching detector and record the outcome."""
         if scenario.category is AttackCategory.PROMPT_INJECTION:
             scan = scan_text(scenario.payload)
             if scan.detected:
