@@ -5,10 +5,11 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from statistics import mean
+from typing import Any
 
 from agentwatch.core.schema import AgentEvent, EventType
 
-JudgeCallback = Callable[[str, AgentEvent], Awaitable[dict[str, object]]]
+JudgeCallback = Callable[[str, AgentEvent], Awaitable[dict[str, Any]]]
 
 
 @dataclass

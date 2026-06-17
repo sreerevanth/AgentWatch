@@ -60,7 +60,7 @@ def register_http_forwarder(bus: object, api_url: str | None = None) -> None:
     if _HANDLER_ID in handlers:
         return
 
-    url = api_url or os.getenv("AGENTWATCH_API_URL", _DEFAULT_API_URL)
+    url: str = api_url or os.getenv("AGENTWATCH_API_URL") or _DEFAULT_API_URL
     forwarder = HttpEventForwarder(url)
     bus.subscribe_fn(forwarder.forward, handler_id=_HANDLER_ID)  # type: ignore[attr-defined]
     logger.debug("HTTP event forwarder registered → %s", url)

@@ -7,6 +7,7 @@ Builds on the existing `agentwatch.core.schema.PluginManifest`.
 
 from __future__ import annotations
 
+import builtins
 import hashlib
 import json
 from dataclasses import dataclass, field
@@ -79,7 +80,7 @@ class PluginRegistry:
             records = [r for r in records if r.enabled]
         return records
 
-    def by_trust_level(self, min_trust: int) -> list[PluginRecord]:
+    def by_trust_level(self, min_trust: int) -> builtins.list[PluginRecord]:
         return [r for r in self._plugins.values() if r.manifest.trust_level >= min_trust]
 
     def to_json(self) -> str:

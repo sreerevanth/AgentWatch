@@ -34,7 +34,7 @@ class DeadlockDetector:
 
     def scan(self) -> DeadlockReport:
         for start in self._waiting:
-            seen = []
+            seen: list[str] = []
             cur = start
             while cur in self._waiting:
                 if cur in seen:

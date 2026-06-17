@@ -31,6 +31,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
+from agentwatch.api.auth import require_permission
 from agentwatch.core.event_bus import get_event_bus
 from agentwatch.core.models import Repository, init_db
 from agentwatch.core.safety import RiskScorer, SafetyEngine, SafetyPolicy
@@ -40,6 +41,7 @@ from agentwatch.core.schema import (
     AgentSession,
     EventType,
     ExecutionStatus,
+    RiskLevel,
     SafetyCheckData,
     TokenUsage,
     ToolCallData,
@@ -232,6 +234,7 @@ _alerting = AlertingEngine(
     AlertingConfig(
         slack_webhook_url=os.getenv("SLACK_WEBHOOK_URL"),
         pagerduty_webhook_url=os.getenv("PAGERDUTY_WEBHOOK_URL"),
+        webhook_signing_secret=os.getenv("AGENTWATCH_WEBHOOK_SIGNING_SECRET"),
     )
 )
 _ws_clients: list[WebSocket] = []
@@ -277,6 +280,13 @@ def _require_api_key(x_api_key: str | None = Header(default=None, alias="X-Api-K
 class SessionListResponse(BaseModel):
     sessions: list[dict[str, Any]]
     total: int
+
+
+class PruneResponse(BaseModel):
+    pruned_db_sessions: int
+    pruned_trace_files: int
+    pruned_checkpoint_files: int
+    dry_run: bool
 
 
 class TraceResponse(BaseModel):
@@ -432,7 +442,7 @@ def _seed_demo_data() -> None:
                 arguments={"command": "rm -rf /var/log/*"},
             ),
             safety=SafetyCheckData(
-                risk_level="critical",
+                risk_level=RiskLevel.CRITICAL,
                 risk_score=1.0,
                 blocked=True,
                 reasons=["Recursive deletion of critical filesystem path"],
@@ -600,6 +610,71 @@ async def list_sessions(
     )
     return SessionListResponse(
         sessions=[session.model_dump(mode="json") for session in sessions], total=len(sessions)
+    )
+
+
+@app.delete("/api/v1/sessions/prune", response_model=PruneResponse)
+async def prune_sessions_api(
+    request: Request,
+    older_than_hours: int = Query(..., ge=1),
+    dry_run: bool = Query(False),
+    _auth: None = Depends(_require_api_key),
+) -> PruneResponse:
+    """Delete old sessions, traces, and checkpoints.
+
+    Args:
+        request: The FastAPI request object.
+        older_than_hours: Threshold in hours. Sessions older than this are pruned.
+        dry_run: If True, do not actually delete anything, just return the counts.
+        _auth: API key dependency.
+
+    Returns:
+        PruneResponse: The counts of pruned resources.
+    """
+    _limiter.check(_rate_limit_key(request, "w"), RATE_WRITE, request)
+    cutoff = datetime.now(UTC) - timedelta(hours=older_than_hours)
+
+    pruned_db_sessions = 0
+    pruned_trace_files = 0
+    pruned_checkpoint_files = 0
+
+    try:
+        if _db_session_factory:
+            async with _db_session_factory() as db:
+                repo = Repository(db)
+                session_ids = await repo.get_sessions_older_than(cutoff)
+                if session_ids:
+                    # Follow user's required ordering: delete files before DB records
+                    pruned_trace_files = await _collector.prune(session_ids, dry_run=dry_run)
+                    pruned_checkpoint_files = await _rollback_engine.prune_checkpoints(
+                        session_ids, dry_run=dry_run
+                    )
+
+                    if not dry_run:
+                        pruned_db_sessions = await repo.prune_sessions(session_ids)
+                        await db.commit()
+                    else:
+                        pruned_db_sessions = len(session_ids)
+        else:
+            # Fallback to filesystem discovery if no DB
+            c_ids = set(await _collector.get_sessions_older_than(cutoff))
+            r_ids = set(await _rollback_engine.get_sessions_older_than(cutoff))
+            session_ids = list(c_ids.union(r_ids))
+
+            if session_ids:
+                pruned_trace_files = await _collector.prune(session_ids, dry_run=dry_run)
+                pruned_checkpoint_files = await _rollback_engine.prune_checkpoints(
+                    session_ids, dry_run=dry_run
+                )
+    except Exception as exc:
+        logger.error("Failed to prune sessions: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to prune sessions")
+
+    return PruneResponse(
+        pruned_db_sessions=pruned_db_sessions,
+        pruned_trace_files=pruned_trace_files,
+        pruned_checkpoint_files=pruned_checkpoint_files,
+        dry_run=dry_run,
     )
 
 
@@ -812,7 +887,10 @@ async def rollback_session(
 
 
 @app.get("/api/v1/safety/policy")
-async def get_safety_policy(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+async def get_safety_policy(
+    _auth: None = Depends(_require_api_key),
+    _perm: object = Depends(require_permission("policy:read")),
+) -> dict[str, Any]:
     policy = _safety_engine.policy
     return {
         "policy_id": policy.policy_id,
@@ -827,7 +905,9 @@ async def get_safety_policy(_auth: None = Depends(_require_api_key)) -> dict[str
 
 @app.put("/api/v1/safety/policy")
 async def update_safety_policy(
-    update: SafetyPolicyUpdate, _auth: None = Depends(_require_api_key)
+    update: SafetyPolicyUpdate,
+    _auth: None = Depends(_require_api_key),
+    _perm: object = Depends(require_permission("policy:write")),
 ) -> dict[str, Any]:
     policy = SafetyPolicy(
         policy_id="api-configured",
@@ -977,6 +1057,41 @@ async def seed_demo(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     return {"status": "seeded"}
 
 
+def _sanitize_event(event_dict: dict[str, Any]) -> dict[str, Any]:
+    """Escape HTML tags in user-facing preview strings to prevent XSS in the dashboard.
+
+    Creates and returns a new sanitized dictionary to avoid mutating the original input.
+    """
+    import html
+
+    sanitized = event_dict.copy()
+
+    if "prompt_preview" in sanitized and isinstance(sanitized["prompt_preview"], str):
+        sanitized["prompt_preview"] = html.escape(sanitized["prompt_preview"])
+    if "planner_output_preview" in sanitized and isinstance(
+        sanitized["planner_output_preview"], str
+    ):
+        sanitized["planner_output_preview"] = html.escape(sanitized["planner_output_preview"])
+
+    if "tool_call" in sanitized and sanitized["tool_call"]:
+        tc = sanitized["tool_call"].copy()
+        if "raw_command" in tc and isinstance(tc["raw_command"], str):
+            tc["raw_command"] = html.escape(tc["raw_command"])
+        if "arguments" in tc and isinstance(tc["arguments"], dict):
+            tc["arguments"] = {k: html.escape(str(v)) for k, v in tc["arguments"].items()}
+        sanitized["tool_call"] = tc
+
+    if "tool_result" in sanitized and sanitized["tool_result"]:
+        tr = sanitized["tool_result"].copy()
+        if "output" in tr and isinstance(tr["output"], str):
+            tr["output"] = html.escape(tr["output"])
+        if "error" in tr and isinstance(tr["error"], str):
+            tr["error"] = html.escape(tr["error"])
+        sanitized["tool_result"] = tr
+
+    return sanitized
+
+
 @app.websocket("/ws/events")
 async def websocket_events(websocket: WebSocket) -> None:
     """Real-time event stream over WebSocket.
@@ -1016,7 +1131,7 @@ async def websocket_events(websocket: WebSocket) -> None:
 
     async def forward(event: AgentEvent) -> None:
         try:
-            await websocket.send_json(event.model_dump_for_storage())
+            await websocket.send_json(_sanitize_event(event.model_dump_for_storage()))
         except Exception:
             logger.debug("WebSocket client send failed", exc_info=True)
 
@@ -1039,4 +1154,4 @@ def create_app() -> FastAPI:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")  # nosec B104 — intentional bind for container/dev entrypoint

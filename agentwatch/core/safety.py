@@ -10,7 +10,7 @@ import asyncio
 import fnmatch
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from agentwatch.core.blast_radius import BlastRadiusEstimator
@@ -274,7 +274,7 @@ def rm_targets_critical_path(text: str) -> bool:
                     has_force = True
                 continue
 
-        if _RM_CRITICAL_PATH_RE.match(arg):
+        if _RM_CRITICAL_PATH_RE.match(arg.strip("'\"")):
             has_critical_path = True
 
     return has_recursive and has_force and has_critical_path
@@ -562,7 +562,7 @@ class RiskScorer:
 # Safety Engine
 # ─────────────────────────────────────────────
 
-ApprovalCallback = Callable[[AgentEvent, SafetyCheckData], asyncio.Future[bool]]
+ApprovalCallback = Callable[[AgentEvent, SafetyCheckData], Awaitable[bool]]
 
 
 class SafetyEngine:
@@ -678,7 +678,8 @@ class SafetyEngine:
         """
         tool_call = event.tool_call
         if not tool_call:
-            return SafetyCheckData(), False
+            # No tool call → nothing to score; return an explicit zero-risk result.
+            return SafetyCheckData(risk_level=RiskLevel.SAFE, risk_score=0.0), False
 
         # 1. Pattern-based risk scoring
         risk_level, risk_score, reasons, policies = self._scorer.score(tool_call)

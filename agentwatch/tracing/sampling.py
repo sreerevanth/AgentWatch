@@ -31,7 +31,7 @@ class HeadSampler:
 
     def should_sample(self, event: AgentEvent) -> SamplingDecision:
         if event.event_type == EventType.SESSION_START:
-            keep = random.random() < self.rate  # noqa: S311 — sampling, not crypto
+            keep = random.random() < self.rate  # noqa: S311  # nosec B311 — trace sampling, not crypto
             return SamplingDecision(keep=keep, reason=f"head_rate={self.rate}")
         return SamplingDecision(keep=True, reason="non-start_passthrough")
 
@@ -55,7 +55,7 @@ class FailureAlwaysSampler:
             if failed:
                 self._session_decisions[sid] = True
                 return SamplingDecision(keep=True, reason="failure")
-            keep = random.random() < self.success_rate  # noqa: S311
+            keep = random.random() < self.success_rate  # noqa: S311  # nosec B311 — trace sampling, not crypto
             self._session_decisions[sid] = keep
             return SamplingDecision(keep=keep, reason=f"success_rate={self.success_rate}")
 
@@ -83,7 +83,7 @@ class ReservoirSampler:
         if len(self._reservoir) < self.k:
             self._reservoir.append(event)
             return True
-        j = random.randint(0, self._seen - 1)  # noqa: S311
+        j = random.randint(0, self._seen - 1)  # noqa: S311  # nosec B311 — reservoir sampling, not crypto
         if j < self.k:
             self._reservoir[j] = event
             return True

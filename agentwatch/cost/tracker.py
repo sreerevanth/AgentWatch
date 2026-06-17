@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import threading
 import time
 from dataclasses import dataclass, field
 
@@ -31,6 +33,7 @@ class SessionBudget:
     exceeded: bool = False
     warnings: list[str] = field(default_factory=list)
     last_active: float = field(default_factory=time.monotonic)
+    last_accessed: float = field(default_factory=time.monotonic)
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -45,13 +48,36 @@ class SessionBudget:
 
 
 class CostTracker:
-    def __init__(self, default_token_budget: int = 100_000, default_usd_budget: float = 25.0):
+    def __init__(
+        self,
+        default_token_budget: int = 100_000,
+        default_usd_budget: float = 25.0,
+        ttl_seconds: float | None = None,
+    ):
         self._default_token_budget = default_token_budget
         self._default_usd_budget = default_usd_budget
+
+        # Configure TTL
+        if ttl_seconds is None:
+            env_val = os.getenv("AGENTWATCH_SESSION_TTL_SECONDS") or os.getenv(
+                "SESSION_TTL_SECONDS"
+            )
+            if env_val is not None:
+                try:
+                    self.ttl_seconds = float(env_val)
+                except ValueError:
+                    self.ttl_seconds = 3600.0
+            else:
+                self.ttl_seconds = 3600.0
+        else:
+            self.ttl_seconds = ttl_seconds
+
         self._budgets: dict[str, SessionBudget] = {}
         # Timestamp of the last full eviction scan. Initialised to 0 so the
         # first call to _maybe_evict() always runs a scan if warranted.
         self._last_eviction: float = 0.0
+        self._last_cleanup: float = 0.0
+        self._lock = threading.RLock()
 
     def configure_session(
         self,
@@ -59,32 +85,64 @@ class CostTracker:
         token_budget: int | None = None,
         usd_budget: float | None = None,
     ) -> SessionBudget:
-        budget = SessionBudget(
-            session_id=session_id,
-            token_budget=token_budget if token_budget is not None else self._default_token_budget,
-            usd_budget=usd_budget if usd_budget is not None else self._default_usd_budget,
-        )
-        self._budgets[session_id] = budget
-        return budget
+        with self._lock:
+            self._cleanup_stale_sessions()
+            budget = SessionBudget(
+                session_id=session_id,
+                token_budget=token_budget
+                if token_budget is not None
+                else self._default_token_budget,
+                usd_budget=usd_budget if usd_budget is not None else self._default_usd_budget,
+            )
+            budget.last_accessed = time.monotonic()
+            self._budgets[session_id] = budget
+            return budget
 
     def ingest_event(self, event: AgentEvent) -> SessionBudget:
-        budget = self._budgets.get(event.session_id) or self.configure_session(event.session_id)
-        if event.token_usage:
-            budget.tokens_used += event.token_usage.total_tokens
-            budget.usd_used += float(event.token_usage.estimated_cost_usd or 0.0)
-        budget.last_active = time.monotonic()
-        self._evaluate(budget)
-        self._maybe_evict()
-        return budget
+        with self._lock:
+            self._cleanup_stale_sessions()
+            budget = self._budgets.get(event.session_id) or self.configure_session(event.session_id)
+            if event.token_usage:
+                budget.tokens_used += event.token_usage.total_tokens
+                budget.usd_used += float(event.token_usage.estimated_cost_usd or 0.0)
+            budget.last_active = time.monotonic()
+            budget.last_accessed = time.monotonic()
+            self._evaluate(budget)
+            self._maybe_evict()
+            return budget
 
     def get_session(self, session_id: str) -> SessionBudget | None:
-        return self._budgets.get(session_id)
+        with self._lock:
+            self._cleanup_stale_sessions()
+            budget = self._budgets.get(session_id)
+            if budget is not None:
+                budget.last_accessed = time.monotonic()
+            return budget
 
     def stats(self) -> dict[str, object]:
-        return {
-            "tracked_sessions": len(self._budgets),
-            "sessions_over_budget": sum(1 for budget in self._budgets.values() if budget.exceeded),
-        }
+        with self._lock:
+            return {
+                "tracked_sessions": len(self._budgets),
+                "sessions_over_budget": sum(
+                    1 for budget in self._budgets.values() if budget.exceeded
+                ),
+            }
+
+    def _cleanup_stale_sessions(self, force: bool = False) -> None:
+        """Remove stale sessions from the budgets map based on TTL.
+
+        Protected by self._lock. If not force, cleanup only runs if at least
+        60.0 seconds have elapsed since the last scan to avoid repeated O(n) overhead.
+        """
+        with self._lock:
+            now = time.monotonic()
+            if not force and now - self._last_cleanup < 60.0:
+                return
+            self._last_cleanup = now
+            cutoff = now - self.ttl_seconds
+            stale = [sid for sid, b in self._budgets.items() if b.last_accessed < cutoff]
+            for sid in stale:
+                del self._budgets[sid]
 
     def _maybe_evict(self) -> None:
         """Remove stale sessions when the store grows beyond its cap.
@@ -92,22 +150,15 @@ class CostTracker:
         Eviction runs only when two conditions are both true:
         1. The number of tracked sessions is at or above _MAX_BUDGET_ENTRIES.
         2. At least _EVICTION_INTERVAL_SECONDS have elapsed since the last scan.
-
-        The interval guard prevents repeated O(n) scans on every ingest_event
-        call when the store is at capacity but all sessions are still active
-        (the scenario the maintainer identified as a hot-path risk). In the
-        worst case, one scan runs per interval window regardless of throughput.
         """
-        if len(self._budgets) < _MAX_BUDGET_ENTRIES:
-            return
-        now = time.monotonic()
-        if now - self._last_eviction < _EVICTION_INTERVAL_SECONDS:
-            return
-        self._last_eviction = now
-        cutoff = now - _SESSION_TTL_SECONDS
-        stale = [sid for sid, b in self._budgets.items() if b.last_active < cutoff]
-        for sid in stale:
-            del self._budgets[sid]
+        with self._lock:
+            if len(self._budgets) < _MAX_BUDGET_ENTRIES:
+                return
+            now = time.monotonic()
+            if now - self._last_eviction < _EVICTION_INTERVAL_SECONDS:
+                return
+            self._last_eviction = now
+            self._cleanup_stale_sessions(force=True)
 
     def _evaluate(self, budget: SessionBudget) -> None:
         budget.warnings = []

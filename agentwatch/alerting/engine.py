@@ -8,6 +8,7 @@ from typing import Any
 
 import httpx
 
+from agentwatch.alerting.channels import validate_channels
 from agentwatch.core.schema import AgentEvent, RiskLevel
 
 logger = logging.getLogger(__name__)
@@ -18,20 +19,24 @@ class AlertingConfig:
     slack_webhook_url: str | None = None
     pagerduty_webhook_url: str | None = None
     pagerduty_routing_key: str | None = None
+    webhook_signing_secret: str | None = None
     min_risk_for_pagerduty: RiskLevel = RiskLevel.HIGH
 
 
 class AlertingEngine:
     def __init__(self, config: AlertingConfig | None = None):
         self._config = config or AlertingConfig()
+        validate_channels(
+            slack_webhook_url=self._config.slack_webhook_url,
+            pagerduty_webhook_url=self._config.pagerduty_webhook_url,
+            pagerduty_routing_key=self._config.pagerduty_routing_key,
+        )
 
     async def alert_event(self, event: AgentEvent) -> dict[str, bool]:
         payload = self._build_payload(event)
         sent = {"slack": False, "pagerduty": False}
-
         if self._config.slack_webhook_url:
             sent["slack"] = await self._post(self._config.slack_webhook_url, payload["slack"])
-
         risk_level = event.safety.risk_level if event.safety else RiskLevel.SAFE
         if self._config.pagerduty_webhook_url and self._should_page(risk_level):
             sent["pagerduty"] = await self._post(
@@ -95,12 +100,28 @@ class AlertingEngine:
 
     async def _post(self, url: str, payload: dict[str, Any], max_retries: int = 3) -> bool:
         import asyncio
+        import json
+
+        from agentwatch.security.webhook_signing import generate_webhook_signature
+
+        try:
+            payload_bytes = json.dumps(payload, separators=(",", ":"), sort_keys=True).encode(
+                "utf-8"
+            )
+            headers = {"Content-Type": "application/json"}
+            if self._config.webhook_signing_secret:
+                headers["X-AgentWatch-Signature"] = generate_webhook_signature(
+                    payload_bytes, self._config.webhook_signing_secret
+                )
+        except Exception:
+            logger.warning("Webhook signing/serialization failed", exc_info=True)
+            return False
 
         delay = 0.5
         for attempt in range(max_retries):
             try:
                 async with httpx.AsyncClient(timeout=5.0) as client:
-                    response = await client.post(url, json=payload)
+                    response = await client.post(url, content=payload_bytes, headers=headers)
                     response.raise_for_status()
                     return True
             except Exception as exc:
