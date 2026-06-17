@@ -1218,7 +1218,54 @@ def verify_env() -> None:
     verify_environment()
 
 
-# ---------------------------------------------
+# ─────────────────────────────────────────────
+# redteam command
+# ─────────────────────────────────────────────
+
+
+@app.command()
+def redteam(
+    json_output: bool = typer.Option(False, "--json", help="Emit the report as JSON"),
+) -> None:
+    """[bold]Red-team[/bold] the safety engine with simulated attacks and score resilience."""
+    from agentwatch.security.redteam import RedTeamHarness
+
+    report = RedTeamHarness().run()
+
+    if json_output:
+        console.print_json(data=report.to_dict())
+        raise typer.Exit(0)
+
+    score = report.resilience_score
+    score_color = "green" if score >= 0.8 else "yellow" if score >= 0.5 else "red"
+    console.print(
+        Panel(
+            f"[bold]Red-Team Resilience[/bold]\n"
+            f"Score:    [{score_color}]{score:.0%}[/{score_color}]\n"
+            f"Defended: {report.defended_count}/{report.total} attacks",
+            border_style=score_color,
+            title="AgentWatch redteam",
+        )
+    )
+
+    table = Table(box=box.ROUNDED)
+    table.add_column("Scenario", style="bold")
+    table.add_column("Category")
+    table.add_column("Result")
+    table.add_column("Detail", overflow="fold")
+    for r in report.results:
+        result = "[green]✓ defended[/green]" if r.defended else "[red]✗ bypassed[/red]"
+        table.add_row(r.scenario.id, r.scenario.category.value, result, r.detail)
+    console.print(table)
+
+    if report.bypassed:
+        console.print(
+            f"\n[red]⚠ {len(report.bypassed)} attack(s) bypassed defenses[/red] "
+            "— review the safety detectors for these vectors."
+        )
+
+
+# ─────────────────────────────────────────────
 # Print helpers
 # ---------------------------------------------
 
