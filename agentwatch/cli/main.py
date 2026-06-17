@@ -9,13 +9,18 @@ import asyncio
 import json
 from enum import Enum
 from pathlib import Path
-from typing import NoReturn
+from typing import TYPE_CHECKING, NoReturn
 
 import typer
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+
+if TYPE_CHECKING:
+    # httpx is imported lazily inside commands (optional dependency); this
+    # type-only import keeps the annotation without a hard runtime import.
+    import httpx
 
 app = typer.Typer(
     name="agentwatch",
@@ -85,7 +90,7 @@ def _api_headers(api_key: str | None) -> dict[str, str]:
     return {"X-Api-Key": api_key} if api_key else {}
 
 
-def _handle_http_status_error(exc, api_url: str) -> NoReturn:
+def _handle_http_status_error(exc: httpx.HTTPStatusError, api_url: str) -> NoReturn:
     """Print a consistent message for an HTTP error response, then exit."""
     if exc.response.status_code == 401:
         console.print(
@@ -338,7 +343,7 @@ def sessions(
                 resp.raise_for_status()
             except httpx.HTTPStatusError as exc:
                 _handle_http_status_error(exc, api_url)
-            except Exception as exc:
+            except httpx.HTTPError as exc:
                 console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
 
@@ -707,7 +712,7 @@ def status(
                 resp.raise_for_status()
             except httpx.HTTPStatusError as exc:
                 _handle_http_status_error(exc, api_url)
-            except Exception as exc:
+            except httpx.HTTPError as exc:
                 console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
 
@@ -1202,6 +1207,7 @@ def session_prune(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Preview what would be deleted without taking action"
     ),
+    api_key: str | None = API_KEY_OPTION,
 ) -> None:
     """[bold]Prune[/bold] old sessions, traces, and checkpoints to free up disk space."""
 
@@ -1229,20 +1235,13 @@ def session_prune(
                     "DELETE",
                     f"{api_url}/api/v1/sessions/prune",
                     params={"older_than_hours": hours, "dry_run": dry_run},
+                    headers=_api_headers(api_key),
                     timeout=30.0,
                 )
                 resp.raise_for_status()
             except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 401:
-                    console.print(
-                        f"[red]Authentication failed. Check your API key or permissions for {api_url}[/red]"
-                    )
-                else:
-                    console.print(
-                        f"[red]API request failed with status {exc.response.status_code}: {exc.response.text}[/red]"
-                    )
-                raise typer.Exit(1)
-            except Exception as exc:
+                _handle_http_status_error(exc, api_url)
+            except httpx.HTTPError as exc:
                 console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
 

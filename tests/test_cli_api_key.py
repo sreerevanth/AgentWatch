@@ -37,7 +37,8 @@ def _patch_client(resp):
     ctx = patch(
         "httpx.AsyncClient",
         return_value=MagicMock(
-            __aenter__=AsyncMock(return_value=mock_client), __aexit__=AsyncMock()
+            __aenter__=AsyncMock(return_value=mock_client),
+            __aexit__=AsyncMock(return_value=False),
         ),
     )
     return mock_client, ctx
@@ -96,6 +97,62 @@ def test_status_401_reports_auth_error():
     assert "AGENTWATCH_API_KEY" in result.stdout
 
 
+def test_export_sends_api_key_from_flag(tmp_path):
+    resp = MagicMock()
+    resp.raise_for_status.return_value = None
+    resp.status_code = 200
+    resp.json.return_value = {"session": {}, "steps": []}
+    mock_client, ctx = _patch_client(resp)
+    out = tmp_path / "session.json"
+    with ctx:
+        result = runner.invoke(
+            app, ["export", "sess1", "--api-key", "exp-key", "--output", str(out)]
+        )
+    assert result.exit_code == 0
+    assert _sent_headers(mock_client) == {"X-Api-Key": "exp-key"}
+
+
+def test_sessions_401_uses_shared_handler():
+    request = httpx.Request("GET", "http://localhost:8000/api/v1/sessions")
+    response = httpx.Response(401, request=request)
+    resp = MagicMock()
+    resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "Unauthorized", request=request, response=response
+    )
+    mock_client, ctx = _patch_client(resp)
+    with ctx:
+        result = runner.invoke(app, ["sessions", "--api-key", "bad"])
+    assert result.exit_code == 1
+    assert "Authentication failed" in result.stdout
+    assert "AGENTWATCH_API_KEY" in result.stdout
+
+
+def test_session_prune_sends_api_key_from_flag():
+    resp = MagicMock()
+    resp.raise_for_status.return_value = None
+    resp.status_code = 200
+    resp.json.return_value = {
+        "pruned_db_sessions": 0,
+        "pruned_trace_files": 0,
+        "pruned_checkpoint_files": 0,
+    }
+    mock_client = AsyncMock()
+    mock_client.request.return_value = resp
+    ctx = patch(
+        "httpx.AsyncClient",
+        return_value=MagicMock(
+            __aenter__=AsyncMock(return_value=mock_client),
+            __aexit__=AsyncMock(return_value=False),
+        ),
+    )
+    with ctx:
+        result = runner.invoke(
+            app, ["session", "prune", "--older-than", "30d", "--api-key", "prune-key"]
+        )
+    assert result.exit_code == 0
+    assert mock_client.request.call_args.kwargs["headers"] == {"X-Api-Key": "prune-key"}
+
+
 def test_compare_sends_api_key_on_all_requests():
     conf = MagicMock()
     conf.raise_for_status.return_value = None
@@ -112,7 +169,8 @@ def test_compare_sends_api_key_on_all_requests():
     ctx = patch(
         "httpx.AsyncClient",
         return_value=MagicMock(
-            __aenter__=AsyncMock(return_value=mock_client), __aexit__=AsyncMock()
+            __aenter__=AsyncMock(return_value=mock_client),
+            __aexit__=AsyncMock(return_value=False),
         ),
     )
     with ctx:
