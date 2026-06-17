@@ -23,7 +23,7 @@ _INJECTION_PATTERNS = [
     # Right-to-left override and related bidi control characters are used to
     # reverse or reorder visible text while keeping the underlying bytes intact,
     # making injected commands invisible or misleading to human reviewers.
-    (re.compile("[\u200f\u202a-\u202e\u2066-\u2069\ufeff]"), "bidi_control_chars"),
+    (re.compile(r"[​-‏‪-‮⁦-⁩﻿]"), "bidi_control_chars"),  # nosec B613 — bidi chars are the detection payload, not a TrojanSource attack
 ]
 
 

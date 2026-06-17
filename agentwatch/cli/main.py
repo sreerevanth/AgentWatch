@@ -10,12 +10,18 @@ import json
 import time
 from enum import Enum
 from pathlib import Path
+from typing import TYPE_CHECKING, NoReturn
 
 import typer
 from rich import box
 from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
+
+if TYPE_CHECKING:
+    # httpx is imported lazily inside commands (optional dependency); this
+    # type-only import keeps the annotation without a hard runtime import.
+    import httpx
 
 app = typer.Typer(
     name="agentwatch",
@@ -172,7 +178,42 @@ def _load_session_file(path: Path):
         return json.load(f)
 
 
-# ---------------------------------------------
+# ─────────────────────────────────────────────
+# API auth helpers
+# ─────────────────────────────────────────────
+
+# Reusable --api-key option for commands that call protected API endpoints.
+# Falls back to the AGENTWATCH_API_KEY environment variable when the flag is
+# omitted; an explicit flag takes precedence.
+API_KEY_OPTION = typer.Option(
+    None,
+    "--api-key",
+    envvar="AGENTWATCH_API_KEY",
+    help="API key for protected endpoints (or set AGENTWATCH_API_KEY).",
+)
+
+
+def _api_headers(api_key: str | None) -> dict[str, str]:
+    """Build request headers, sending X-Api-Key only when a key is provided."""
+    return {"X-Api-Key": api_key} if api_key else {}
+
+
+def _handle_http_status_error(exc: httpx.HTTPStatusError, api_url: str) -> NoReturn:
+    """Print a consistent message for an HTTP error response, then exit."""
+    if exc.response.status_code == 401:
+        console.print(
+            "[red]Authentication failed (401). Supply a valid key via --api-key "
+            f"or the AGENTWATCH_API_KEY environment variable for {api_url}.[/red]"
+        )
+    else:
+        console.print(
+            f"[red]API request failed with status {exc.response.status_code}: "
+            f"{exc.response.text}[/red]"
+        )
+    raise typer.Exit(1)
+
+
+# ─────────────────────────────────────────────
 # NEW HELPER: Dry-run printer
 # ---------------------------------------------
 
@@ -388,6 +429,7 @@ def sessions(
     api_url: str = typer.Option("http://localhost:8000", "--api"),
     limit: int = typer.Option(20, "--limit", "-n"),
     framework: str | None = typer.Option(None, "--framework"),
+    api_key: str | None = API_KEY_OPTION,
 ) -> None:
     """[bold]List[/bold] recent agent sessions from the AgentWatch API."""
 
@@ -400,14 +442,16 @@ def sessions(
 
         async with httpx.AsyncClient() as client:
             try:
-                with console.status("[cyan]Fetching sessions...[/cyan]", spinner="bouncingBar"):
-                    resp = await client.get(
-                        f"{api_url}/api/v1/sessions",
-                        params={"limit": limit, "framework": framework},
-                        timeout=10.0,
-                    )
+                resp = await client.get(
+                    f"{api_url}/api/v1/sessions",
+                    params={"limit": limit, "framework": framework},
+                    headers=_api_headers(api_key),
+                    timeout=10.0,
+                )
                 resp.raise_for_status()
-            except Exception as exc:
+            except httpx.HTTPStatusError as exc:
+                _handle_http_status_error(exc, api_url)
+            except httpx.HTTPError as exc:
                 console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
 
@@ -417,7 +461,167 @@ def sessions(
     asyncio.run(_run())
 
 
-# ---------------------------------------------
+# ─────────────────────────────────────────────
+# export command
+# ─────────────────────────────────────────────
+
+
+class ExportFormat(str, Enum):
+    json = "json"
+    md = "md"
+
+
+@app.command()
+def export(
+    session_id: str = typer.Argument(..., help="ID of the session to export"),
+    format: ExportFormat = typer.Option(
+        ExportFormat.json, "--format", help="Export format: json or md"
+    ),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Custom output file path"),
+    api_url: str = typer.Option("http://localhost:8000", "--api"),
+    api_key: str | None = API_KEY_OPTION,
+) -> None:
+    """[bold]Export[/bold] a session replay to a portable JSON or Markdown file."""
+
+    async def _run() -> None:
+        try:
+            import httpx
+        except ImportError:
+            console.print("[red]httpx not installed. Run: pip install httpx[/red]")
+            raise typer.Exit(1)
+
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(
+                    f"{api_url}/api/v1/sessions/{session_id}/replay",
+                    headers=_api_headers(api_key),
+                    timeout=10.0,
+                )
+                if resp.status_code == 404:
+                    console.print(f"[red]Session {session_id} not found.[/red]")
+                    raise typer.Exit(1)
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                _handle_http_status_error(exc, api_url)
+            except httpx.HTTPError as exc:
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
+                raise typer.Exit(1)
+
+        data = resp.json()
+
+        if format == ExportFormat.json:
+            out_path = output or Path(f"agentwatch-session-{session_id}.json")
+            with open(out_path, "w") as f:
+                json.dump(data, f, indent=2)
+            console.print(f"[green]{out_path.name} created successfully[/green]")
+
+        elif format == ExportFormat.md:
+            out_path = output or Path(f"agentwatch-session-{session_id}.md")
+
+            session = data.get("session", {})
+            steps = data.get("steps", [])
+
+            lines = [
+                f"# AgentWatch Session: {session.get('session_id', session_id)}",
+                "",
+                "## Session Overview",
+                f"- **Status**: {session.get('status', 'unknown')}",
+                f"- **Framework**: {session.get('framework', 'unknown')}",
+                f"- **Started at**: {session.get('started_at', 'unknown')}",
+                f"- **Ended at**: {session.get('ended_at', 'unknown')}",
+                f"- **Total Steps**: {len(steps)}",
+            ]
+
+            if session.get("goal"):
+                lines.extend(["", "### Goal", session.get("goal")])
+
+            fa = data.get("failure_analysis")
+            if fa:
+                lines.extend(
+                    [
+                        "",
+                        "## Failure Analysis",
+                        f"- **Primary Cause**: {fa.get('primary_cause', 'unknown')}",
+                    ]
+                )
+                if fa.get("recommendations"):
+                    lines.append("- **Recommendations**:")
+                    for rec in fa.get("recommendations", []):
+                        lines.append(f"  - {rec}")
+
+            lines.extend(["", "## Execution Timeline"])
+            for step in steps:
+                event = step.get("event", {})
+                idx = step.get("index", 0)
+                etype = event.get("event_type", "unknown")
+                status = event.get("status", "")
+
+                status_str = f" ({status})" if status else ""
+                lines.extend(
+                    [
+                        "",
+                        f"### Step {idx}",
+                        f"- **Type**: {etype}{status_str}",
+                    ]
+                )
+
+                tool_call = event.get("tool_call")
+                if tool_call:
+                    lines.extend(
+                        [
+                            f"- **Tool**: {tool_call.get('tool_name', 'unknown')}",
+                            "",
+                            "**Command**:",
+                            "```",
+                            tool_call.get("raw_command", ""),
+                            "```",
+                        ]
+                    )
+
+                tool_result = event.get("tool_result")
+                if tool_result:
+                    if tool_result.get("output"):
+                        lines.extend(
+                            [
+                                "",
+                                "**Output**:",
+                                "```",
+                                tool_result.get("output", ""),
+                                "```",
+                            ]
+                        )
+                    if tool_result.get("error"):
+                        lines.extend(
+                            [
+                                "",
+                                "**Error**:",
+                                "```",
+                                tool_result.get("error", ""),
+                                "```",
+                            ]
+                        )
+
+                safety = event.get("safety")
+                if safety and safety.get("blocked"):
+                    lines.extend(
+                        [
+                            "",
+                            "**Safety Block**:",
+                            f"- **Risk Level**: {safety.get('risk_level', 'unknown').upper()}",
+                            "- **Reasons**:",
+                        ]
+                    )
+                    for r in safety.get("reasons", []):
+                        lines.append(f"  - {r}")
+
+            with open(out_path, "w", encoding="utf-8") as f:
+                f.write("\n".join(lines) + "\n")
+            console.print(f"[green]{out_path.name} created successfully[/green]")
+
+    asyncio.run(_run())
+
+
+# ─────────────────────────────────────────────
 # confidence command
 # ---------------------------------------------
 
@@ -584,7 +788,7 @@ def safety(
 
 @server_app.command(name="start")
 def serve(
-    host: str = typer.Option("0.0.0.0", "--host"),
+    host: str = typer.Option("0.0.0.0", "--host"),  # nosec B104 — operator-overridable default
     port: int = typer.Option(8000, "--port"),
     reload: bool = typer.Option(False, "--reload"),
     dry_run: bool = typer.Option(
@@ -646,7 +850,7 @@ def serve(
 @server_app.command(name="status")
 def status(
     api_url: str = typer.Option("http://localhost:8000", "--api"),
-    refresh_rate: float = typer.Option(1.0, "--refresh", help="Refresh rate in seconds"),
+    api_key: str | None = API_KEY_OPTION,
 ) -> None:
     """[bold]Show[/bold] a real-time live dashboard of AgentWatch runtime status."""
 
@@ -660,11 +864,21 @@ def status(
             console.print("[red]Missing dependencies. Run: pip install httpx rich[/red]")
             raise typer.Exit(1)
 
-        def generate_dashboard(data, error_msg=None):
-            if error_msg:
-                return Panel(
-                    f"[red]{error_msg}[/red]", title="AgentWatch Error", border_style="red"
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(
+                    f"{api_url}/api/v1/dashboard/summary",
+                    headers=_api_headers(api_key),
+                    timeout=10.0,
                 )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                _handle_http_status_error(exc, api_url)
+            except httpx.HTTPError as exc:
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
+                raise typer.Exit(1)
+
+        data = resp.json()
 
             # Create sub-panels
             active = data.get("active_sessions", 0)
@@ -746,6 +960,7 @@ def compare(
     session_id_1: str = typer.Argument(..., help="ID of the first session to compare"),
     session_id_2: str = typer.Argument(..., help="ID of the second session to compare"),
     api_url: str = typer.Option("http://localhost:8000", "--api"),
+    api_key: str | None = API_KEY_OPTION,
 ) -> None:
     """[bold]Compare[/bold] confidence and quality metrics across two sessions."""
 
@@ -758,11 +973,16 @@ def compare(
 
         async with httpx.AsyncClient() as client:
             try:
+                headers = _api_headers(api_key)
                 conf1_resp = await client.get(
-                    f"{api_url}/api/v1/sessions/{session_id_1}/confidence", timeout=10.0
+                    f"{api_url}/api/v1/sessions/{session_id_1}/confidence",
+                    headers=headers,
+                    timeout=10.0,
                 )
                 conf2_resp = await client.get(
-                    f"{api_url}/api/v1/sessions/{session_id_2}/confidence", timeout=10.0
+                    f"{api_url}/api/v1/sessions/{session_id_2}/confidence",
+                    headers=headers,
+                    timeout=10.0,
                 )
 
                 if conf1_resp.status_code == 404:
@@ -783,10 +1003,14 @@ def compare(
                 conf2 = conf2_resp.json()
 
                 rep1_resp = await client.get(
-                    f"{api_url}/api/v1/sessions/{session_id_1}/replay", timeout=10.0
+                    f"{api_url}/api/v1/sessions/{session_id_1}/replay",
+                    headers=headers,
+                    timeout=10.0,
                 )
                 rep2_resp = await client.get(
-                    f"{api_url}/api/v1/sessions/{session_id_2}/replay", timeout=10.0
+                    f"{api_url}/api/v1/sessions/{session_id_2}/replay",
+                    headers=headers,
+                    timeout=10.0,
                 )
 
                 if rep1_resp.status_code == 404:
@@ -803,10 +1027,7 @@ def compare(
                 rep2 = rep2_resp.json()
 
             except httpx.HTTPStatusError as exc:
-                console.print(
-                    f"[red]API request failed with status {exc.response.status_code}: {exc.response.text}[/red]"
-                )
-                raise typer.Exit(1)
+                _handle_http_status_error(exc, api_url)
             except httpx.HTTPError as exc:
                 console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
@@ -1208,6 +1429,7 @@ def session_prune(
     dry_run: bool = typer.Option(
         False, "--dry-run", help="Preview what would be deleted without taking action"
     ),
+    api_key: str | None = API_KEY_OPTION,
 ) -> None:
     """[bold]Prune[/bold] old sessions, traces, and checkpoints to free up disk space."""
 
@@ -1235,20 +1457,13 @@ def session_prune(
                     "DELETE",
                     f"{api_url}/api/v1/sessions/prune",
                     params={"older_than_hours": hours, "dry_run": dry_run},
+                    headers=_api_headers(api_key),
                     timeout=30.0,
                 )
                 resp.raise_for_status()
             except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 401:
-                    console.print(
-                        f"[red]Authentication failed. Check your API key or permissions for {api_url}[/red]"
-                    )
-                else:
-                    console.print(
-                        f"[red]API request failed with status {exc.response.status_code}: {exc.response.text}[/red]"
-                    )
-                raise typer.Exit(1)
-            except Exception as exc:
+                _handle_http_status_error(exc, api_url)
+            except httpx.HTTPError as exc:
                 console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
 
