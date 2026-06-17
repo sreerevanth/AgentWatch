@@ -9,6 +9,7 @@ import asyncio
 import json
 from enum import Enum
 from pathlib import Path
+from typing import NoReturn
 
 import typer
 from rich import box
@@ -62,6 +63,41 @@ def _load_session_file(path: Path):
         raise typer.Exit(1)
     with open(path) as f:
         return json.load(f)
+
+
+# ─────────────────────────────────────────────
+# API auth helpers
+# ─────────────────────────────────────────────
+
+# Reusable --api-key option for commands that call protected API endpoints.
+# Falls back to the AGENTWATCH_API_KEY environment variable when the flag is
+# omitted; an explicit flag takes precedence.
+API_KEY_OPTION = typer.Option(
+    None,
+    "--api-key",
+    envvar="AGENTWATCH_API_KEY",
+    help="API key for protected endpoints (or set AGENTWATCH_API_KEY).",
+)
+
+
+def _api_headers(api_key: str | None) -> dict[str, str]:
+    """Build request headers, sending X-Api-Key only when a key is provided."""
+    return {"X-Api-Key": api_key} if api_key else {}
+
+
+def _handle_http_status_error(exc, api_url: str) -> NoReturn:
+    """Print a consistent message for an HTTP error response, then exit."""
+    if exc.response.status_code == 401:
+        console.print(
+            "[red]Authentication failed (401). Supply a valid key via --api-key "
+            f"or the AGENTWATCH_API_KEY environment variable for {api_url}.[/red]"
+        )
+    else:
+        console.print(
+            f"[red]API request failed with status {exc.response.status_code}: "
+            f"{exc.response.text}[/red]"
+        )
+    raise typer.Exit(1)
 
 
 # ─────────────────────────────────────────────
@@ -280,6 +316,7 @@ def sessions(
     api_url: str = typer.Option("http://localhost:8000", "--api"),
     limit: int = typer.Option(20, "--limit", "-n"),
     framework: str | None = typer.Option(None, "--framework"),
+    api_key: str | None = API_KEY_OPTION,
 ) -> None:
     """[bold]List[/bold] recent agent sessions from the AgentWatch API."""
 
@@ -295,9 +332,12 @@ def sessions(
                 resp = await client.get(
                     f"{api_url}/api/v1/sessions",
                     params={"limit": limit, "framework": framework},
+                    headers=_api_headers(api_key),
                     timeout=10.0,
                 )
                 resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                _handle_http_status_error(exc, api_url)
             except Exception as exc:
                 console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
@@ -326,6 +366,7 @@ def export(
     ),
     output: Path | None = typer.Option(None, "--output", "-o", help="Custom output file path"),
     api_url: str = typer.Option("http://localhost:8000", "--api"),
+    api_key: str | None = API_KEY_OPTION,
 ) -> None:
     """[bold]Export[/bold] a session replay to a portable JSON or Markdown file."""
 
@@ -340,12 +381,15 @@ def export(
             try:
                 resp = await client.get(
                     f"{api_url}/api/v1/sessions/{session_id}/replay",
+                    headers=_api_headers(api_key),
                     timeout=10.0,
                 )
                 if resp.status_code == 404:
                     console.print(f"[red]Session {session_id} not found.[/red]")
                     raise typer.Exit(1)
                 resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                _handle_http_status_error(exc, api_url)
             except httpx.HTTPError as exc:
                 console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
@@ -642,6 +686,7 @@ def serve(
 @app.command()
 def status(
     api_url: str = typer.Option("http://localhost:8000", "--api"),
+    api_key: str | None = API_KEY_OPTION,
 ) -> None:
     """[bold]Show[/bold] a real-time summary of AgentWatch runtime status."""
 
@@ -656,19 +701,12 @@ def status(
             try:
                 resp = await client.get(
                     f"{api_url}/api/v1/dashboard/summary",
+                    headers=_api_headers(api_key),
                     timeout=10.0,
                 )
                 resp.raise_for_status()
             except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 401:
-                    console.print(
-                        f"[red]Authentication failed. Check your API key or permissions for {api_url}[/red]"
-                    )
-                else:
-                    console.print(
-                        f"[red]API request failed with status {exc.response.status_code}: {exc.response.text}[/red]"
-                    )
-                raise typer.Exit(1)
+                _handle_http_status_error(exc, api_url)
             except Exception as exc:
                 console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
@@ -708,6 +746,7 @@ def compare(
     session_id_1: str = typer.Argument(..., help="ID of the first session to compare"),
     session_id_2: str = typer.Argument(..., help="ID of the second session to compare"),
     api_url: str = typer.Option("http://localhost:8000", "--api"),
+    api_key: str | None = API_KEY_OPTION,
 ) -> None:
     """[bold]Compare[/bold] confidence and quality metrics across two sessions."""
 
@@ -720,11 +759,16 @@ def compare(
 
         async with httpx.AsyncClient() as client:
             try:
+                headers = _api_headers(api_key)
                 conf1_resp = await client.get(
-                    f"{api_url}/api/v1/sessions/{session_id_1}/confidence", timeout=10.0
+                    f"{api_url}/api/v1/sessions/{session_id_1}/confidence",
+                    headers=headers,
+                    timeout=10.0,
                 )
                 conf2_resp = await client.get(
-                    f"{api_url}/api/v1/sessions/{session_id_2}/confidence", timeout=10.0
+                    f"{api_url}/api/v1/sessions/{session_id_2}/confidence",
+                    headers=headers,
+                    timeout=10.0,
                 )
 
                 if conf1_resp.status_code == 404:
@@ -745,10 +789,14 @@ def compare(
                 conf2 = conf2_resp.json()
 
                 rep1_resp = await client.get(
-                    f"{api_url}/api/v1/sessions/{session_id_1}/replay", timeout=10.0
+                    f"{api_url}/api/v1/sessions/{session_id_1}/replay",
+                    headers=headers,
+                    timeout=10.0,
                 )
                 rep2_resp = await client.get(
-                    f"{api_url}/api/v1/sessions/{session_id_2}/replay", timeout=10.0
+                    f"{api_url}/api/v1/sessions/{session_id_2}/replay",
+                    headers=headers,
+                    timeout=10.0,
                 )
 
                 if rep1_resp.status_code == 404:
@@ -765,10 +813,7 @@ def compare(
                 rep2 = rep2_resp.json()
 
             except httpx.HTTPStatusError as exc:
-                console.print(
-                    f"[red]API request failed with status {exc.response.status_code}: {exc.response.text}[/red]"
-                )
-                raise typer.Exit(1)
+                _handle_http_status_error(exc, api_url)
             except httpx.HTTPError as exc:
                 console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
