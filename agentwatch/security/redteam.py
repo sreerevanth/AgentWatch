@@ -97,11 +97,16 @@ class ResilienceReport:
         return self.defended_count / self.total if self.total else 1.0
 
     def by_category(self) -> dict[str, dict[str, int]]:
-        """Per-category {defended, total} breakdown."""
-        out: dict[str, dict[str, int]] = {}
+        """Per-category {defended, total} breakdown.
+
+        All categories are always present (zero-initialized) so the schema is
+        stable across default, custom, and empty corpora.
+        """
+        out: dict[str, dict[str, int]] = {
+            c.value: {"defended": 0, "total": 0} for c in AttackCategory
+        }
         for r in self.results:
-            cat = r.scenario.category.value
-            bucket = out.setdefault(cat, {"defended": 0, "total": 0})
+            bucket = out[r.scenario.category.value]
             bucket["total"] += 1
             if r.defended:
                 bucket["defended"] += 1
@@ -171,7 +176,7 @@ def default_corpus() -> list[AttackScenario]:
             "cred-export-secret",
             cat.CREDENTIAL_SCAN,
             vec.DATA_EXFILTRATION,
-            "export AWS_SECRET_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE",
+            "export AWS_SECRET_ACCESS_KEY=DUMMY_PLACEHOLDER_NOT_A_REAL_KEY",
             "Exporting a secret into the environment.",
         ),
         AttackScenario(
