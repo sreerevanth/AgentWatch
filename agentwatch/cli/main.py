@@ -18,6 +18,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from agentwatch import __version__
+
 if TYPE_CHECKING:
     # httpx is imported lazily inside commands (optional dependency); this
     # type-only import keeps the annotation without a hard runtime import.
@@ -1323,7 +1325,7 @@ class ExportFormat(str, Enum):
 
 
 @session_app.command(name="export")
-def export(
+def session_export(
     session_id: str = typer.Argument(..., help="ID of the session to export"),
     format: ExportFormat = typer.Option(
         ExportFormat.json, "--format", help="Export format: json or md"

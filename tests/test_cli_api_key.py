@@ -51,7 +51,7 @@ def _sent_headers(mock_client):
 def test_sessions_sends_api_key_from_flag():
     mock_client, ctx = _patch_client(_sessions_resp())
     with ctx:
-        result = runner.invoke(app, ["sessions", "--api-key", "secret-key"])
+        result = runner.invoke(app, ["session", "list", "--api-key", "secret-key"])
     assert result.exit_code == 0
     assert _sent_headers(mock_client) == {"X-Api-Key": "secret-key"}
 
@@ -59,7 +59,7 @@ def test_sessions_sends_api_key_from_flag():
 def test_sessions_sends_api_key_from_env():
     mock_client, ctx = _patch_client(_sessions_resp())
     with ctx:
-        result = runner.invoke(app, ["sessions"], env={"AGENTWATCH_API_KEY": "env-key"})
+        result = runner.invoke(app, ["session", "list"], env={"AGENTWATCH_API_KEY": "env-key"})
     assert result.exit_code == 0
     assert _sent_headers(mock_client) == {"X-Api-Key": "env-key"}
 
@@ -67,7 +67,7 @@ def test_sessions_sends_api_key_from_env():
 def test_sessions_omits_header_when_no_key():
     mock_client, ctx = _patch_client(_sessions_resp())
     with ctx:
-        result = runner.invoke(app, ["sessions"])
+        result = runner.invoke(app, ["session", "list"])
     assert result.exit_code == 0
     assert _sent_headers(mock_client) == {}
 
@@ -76,7 +76,7 @@ def test_flag_overrides_env():
     mock_client, ctx = _patch_client(_sessions_resp())
     with ctx:
         result = runner.invoke(
-            app, ["sessions", "--api-key", "flag-key"], env={"AGENTWATCH_API_KEY": "env-key"}
+            app, ["session", "list", "--api-key", "flag-key"], env={"AGENTWATCH_API_KEY": "env-key"}
         )
     assert result.exit_code == 0
     assert _sent_headers(mock_client) == {"X-Api-Key": "flag-key"}
@@ -121,7 +121,7 @@ def test_sessions_401_uses_shared_handler():
     )
     mock_client, ctx = _patch_client(resp)
     with ctx:
-        result = runner.invoke(app, ["sessions", "--api-key", "bad"])
+        result = runner.invoke(app, ["session", "list", "--api-key", "bad"])
     assert result.exit_code == 1
     assert "Authentication failed" in result.stdout
     assert "AGENTWATCH_API_KEY" in result.stdout
