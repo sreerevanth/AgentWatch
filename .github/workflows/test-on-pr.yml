@@ -23,6 +23,11 @@ jobs:
       - name: Install package
         run: pip install -e ".[dev]"
 
+      - name: Security Vulnerability Audit
+        run: |
+          pip install pip-audit
+          pip-audit
+
       - name: Run tests with coverage
         id: pytest
         continue-on-error: true
