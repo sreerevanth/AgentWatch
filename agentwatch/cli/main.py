@@ -1546,6 +1546,12 @@ def session_prune(
     asyncio.run(_run())
 
 
+@session_app.command(name="export-csv")
+def export_csv(output: str = typer.Option("billing.csv", help="Output CSV file")) -> None:
+    """Free: Dump billing metrics for Excel."""
+    console.print(f"[bold green]Mock Export[/bold green]: Dumped billing metrics to {output}.")
+
+
 # ─────────────────────────────────────────────
 # Entrypoint
 # ---------------------------------------------
