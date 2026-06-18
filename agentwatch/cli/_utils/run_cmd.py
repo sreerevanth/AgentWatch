@@ -5,11 +5,12 @@ logger = logging.getLogger(__name__)
 
 
 def run_validated_command(
-    cmd_args: list[str], check: bool = True, timeout: int | float | None = None
+    cmd_args: list[str], check: bool = True, timeout: int | float | None = 30.0
 ) -> tuple[int, str, str]:
     """
     Executes a shell command safely using a list of arguments with shell=False.
     Validates that the command is a non-empty list of strings to prevent injection.
+    Uses a bounded timeout by default to avoid hanging subprocesses.
     """
     # Validation Logic: Enforce strict list of strings
     if not cmd_args or not isinstance(cmd_args, list):
