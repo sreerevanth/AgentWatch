@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
-"""
-AgentWatch Demo Script
-Demonstrates the full AgentWatch stack without requiring Claude Code:
-- Event bus
-- Safety engine (blocks dangerous commands)
-- Confidence scoring
-- Replay engine
-- Memory engine
-- Multi-agent orchestration
+"""Interactive Application Suite Demos for AgentWatch.
+
+This module provides step-by-step CLI simulation scenarios demonstrating safety engines, 
+session replay mechanisms, real-time model confidence evaluation tracks, episodic causal memory, 
+and advanced orchestration multi-agent task execution loops.
 """
 
 from __future__ import annotations
@@ -76,6 +72,12 @@ def section(title: str) -> None:
 
 
 def build_demo_session():
+    """Construct a dummy active session stream containing simulated hazardous operations.
+
+    Returns:
+        tuple[AgentSession, list[AgentEvent]]: A localized structural agent wrapper configuration
+            coupled with sequential lifecycle and tool execution telemetry events.
+    """
     session_id = "demo-session-001"
     agent_id = "demo-agent"
 
@@ -205,6 +207,7 @@ def build_demo_session():
 
 
 async def demo_safety():
+    """Simulate processing shell commands through the rule matching patterns engine."""
     section("DEMO 1 — Safety Engine")
 
     engine = SafetyEngine()
@@ -257,6 +260,7 @@ async def demo_safety():
 
 
 async def demo_replay():
+    """Publish dummy streams onto the bus tracking linear runtime replay states."""
     section("DEMO 2 — Trace Collection & Replay Engine")
 
     bus = EventBus()
@@ -320,6 +324,7 @@ async def demo_replay():
 
 
 async def demo_confidence():
+    """Evaluate synthetic session chains generating full diagnostic confidence metrics summaries."""
     section("DEMO 3 — Confidence Scoring Engine")
 
     scorer = ConfidenceScorer()
@@ -374,6 +379,7 @@ async def demo_confidence():
 
 
 async def demo_memory():
+    """Populate persistent contextual memories and run structural vector semantic search checks."""
     section("DEMO 4 — Memory Engine")
 
     memory = MemoryEngine()
@@ -447,6 +453,7 @@ async def demo_memory():
 
 
 async def demo_orchestration():
+    """Verify directed acyclic task graph generation pipelines across distributed roles agents."""
     section("DEMO 5 — Multi-Agent Orchestration")
 
     from agentwatch.orchestration.engine import (
@@ -564,9 +571,9 @@ async def main():
     print(f"\n{bold(green('✓ All demos complete'))}\n")
     print("Next steps:")
     print(f"  {bold('agentwatch serve')}           — Start the API server")
-    print(f"  {bold('agentwatch watch "<prompt>"')} — Watch a Claude Code session")
+    print(f"  {bold('agentwatch watch \"<prompt>\"')} — Watch a Claude Code session")
     print(f"  {bold('agentwatch replay <file>')}   — Replay a saved session")
-    print(f"  {bold('agentwatch safety "<cmd>"')}  — Risk-score a command")
+    print(f"  {bold('agentwatch safety \"<cmd>\"')}  — Risk-score a command")
     print(f"  {bold('agentwatch sessions')}         — List sessions via API\n")
 
 
