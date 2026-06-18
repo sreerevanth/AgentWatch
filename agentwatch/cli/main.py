@@ -857,14 +857,13 @@ def top(
 
     async def _run() -> None:
         try:
-            import httpx
             import asyncio
             from typing import Any
-            from rich.align import Align
-            from rich.layout import Layout
+
+            import httpx
             from rich.live import Live
-            from rich.table import Table
             from rich.panel import Panel
+            from rich.table import Table
         except ImportError:
             console.print("[red]Missing dependencies. Run: pip install httpx rich[/red]")
             raise typer.Exit(1)
