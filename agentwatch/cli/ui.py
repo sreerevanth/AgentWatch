@@ -16,13 +16,32 @@ COLOR_INDIGO = "#5C6BC0"
 COLOR_DIM = "dim"
 COLOR_WHITE = "white"
 
+def get_real_metrics() -> dict:
+    try:
+        import httpx
+        resp = httpx.get("http://localhost:8000/api/v1/dashboard/summary", timeout=0.5)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:
+        pass
+    return {}
+
 def get_top_panel():
     status_text = Text()
-    status_text.append("Opus 4.8", style=COLOR_CYAN)
-    status_text.append(" · effort: xhigh · advisor: fable-5\n", style=COLOR_WHITE)
-    status_text.append("ctx: 100k/1M 10% · in: 2649.7M · out: 1k · ", style=COLOR_WHITE)
-    status_text.append("cache: 98%", style=COLOR_MUTED_GREEN)
-    status_text.append(" · 5h: 1% · 7d: 0%\n", style=COLOR_WHITE)
+    
+    metrics = get_real_metrics()
+    if metrics:
+        tokens = metrics.get("total_tokens", 0)
+        cost = metrics.get("estimated_cost_usd", 0.0)
+        active = metrics.get("active_sessions", 0)
+        blocked = metrics.get("blocked_sessions", 0)
+        
+        tokens_k = tokens / 1000
+        
+        status_text.append(f"tokens: {tokens_k:.1f}k · cost: ${cost:.3f} · active: {active} · blocked: {blocked}\n", style=COLOR_WHITE)
+    else:
+        status_text.append("tokens: N/A · cost: N/A · active: N/A · blocked: N/A (api offline)\n", style=COLOR_DIM)
+        
     status_text.append("▶▶ bypass permissions on (shift+tab to cycle)", style=f"{COLOR_RED_CRIMSON} bold")
 
     return Panel(
