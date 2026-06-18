@@ -105,11 +105,13 @@ def _start_repl_session():
         )
     )
 
+    from agentwatch.cli.ui import get_top_panel
     while True:
         try:
+            console.print(get_top_panel())
             # High-end cinematic prompt
             cmd_line = Prompt.ask(
-                "\n[bold cyan]AW[/bold cyan][dim]:[/dim][bold green]CORE[/bold green] [bold white]>[/bold white]"
+                "[bold cyan]AW[/bold cyan][dim]:[/dim][bold green]CORE[/bold green] [bold white]>[/bold white]"
             )
             cmd_line = cmd_line.strip()
             if not cmd_line:

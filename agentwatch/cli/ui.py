@@ -117,7 +117,6 @@ def render_ui():
     footer_text = Text("\nPress Enter to continue...", style=f"bold {COLOR_INDIGO}")
 
     # Render the layout
-    console.print(get_top_panel())
     console.print(main_panel)
     console.print(footer_text)
 
