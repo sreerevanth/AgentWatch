@@ -1546,8 +1546,8 @@ def session_prune(
     asyncio.run(_run())
 
 
-@app.command(name="compare")
-def compare(
+@app.command(name="compare-models")
+def compare_models(
     task: str = typer.Option(..., help="Task script"),
     model_a: str = typer.Option(..., help="Model A"),
     model_b: str = typer.Option(..., help="Model B"),
