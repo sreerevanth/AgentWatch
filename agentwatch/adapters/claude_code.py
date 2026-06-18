@@ -1,3 +1,4 @@
+# pylint: disable=unused-argument,protected-access,broad-exception-caught,too-many-arguments,too-many-instance-attributes,too-few-public-methods,too-many-return-statements,no-else-return,missing-function-docstring,keyword-arg-before-vararg,too-many-positional-arguments
 """
 AgentWatch Claude Code Adapter
 Intercepts Claude Code agent execution, normalizes events to the

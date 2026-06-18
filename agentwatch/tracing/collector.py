@@ -105,6 +105,7 @@ class TraceCollector:
         max_traces: int = 500,
         storage_path: Path | None = None,
         flush_interval_seconds: float = 30.0,
+        hipaa_compliance_mode: bool = False,
     ):
         self._traces: dict[str, Trace] = {}
         self._session_index: dict[str, AgentSession] = {}
@@ -114,9 +115,20 @@ class TraceCollector:
         self._event_buffer: list[AgentEvent] = []
         self._lock = asyncio.Lock()
         self._stats: dict[str, int] = defaultdict(int)
+        self.hipaa_compliance_mode = hipaa_compliance_mode
 
     async def ingest(self, event: AgentEvent) -> None:
         """Process one event into the trace collection."""
+        if self.hipaa_compliance_mode:
+            from agentwatch.governance.hipaa import redact_phi
+            # Redact common text fields
+            if event.goal:
+                event.goal = redact_phi(event.goal).redacted
+            if event.tool_call and event.tool_call.raw_command:
+                event.tool_call.raw_command = redact_phi(event.tool_call.raw_command).redacted
+            if getattr(event, "content", None):
+                event.content = redact_phi(event.content).redacted
+
         async with self._lock:
             self._stats["ingested"] += 1
 

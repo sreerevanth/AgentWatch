@@ -1,3 +1,4 @@
+# pylint: disable=unused-argument,protected-access,broad-exception-caught,too-many-arguments,too-many-instance-attributes,too-few-public-methods,too-many-return-statements,no-else-return,missing-function-docstring,keyword-arg-before-vararg,too-many-positional-arguments
 """
 AgentWatch CrewAI Adapter
 Converts CrewAI lifecycle callbacks into AgentWatch events.

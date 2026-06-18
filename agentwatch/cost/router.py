@@ -12,6 +12,7 @@ import statistics
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,28 @@ class ModelRouter:
             }
             for m, h in self._health.items()
         }
+
+    async def execute_with_fallback(self, func) -> Any:
+        """
+        Execute an async function that takes a model name as argument.
+        If it raises an Exception (like 5xx, timeout), mark the model as error
+        and failover to the next healthy model.
+        """
+        attempted: list[str] = []
+        while True:
+            decision = self.choose()
+            model = decision.chosen
+            
+            if model in attempted:
+                raise RuntimeError(f"All models failed. Attempted: {attempted}")
+                
+            attempted.append(model)
+            try:
+                # Assuming the function accepts the chosen model name
+                return await func(model)
+            except Exception as exc:
+                logger.warning("Model %s failed: %s. Failing over...", model, exc)
+                self.observe(model, error=True)
 
 
 __all__ = ["ModelRouter", "ModelHealth", "RouteDecision"]

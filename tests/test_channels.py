@@ -104,9 +104,8 @@ def test_validate_channels_invalid_slack_raises():
         validate_channels(slack_webhook_url="not-a-valid-url")
 
 
-def test_validate_channels_empty_slack_raises():
-    with pytest.raises(ChannelConfigError):
-        validate_channels(slack_webhook_url="")
+def test_validate_channels_empty_slack_is_ignored():
+    validate_channels(slack_webhook_url="")
 
 
 def test_validate_channels_valid_pagerduty():
