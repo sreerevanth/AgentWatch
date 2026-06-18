@@ -274,7 +274,7 @@ def rm_targets_critical_path(text: str) -> bool:
                     has_force = True
                 continue
 
-        if _RM_CRITICAL_PATH_RE.match(arg):
+        if _RM_CRITICAL_PATH_RE.match(arg.strip("'\"")):
             has_critical_path = True
 
     return has_recursive and has_force and has_critical_path

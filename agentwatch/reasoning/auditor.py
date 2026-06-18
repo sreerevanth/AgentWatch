@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from statistics import mean
-from typing import Any
+from typing import Any, cast
 
 from agentwatch.core.schema import AgentEvent, EventType
 
@@ -93,10 +93,10 @@ class ReasoningAuditor:
             return StepAudit(
                 step_index=step_index,
                 event_id=event.event_id,
-                score=float(judged.get("score", 0.5)),
+                score=float(cast(float, judged.get("score", 0.5))),
                 verdict=str(judged.get("verdict", "uncertain")),
                 rationale=str(judged.get("rationale", "No rationale returned.")),
-                evidence=[str(item) for item in judged.get("evidence", [])],
+                evidence=[str(item) for item in cast(list[Any], judged.get("evidence", []))],
             )
         return self._heuristic_audit(step_index, event)
 

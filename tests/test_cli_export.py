@@ -1,6 +1,9 @@
 import json
+import os
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 from typer.testing import CliRunner
 
@@ -39,7 +42,6 @@ DUMMY_REPLAY = {
     },
 }
 
-
 @pytest.fixture
 def mock_httpx_client():
     with patch("httpx.AsyncClient") as mock_client_cls:
@@ -60,7 +62,7 @@ def test_export_json(mock_httpx_client, tmp_path):
     out_file = tmp_path / "out.json"
 
     result = runner.invoke(
-        app, ["export", "abc-123", "--format", "json", "--output", str(out_file)]
+        app, ["session", "export", "abc-123", "--format", "json", "--output", str(out_file)]
     )
     assert result.exit_code == 0
     assert "out.json created successfully" in result.stdout
@@ -77,7 +79,7 @@ def test_export_md(mock_httpx_client, tmp_path):
     mock_instance, mock_response = mock_httpx_client
     out_file = tmp_path / "out.md"
 
-    result = runner.invoke(app, ["export", "abc-123", "--format", "md", "--output", str(out_file)])
+    result = runner.invoke(app, ["session", "export", "abc-123", "--format", "md", "--output", str(out_file)])
     assert result.exit_code == 0
     assert "out.md created successfully" in result.stdout
 
@@ -97,7 +99,7 @@ def test_export_md(mock_httpx_client, tmp_path):
 
 
 def test_export_invalid_format():
-    result = runner.invoke(app, ["export", "abc-123", "--format", "xml"])
+    result = runner.invoke(app, ["session", "export", "abc-123", "--format", "xml"])
     assert result.exit_code != 0
     assert "Invalid value" in result.stdout + (result.stderr or "")
     assert "not one of 'json', 'md'" in result.stdout + (result.stderr or "")
@@ -110,6 +112,6 @@ def test_export_404(mock_httpx_client):
     # We want it to raise httpx.HTTPError when raise_for_status is called,
     # OR we handle 404 manually before that. Our code handles 404 manually.
 
-    result = runner.invoke(app, ["export", "abc-123"])
+    result = runner.invoke(app, ["session", "export", "abc-123"])
     assert result.exit_code == 1
     assert "Session abc-123 not found" in result.stdout

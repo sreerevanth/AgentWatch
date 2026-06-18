@@ -31,6 +31,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
+from agentwatch.api.auth import require_permission
 from agentwatch.core.event_bus import get_event_bus
 from agentwatch.core.models import Repository, init_db
 from agentwatch.core.safety import RiskScorer, SafetyEngine, SafetyPolicy
@@ -886,7 +887,10 @@ async def rollback_session(
 
 
 @app.get("/api/v1/safety/policy")
-async def get_safety_policy(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+async def get_safety_policy(
+    _auth: None = Depends(_require_api_key),
+    _perm: object = Depends(require_permission("policy:read")),
+) -> dict[str, Any]:
     policy = _safety_engine.policy
     return {
         "policy_id": policy.policy_id,
@@ -901,7 +905,9 @@ async def get_safety_policy(_auth: None = Depends(_require_api_key)) -> dict[str
 
 @app.put("/api/v1/safety/policy")
 async def update_safety_policy(
-    update: SafetyPolicyUpdate, _auth: None = Depends(_require_api_key)
+    update: SafetyPolicyUpdate,
+    _auth: None = Depends(_require_api_key),
+    _perm: object = Depends(require_permission("policy:write")),
 ) -> dict[str, Any]:
     policy = SafetyPolicy(
         policy_id="api-configured",
@@ -1148,4 +1154,4 @@ def create_app() -> FastAPI:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")  # nosec B104 — intentional bind for container/dev entrypoint

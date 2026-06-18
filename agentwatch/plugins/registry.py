@@ -74,7 +74,7 @@ class PluginRegistry:
     def get(self, plugin_id: str) -> PluginRecord | None:
         return self._plugins.get(plugin_id)
 
-    def list(self, *, enabled_only: bool = False) -> list[PluginRecord]:
+    def list(self, *, enabled_only: bool = False) -> builtins.list[PluginRecord]:
         records = list(self._plugins.values())
         if enabled_only:
             records = [r for r in records if r.enabled]

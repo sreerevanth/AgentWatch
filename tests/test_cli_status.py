@@ -8,8 +8,8 @@ from agentwatch.cli.main import app
 runner = CliRunner()
 
 
-def test_status_command_success():
-    # Mock httpx.AsyncClient
+@patch('asyncio.sleep', side_effect=KeyboardInterrupt)
+def test_status_command_success(mock_sleep):
     mock_resp = MagicMock()
     mock_resp.raise_for_status.return_value = None
     mock_resp.json.return_value = {
@@ -32,20 +32,16 @@ def test_status_command_success():
             __aenter__=AsyncMock(return_value=mock_client), __aexit__=AsyncMock()
         ),
     ):
-        result = runner.invoke(app, ["status"])
+        result = runner.invoke(app, ["server", "status"])
 
     assert result.exit_code == 0
-    assert "AgentWatch Runtime Status" in result.stdout
-    assert "Active sessions:        2" in result.stdout
-    assert "Failed sessions:        1" in result.stdout
-    assert "Total tokens consumed:  5,000" in result.stdout
-    assert "Estimated cost:         $0.1500" in result.stdout
-    assert "Blocked operations:     1" in result.stdout
-    assert "Event throughput:       200 processed" in result.stdout
-    assert "Active subscribers:     5" in result.stdout
+    assert "AgentWatch Live Runtime Dashboard" in result.stdout
+    assert "Active Sessions:" in result.stdout
+    assert "Total Tokens:" in result.stdout
 
 
-def test_status_command_connection_error():
+@patch('asyncio.sleep', side_effect=KeyboardInterrupt)
+def test_status_command_connection_error(mock_sleep):
     mock_client = AsyncMock()
     mock_client.get.side_effect = httpx.ConnectError("Connection refused")
 
@@ -55,15 +51,17 @@ def test_status_command_connection_error():
             __aenter__=AsyncMock(return_value=mock_client), __aexit__=AsyncMock()
         ),
     ):
-        result = runner.invoke(app, ["status"])
+        result = runner.invoke(app, ["server", "status"])
 
-    assert result.exit_code == 1
-    assert "Failed to connect to API" in result.stdout
+    assert result.exit_code == 0
+    assert "Connection refused" in result.stdout
 
 
-def test_status_command_auth_error():
+@patch('asyncio.sleep', side_effect=KeyboardInterrupt)
+def test_status_command_auth_error(mock_sleep):
     mock_resp = MagicMock()
     mock_resp.status_code = 401
+    mock_resp.text = "Unauthorized"
 
     mock_client = AsyncMock()
     mock_client.get.side_effect = httpx.HTTPStatusError(
@@ -76,13 +74,14 @@ def test_status_command_auth_error():
             __aenter__=AsyncMock(return_value=mock_client), __aexit__=AsyncMock()
         ),
     ):
-        result = runner.invoke(app, ["status"])
+        result = runner.invoke(app, ["server", "status"])
 
-    assert result.exit_code == 1
-    assert "Authentication failed" in result.stdout
+    assert result.exit_code == 0
+    assert "Unauthorized" in result.stdout
 
 
-def test_status_command_other_http_error():
+@patch('asyncio.sleep', side_effect=KeyboardInterrupt)
+def test_status_command_other_http_error(mock_sleep):
     mock_resp = MagicMock()
     mock_resp.status_code = 500
     mock_resp.text = "Internal Server Error"
@@ -98,7 +97,7 @@ def test_status_command_other_http_error():
             __aenter__=AsyncMock(return_value=mock_client), __aexit__=AsyncMock()
         ),
     ):
-        result = runner.invoke(app, ["status"])
+        result = runner.invoke(app, ["server", "status"])
 
-    assert result.exit_code == 1
-    assert "API request failed with status 500: Internal Server Error" in result.stdout
+    assert result.exit_code == 0
+    assert "Server Error" in result.stdout

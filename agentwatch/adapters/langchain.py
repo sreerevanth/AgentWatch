@@ -113,7 +113,7 @@ class AgentWatchCallbackHandler:
                         completion_tokens=usage_meta.get("completion_tokens", 0),
                         total_tokens=usage_meta.get("total_tokens", 0),
                     )
-        except Exception:  # noqa: S110
+        except Exception:  # noqa: S110  # nosec B110 — malformed usage metadata is safe to skip
             pass  # Malformed usage metadata — safe to ignore, event still emits
 
         self._emit_sync(event)
