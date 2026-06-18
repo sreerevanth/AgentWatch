@@ -28,7 +28,7 @@ _EXFIL_PATTERNS = [
     re.compile(r"aHR0cDovL[a-zA-Z0-9+/=]+", re.I),  # http://
 ]
 
-_ALLOWLIST = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+_ALLOWLIST = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}  # nosec B104 — string literal in an allow-list, not a socket bind
 
 
 @dataclass

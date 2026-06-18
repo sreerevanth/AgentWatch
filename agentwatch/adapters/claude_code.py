@@ -365,7 +365,8 @@ class ClaudeCodeAdapter:
             env=env,
         )
 
-        assert process.stdout is not None
+        if process.stdout is None:  # pragma: no cover - defensive
+            raise RuntimeError("Claude Code subprocess produced no stdout stream")
 
         async for raw_line in process.stdout:
             line = raw_line.decode("utf-8", errors="replace")

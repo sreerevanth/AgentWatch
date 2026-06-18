@@ -1,19 +1,19 @@
 {
   "errors": [],
-  "generated_at": "2026-06-13T15:50:15Z",
+  "generated_at": "2026-06-15T15:01:30Z",
   "metrics": {
     "_totals": {
-      "CONFIDENCE.HIGH": 10,
+      "CONFIDENCE.HIGH": 6,
       "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 4,
+      "CONFIDENCE.MEDIUM": 3,
       "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 2,
-      "SEVERITY.LOW": 9,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 6,
       "SEVERITY.MEDIUM": 3,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 14986,
-      "nosec": 0,
-      "skipped_tests": 0
+      "loc": 15497,
+      "nosec": 6,
+      "skipped_tests": 3
     },
     "agentwatch/__init__.py": {
       "CONFIDENCE.HIGH": 0,
@@ -50,7 +50,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 7,
+      "loc": 8,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -132,6 +132,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "agentwatch/adapters/openai_agents.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 69,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "agentwatch/adapters/openclaw.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -171,6 +184,19 @@
       "nosec": 0,
       "skipped_tests": 0
     },
+    "agentwatch/alerting/channels.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 83,
+      "nosec": 0,
+      "skipped_tests": 0
+    },
     "agentwatch/alerting/engine.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
@@ -180,7 +206,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 101,
+      "loc": 107,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -219,8 +245,21 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 1,
+      "loc": 0,
       "nosec": 0,
+      "skipped_tests": 0
+    },
+    "agentwatch/cli/animator.py": {
+      "CONFIDENCE.HIGH": 0,
+      "CONFIDENCE.LOW": 0,
+      "CONFIDENCE.MEDIUM": 0,
+      "CONFIDENCE.UNDEFINED": 0,
+      "SEVERITY.HIGH": 0,
+      "SEVERITY.LOW": 0,
+      "SEVERITY.MEDIUM": 0,
+      "SEVERITY.UNDEFINED": 0,
+      "loc": 127,
+      "nosec": 5,
       "skipped_tests": 0
     },
     "agentwatch/cli/demo.py": {
@@ -245,8 +284,8 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 1,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 494,
-      "nosec": 0,
+      "loc": 686,
+      "nosec": 1,
       "skipped_tests": 0
     },
     "agentwatch/cli/verify_env.py": {
@@ -258,7 +297,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 61,
+      "loc": 93,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -297,7 +336,7 @@
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
-      "loc": 302,
+      "loc": 304,
       "nosec": 0,
       "skipped_tests": 0
     },
@@ -317,9 +356,9 @@
     "agentwatch/core/injection.py": {
       "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
-      "CONFIDENCE.MEDIUM": 1,
+      "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 1,
+      "SEVERITY.HIGH": 0,
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
@@ -1329,11 +1368,11 @@
       "skipped_tests": 0
     },
     "agentwatch/rollback/engine.py": {
-      "CONFIDENCE.HIGH": 1,
+      "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
-      "SEVERITY.HIGH": 1,
+      "SEVERITY.HIGH": 0,
       "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
@@ -1576,17 +1615,17 @@
       "skipped_tests": 0
     },
     "agentwatch/tracing/sampling.py": {
-      "CONFIDENCE.HIGH": 3,
+      "CONFIDENCE.HIGH": 0,
       "CONFIDENCE.LOW": 0,
       "CONFIDENCE.MEDIUM": 0,
       "CONFIDENCE.UNDEFINED": 0,
       "SEVERITY.HIGH": 0,
-      "SEVERITY.LOW": 3,
+      "SEVERITY.LOW": 0,
       "SEVERITY.MEDIUM": 0,
       "SEVERITY.UNDEFINED": 0,
       "loc": 96,
       "nosec": 0,
-      "skipped_tests": 0
+      "skipped_tests": 3
     },
     "agentwatch/tracing/spans.py": {
       "CONFIDENCE.HIGH": 0,
@@ -1678,7 +1717,7 @@
       "test_name": "hardcoded_bind_all_interfaces"
     },
     {
-      "code": "422 def serve(\n423     host: str = typer.Option(\"0.0.0.0\", \"--host\"),\n424     port: int = typer.Option(8000, \"--port\"),\n",
+      "code": "573 def serve(\n574     host: str = typer.Option(\"0.0.0.0\", \"--host\"),\n575     port: int = typer.Option(8000, \"--port\"),\n",
       "col_offset": 29,
       "end_col_offset": 38,
       "filename": "agentwatch/cli/main.py",
@@ -1689,33 +1728,13 @@
       },
       "issue_severity": "MEDIUM",
       "issue_text": "Possible binding to all interfaces.",
-      "line_number": 423,
+      "line_number": 574,
       "line_range": [
-        423
+        574
       ],
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b104_hardcoded_bind_all_interfaces.html",
       "test_id": "B104",
       "test_name": "hardcoded_bind_all_interfaces"
-    },
-    {
-      "code": "25     # making injected commands invisible or misleading to human reviewers.\n26     (re.compile(r\"[\u200b-\u200f\u202a-\u202e\u2066-\u2069\ufeff]\"), \"bidi_control_chars\"),\n27 ]\n",
-      "col_offset": 23,
-      "end_col_offset": 0,
-      "filename": "agentwatch/core/injection.py",
-      "issue_confidence": "MEDIUM",
-      "issue_cwe": {
-        "id": 838,
-        "link": "https://cwe.mitre.org/data/definitions/838.html"
-      },
-      "issue_severity": "HIGH",
-      "issue_text": "A Python source file contains bidirectional control characters ('\\u202a').",
-      "line_number": 26,
-      "line_range": [
-        26
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b613_trojansource.html",
-      "test_id": "B613",
-      "test_name": "trojansource"
     },
     {
       "code": "57     else:\n58         rng = random.Random(0)  # noqa: S311 \u2014 sampling, not crypto\n59         for _ in range(n_samples):\n",
@@ -1798,26 +1817,6 @@
       "test_name": "subprocess_without_shell_equals_true"
     },
     {
-      "code": "126                 members = tar.getmembers()\n127                 tar.extractall(str(target_path))\n128                 restored.extend([m.name for m in members if m.isfile()])\n",
-      "col_offset": 16,
-      "end_col_offset": 48,
-      "filename": "agentwatch/rollback/engine.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 22,
-        "link": "https://cwe.mitre.org/data/definitions/22.html"
-      },
-      "issue_severity": "HIGH",
-      "issue_text": "tarfile.extractall used without any validation. Please check and discard dangerous members.",
-      "line_number": 127,
-      "line_range": [
-        127
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b202_tarfile_unsafe_members.html",
-      "test_id": "B202",
-      "test_name": "tarfile_unsafe_members"
-    },
-    {
       "code": "30 \n31 _ALLOWLIST = {\"localhost\", \"127.0.0.1\", \"::1\", \"0.0.0.0\"}\n32 \n",
       "col_offset": 47,
       "end_col_offset": 56,
@@ -1836,66 +1835,6 @@
       "more_info": "https://bandit.readthedocs.io/en/1.9.4/plugins/b104_hardcoded_bind_all_interfaces.html",
       "test_id": "B104",
       "test_name": "hardcoded_bind_all_interfaces"
-    },
-    {
-      "code": "33         if event.event_type == EventType.SESSION_START:\n34             keep = random.random() < self.rate  # noqa: S311 \u2014 sampling, not crypto\n35             return SamplingDecision(keep=keep, reason=f\"head_rate={self.rate}\")\n",
-      "col_offset": 19,
-      "end_col_offset": 34,
-      "filename": "agentwatch/tracing/sampling.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 330,
-        "link": "https://cwe.mitre.org/data/definitions/330.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Standard pseudo-random generators are not suitable for security/cryptographic purposes.",
-      "line_number": 34,
-      "line_range": [
-        34
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random",
-      "test_id": "B311",
-      "test_name": "blacklist"
-    },
-    {
-      "code": "57                 return SamplingDecision(keep=True, reason=\"failure\")\n58             keep = random.random() < self.success_rate  # noqa: S311\n59             self._session_decisions[sid] = keep\n",
-      "col_offset": 19,
-      "end_col_offset": 34,
-      "filename": "agentwatch/tracing/sampling.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 330,
-        "link": "https://cwe.mitre.org/data/definitions/330.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Standard pseudo-random generators are not suitable for security/cryptographic purposes.",
-      "line_number": 58,
-      "line_range": [
-        58
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random",
-      "test_id": "B311",
-      "test_name": "blacklist"
-    },
-    {
-      "code": "85             return True\n86         j = random.randint(0, self._seen - 1)  # noqa: S311\n87         if j < self.k:\n",
-      "col_offset": 12,
-      "end_col_offset": 45,
-      "filename": "agentwatch/tracing/sampling.py",
-      "issue_confidence": "HIGH",
-      "issue_cwe": {
-        "id": 330,
-        "link": "https://cwe.mitre.org/data/definitions/330.html"
-      },
-      "issue_severity": "LOW",
-      "issue_text": "Standard pseudo-random generators are not suitable for security/cryptographic purposes.",
-      "line_number": 86,
-      "line_range": [
-        86
-      ],
-      "more_info": "https://bandit.readthedocs.io/en/1.9.4/blacklists/blacklist_calls.html#b311-random",
-      "test_id": "B311",
-      "test_name": "blacklist"
     }
   ]
 }
