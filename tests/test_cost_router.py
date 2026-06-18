@@ -103,3 +103,21 @@ def test_custom_capability_table_is_respected():
     router = CostAwareRouter(capability={"claude-haiku-4-5": TaskComplexity.COMPLEX})
     d = router.route(complexity=TaskComplexity.COMPLEX, input_tokens=1000)
     assert d.model == "claude-haiku-4-5"
+
+
+def test_empty_capability_map_is_respected():
+    """An explicit empty capability map is preserved (not replaced by defaults);
+    with nothing rated for COMPLEX the router falls back to the most capable."""
+    d = CostAwareRouter(capability={}).route(complexity=TaskComplexity.COMPLEX, input_tokens=1000)
+    assert d.reason == "no_model_rated_for_tier_using_most_capable"
+
+
+@pytest.mark.parametrize("input_tokens,output_tokens", [(-1, 1), (1, -1)])
+def test_negative_tokens_rejected(input_tokens, output_tokens):
+    """Negative token counts are rejected before any cost is computed."""
+    with pytest.raises(ValueError, match="must be >= 0"):
+        CostAwareRouter().route(
+            complexity=TaskComplexity.SIMPLE,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+        )

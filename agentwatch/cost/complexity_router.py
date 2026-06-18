@@ -140,6 +140,8 @@ class CostAwareRouter:
         signals = signals or TaskSignals()
         tier = complexity if complexity is not None else scorer(signals)
         tokens_in = input_tokens if input_tokens is not None else signals.input_tokens
+        if tokens_in < 0 or output_tokens < 0:
+            raise ValueError("token counts must be >= 0")
 
         # Per-model totals for this workload (cheapest first), via CST-002.
         # estimate() coerces a falsy pricing table back to DEFAULT_PRICING, so
