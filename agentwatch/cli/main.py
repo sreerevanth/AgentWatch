@@ -1546,6 +1546,14 @@ def session_prune(
     asyncio.run(_run())
 
 
+@session_app.command(name="share")
+def share(session_id: str = typer.Argument(..., help="Session ID to share")) -> None:
+    """Free: Create a temporary web link for a trace."""
+    console.print(
+        f"[bold green]Mock Share[/bold green]: Trace link: https://share.agentwatch.ai/{session_id}"
+    )
+
+
 # ─────────────────────────────────────────────
 # Entrypoint
 # ---------------------------------------------
