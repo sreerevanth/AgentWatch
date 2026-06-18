@@ -118,3 +118,50 @@ def test_run_cmd_execution_exception():
         assert "Failed to execute command 'invalid_command'" in str(exc_info.value)
 
 
+def test_run_cmd_allowed_shell_metacharacters_behavior():
+    """Verify and document that certain shell characters are allowed or blocked.
+
+    Allowed characters:
+    - ($, &, (, ), {, }) are permitted because they are necessary for JSON
+      payloads, URLs, or query parameters.
+    - Command substitution patterns like $(command) and ${var} are allowed by
+      the whitelist regex. Since shell=False is used, they are safe from local
+      command injection, though downstream systems must handle them carefully.
+    - Logical operator & (and &&) is allowed.
+
+    Blocked characters:
+    - Pipe (| and ||), semicolon (;), redirects (<, >), and backticks (`)
+      are explicitly blocked by the whitelist regex and raise CommandError.
+    """
+    mock_result = subprocess.CompletedProcess(
+        args=["echo"], returncode=0, stdout="success\n", stderr=""
+    )
+
+    # These patterns contain characters allowed by the whitelist regex
+    allowed_patterns = [
+        "echo",
+        "$(command)",
+        "${var}",
+        "&&",
+        "hello & world",
+    ]
+
+    with mock.patch("subprocess.run", return_value=mock_result) as mock_run:
+        result = run_cmd.run(allowed_patterns)
+        assert result.returncode == 0
+        mock_run.assert_called_once()
+
+    # These patterns contain blocked characters (e.g. pipe or semicolon)
+    blocked_patterns = [
+        "||",
+        "hello | world",
+        "hello ; world",
+    ]
+
+    for pat in blocked_patterns:
+        with pytest.raises(run_cmd.CommandError, match="contains forbidden characters"):
+            run_cmd.run(["echo", pat])
+
+
+
+

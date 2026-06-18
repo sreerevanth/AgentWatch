@@ -854,8 +854,7 @@ def status(
     api_key: str | None = API_KEY_OPTION,
 ) -> None:
     """[bold]Show[/bold] a real-time live dashboard of AgentWatch runtime status."""
-    if refresh_rate <= 0:
-        raise typer.BadParameter("Refresh rate must be greater than 0.")
+
 
     async def _run() -> None:
         try:
