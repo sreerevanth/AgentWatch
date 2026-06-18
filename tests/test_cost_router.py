@@ -1,9 +1,10 @@
-"""CST-008 — Cost-aware model router tests (issue #375)."""
+"""CST-009 — Cost-aware model router tests (issue #375)."""
 
 from __future__ import annotations
 
 import pytest
 
+from agentwatch.cost.comparator import DEFAULT_PRICING
 from agentwatch.cost.complexity_router import (
     CostAwareRouter,
     TaskComplexity,
@@ -65,7 +66,7 @@ def test_considered_is_cost_sorted_and_complete():
     d = CostAwareRouter().route(TaskSignals(prompt="hi"))
     costs = [c for _, c in d.considered]
     assert costs == sorted(costs)
-    assert len(d.considered) == 7
+    assert len(d.considered) == len(DEFAULT_PRICING)
 
 
 def test_to_dict_shape():
@@ -88,6 +89,12 @@ def test_to_dict_shape():
 def test_score_complexity_boundaries(signals, expected):
     """The heuristic scorer classifies representative tasks correctly."""
     assert score_complexity(signals) is expected
+
+
+def test_empty_pricing_table_raises():
+    """An empty pricing table is rejected with a clear error, not an IndexError."""
+    with pytest.raises(ValueError, match="pricing table is empty"):
+        CostAwareRouter(pricing={}).route(TaskSignals(prompt="hi"))
 
 
 def test_custom_capability_table_is_respected():

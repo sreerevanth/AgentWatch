@@ -1,5 +1,5 @@
 """
-CST-008 — Cost-Aware Model Router (issue #375, CST-004 cost-intelligence scope).
+CST-009 — Cost-Aware Model Router (issue #375, CST-004 cost-intelligence scope).
 
 Route a task to the cheapest model capable of handling its complexity: simple
 subtasks go to cheap models (e.g. Gemini Flash), and expensive, advanced models
@@ -29,7 +29,7 @@ class TaskComplexity(IntEnum):
 
 # Capability rank per model: the highest TaskComplexity it can serve. A task of
 # complexity C may be routed to any model whose rank is >= C.
-DEFAULT_CAPABILITY: dict[str, int] = {
+DEFAULT_CAPABILITY: dict[str, TaskComplexity] = {
     "gemini-1.5-flash": TaskComplexity.SIMPLE,
     "gpt-4o-mini": TaskComplexity.SIMPLE,
     "claude-haiku-4-5": TaskComplexity.SIMPLE,
@@ -113,11 +113,12 @@ class CostAwareRouter:
         self,
         *,
         pricing: dict[str, tuple[float, float]] | None = None,
-        capability: dict[str, int] | None = None,
+        capability: dict[str, TaskComplexity] | None = None,
         budget_ceiling: float | None = None,
     ) -> None:
-        self._pricing = pricing or DEFAULT_PRICING
-        self._capability = capability or DEFAULT_CAPABILITY
+        # Explicit None checks so a caller can intentionally pass an empty table.
+        self._pricing = pricing if pricing is not None else DEFAULT_PRICING
+        self._capability = capability if capability is not None else DEFAULT_CAPABILITY
         self._budget_ceiling = budget_ceiling
 
     def route(
@@ -141,6 +142,10 @@ class CostAwareRouter:
         tokens_in = input_tokens if input_tokens is not None else signals.input_tokens
 
         # Per-model totals for this workload (cheapest first), via CST-002.
+        # estimate() coerces a falsy pricing table back to DEFAULT_PRICING, so
+        # reject an empty table here to honor the caller's explicit choice.
+        if not self._pricing:
+            raise ValueError("pricing table is empty; cannot route a task")
         report = estimate(tokens_in, output_tokens, pricing=self._pricing)
         totals = [(e.model, e.total) for e in report.estimates]
         cost_of = dict(totals)
@@ -161,7 +166,9 @@ class CostAwareRouter:
         ]
         if not capable:
             # No model is rated for this tier; use the most capable available.
-            best_model = max(totals, key=lambda mc: self._capability.get(mc[0], 0))[0]
+            best_model = max(
+                totals, key=lambda mc: self._capability.get(mc[0], TaskComplexity.SIMPLE)
+            )[0]
             return RoutingDecision(
                 model=best_model,
                 complexity=tier,
