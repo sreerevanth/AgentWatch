@@ -229,6 +229,7 @@ class GenericAdapter:
         session_id: str | None = None,
         agent_id: str | None = None,
         safety_engine: SafetyEngine | None = None,
+        metadata: dict[str, Any] | None = None,
     ):
         self.agent = agent
         self.framework = framework
@@ -239,6 +240,7 @@ class GenericAdapter:
         self._step = 0
         self._wrapped_methods: dict[str, Any] = {}
         self._safety_engine = safety_engine or SafetyEngine()
+        self._session_metadata: dict[str, Any] = metadata or {}
 
     def attach(self) -> Any:
         """
@@ -305,6 +307,7 @@ class GenericAdapter:
                         event_type=EventType.TOOL_CALL,
                         step_number=self._step,
                         tool_call=tool_call,
+                        metadata=self._session_metadata,
                     )
                     try:
                         checked = await self._safety_engine.check_event(safety_event)
@@ -380,6 +383,7 @@ class GenericAdapter:
                             blocked=blocked,
                             reasons=reasons,
                         ),
+                        metadata=self._session_metadata,
                     )
                     self.bus.publish_sync(tc_event)
                     if blocked:
@@ -431,6 +435,7 @@ class GenericAdapter:
     ) -> None:
         """Emit an event without ever raising into the host agent (sync context)."""
         try:
+            merged = {**self._session_metadata, **(metadata or {})}
             event = AgentEvent(
                 session_id=self.session_id,
                 agent_id=self.agent_id,
@@ -439,7 +444,7 @@ class GenericAdapter:
                 event_type=event_type,
                 status=status,
                 step_number=self._step,
-                metadata=metadata or {},
+                metadata=merged,
             )
             self.bus.publish_sync(event)
         except Exception as exc:  # noqa: BLE001 — invisible-when-healthy contract
@@ -454,6 +459,7 @@ class GenericAdapter:
     ) -> None:
         """Emit an event in async context, awaiting all handlers so none are dropped."""
         try:
+            merged = {**self._session_metadata, **(metadata or {})}
             event = AgentEvent(
                 session_id=self.session_id,
                 agent_id=self.agent_id,
@@ -462,7 +468,7 @@ class GenericAdapter:
                 event_type=event_type,
                 status=status,
                 step_number=self._step,
-                metadata=metadata or {},
+                metadata=merged,
             )
             await self.bus.publish(event)
         except Exception as exc:  # noqa: BLE001
@@ -549,6 +555,7 @@ def watch(
     session_id: str | None = None,
     agent_id: str | None = None,
     event_bus: EventBus | None = None,
+    metadata: dict[str, Any] | None = None,
 ) -> Any:
     """
     Instrument an agent for AgentWatch observability.
@@ -562,6 +569,7 @@ def watch(
         session_id:  optional explicit session ID (auto-generated otherwise)
         agent_id:    optional explicit agent ID
         event_bus:   override the default EventBus (mostly for testing)
+        metadata:    optional custom metadata attached to all session events
     """
     if agent is None:
         logger.warning("watch() called with None — returning None")
@@ -598,6 +606,7 @@ def watch(
             event_bus=bus,
             session_id=session_id,
             agent_id=agent_id,
+            metadata=metadata,
         )
         return adapter.attach()
 
