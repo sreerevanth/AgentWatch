@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from agentwatch.core.schema import AgentEvent, EventType, TokenUsage
 from agentwatch.cost.anomaly import CostAnomalyDetector
 from agentwatch.cost.comparator import estimate, estimate_for_text
@@ -200,8 +202,6 @@ def test_budget_governance_requires_human_above_auto_approve():
 # ─────────────────────────────────────────────
 # CST-008 — Stale session eviction (Issue #137)
 # ─────────────────────────────────────────────
-
-import time
 
 def test_tracker_expired_session_evicted():
     tracker = CostTracker(ttl_seconds=60.0)

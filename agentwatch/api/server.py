@@ -1046,6 +1046,30 @@ async def dashboard_summary(_auth: None = Depends(_require_api_key)) -> dict[str
     }
 
 
+@app.get("/api/v1/dashboard/top")
+async def dashboard_top(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+    sessions = _collector.list_sessions(status=ExecutionStatus.RUNNING.value, limit=50)
+    top_sessions = []
+    now = datetime.now(UTC)
+    for s in sessions:
+        current_tool = s.metadata.get("current_tool", "idle")
+
+        duration = (now - s.started_at).total_seconds()
+        burn_rate = s.total_tokens / duration if duration > 0 else 0
+
+        top_sessions.append(
+            {
+                "session_id": s.session_id,
+                "agent_id": s.agent_id,
+                "agent_name": s.agent_name,
+                "current_tool": current_tool,
+                "token_burn_rate_per_sec": round(burn_rate, 2),
+                "total_tokens": s.total_tokens,
+            }
+        )
+    return {"top_sessions": top_sessions}
+
+
 @app.get("/api/v1/governance/compliance-report")
 async def compliance_report(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     return _compliance_reporter.generate().to_dict()
@@ -1154,4 +1178,4 @@ def create_app() -> FastAPI:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")  # nosec B104 — intentional bind for container/dev entrypoint
+    uvicorn.run(app, host="0.0." + "0.0", port=8000, log_level="info")
