@@ -73,6 +73,7 @@ def main_callback(ctx: typer.Context):
             _IN_REPL = False
     else:
         import sys
+
         if "--json" not in sys.argv:
             print_header()
 
@@ -107,6 +108,7 @@ def _start_repl_session():
     )
 
     from agentwatch.cli.ui import get_top_panel
+
     while True:
         try:
             console.print(get_top_panel())
@@ -1232,6 +1234,7 @@ def redteam(
 
     if json_output:
         import typer
+
         typer.echo(json.dumps(report.to_dict(), indent=2))
         raise typer.Exit(0)
 
