@@ -46,9 +46,7 @@ safety_app = typer.Typer(
     no_args_is_help=True,
 )
 
-app.add_typer(session_app)
-app.add_typer(server_app)
-app.add_typer(safety_app)
+
 
 
 _IN_REPL = False
@@ -1697,6 +1695,14 @@ def share(
         )
     )
 
+
+# ─────────────────────────────────────────────
+# Sub-app Registration
+# ---------------------------------------------
+
+app.add_typer(session_app)
+app.add_typer(server_app)
+app.add_typer(safety_app)
 
 # ─────────────────────────────────────────────
 # Entrypoint
