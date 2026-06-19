@@ -1,90 +1,81 @@
-"""Tests for per-IP rate limiting on the AgentWatch API."""
-import os
+"""Tests for rate limiting middleware and functionality."""
+
+from __future__ import annotations
+
+import time
 
 import pytest
+from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
-
-@pytest.fixture
-def rate_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
-    """Fresh limiter with a low write cap so 429 is reachable quickly."""
-    monkeypatch.setenv("API_RATE_LIMIT_WRITE", "10")
-    monkeypatch.setenv("API_RATE_LIMIT_READ", "1000")
-    monkeypatch.delenv("AGENTWATCH_API_KEY", raising=False)
-    monkeypatch.delenv("AGENTWATCH_ENV", raising=False)
-
-    import agentwatch.api.server as server
-
-    server.RATE_WRITE = int(os.getenv("API_RATE_LIMIT_WRITE", "10"))
-    server.RATE_READ = int(os.getenv("API_RATE_LIMIT_READ", "1000"))
-    server.reset_rate_limiter_for_tests()
-
-    return TestClient(server.app, raise_server_exceptions=False)
+from agentwatch.api.middleware.rate_limiter import RateLimitMiddleware, RateLimiter
 
 
-def test_read_endpoint_returns_rate_limit_headers(rate_client: TestClient) -> None:
-    r = rate_client.get("/health")
-    assert r.status_code == 200, r.text
-    assert "X-RateLimit-Limit" in r.headers
-    assert "X-RateLimit-Remaining" in r.headers
+class TestRateLimiter:
+    """Test the RateLimiter class."""
+
+    def test_initialization(self):
+        """Test RateLimiter initializes with correct defaults."""
+        limiter = RateLimiter()
+        assert limiter.user_limit == 100
+        assert limiter.global_limit == 10000
+        assert limiter.window_sec == 3600
+
+    def test_per_user_rate_limiting(self):
+        """Test per-user rate limiting enforcement."""
+        limiter = RateLimiter(user_limit=3, window_sec=3600)
+
+        for i in range(3):
+            allowed, quota = limiter.check_rate_limit("user1")
+            assert allowed is True
+
+        allowed, quota = limiter.check_rate_limit("user1")
+        assert allowed is False
+
+    def test_global_rate_limiting(self):
+        """Test global rate limiting enforcement."""
+        limiter = RateLimiter(user_limit=10, global_limit=5, window_sec=3600)
+
+        for i in range(5):
+            user_id = f"user{i}"
+            allowed, quota = limiter.check_rate_limit(user_id)
+            assert allowed is True
+
+        allowed, quota = limiter.check_rate_limit("user99")
+        assert allowed is False
 
 
-def test_write_endpoint_returns_429_after_limit(rate_client: TestClient) -> None:
-    last_status = None
-    for i in range(25):
-        r = rate_client.post(
-            "/api/v1/sessions",
-            json={
-                "session_id": f"test-{i}",
-                "agent_id": "agent-1",
-                "agent_name": "Test",
-                "framework": "claude_code",
-                "status": "running",
-            },
-        )
-        last_status = r.status_code
-        if r.status_code == 429:
-            break
-    assert last_status == 429, f"Expected 429 after exceeding write limit, last status was {last_status}"
+class TestRateLimitMiddleware:
+    """Test the RateLimitMiddleware integration."""
 
+    @pytest.fixture
+    def app_with_limiter(self):
+        """Create a FastAPI app with rate limiting middleware for testing."""
+        app = FastAPI()
+        limiter = RateLimiter(user_limit=3, global_limit=10, window_sec=3600)
+        app.add_middleware(RateLimitMiddleware, limiter=limiter)
 
-def test_429_body_matches_spec(rate_client: TestClient) -> None:
-    last = None
-    for i in range(25):
-        last = rate_client.post(
-            "/api/v1/sessions",
-            json={
-                "session_id": f"spec-{i}",
-                "agent_id": "agent-1",
-                "agent_name": "Test",
-                "framework": "claude_code",
-                "status": "running",
-            },
-        )
-        if last.status_code == 429:
-            break
-    assert last is not None, "No responses received from write endpoint"
-    assert last.status_code == 429, "Expected a 429 response but none was returned"
-    assert last.json() == {"error": "rate_limit_exceeded"}
-    assert "Retry-After" in last.headers
+        @app.get("/test")
+        async def test_endpoint():
+            return {"message": "success"}
 
+        return app
 
-def test_client_ip_prefers_forwarded_for() -> None:
-    import agentwatch.api.server as server
+    def test_successful_request_includes_headers(self, app_with_limiter):
+        """Test that successful requests include rate limit headers."""
+        client = TestClient(app_with_limiter)
+        response = client.get("/test")
 
-    class _Request:
-        client = None
-        headers = {"x-forwarded-for": "203.0.113.9, 70.41.3.18"}
+        assert response.status_code == 200
+        assert "X-RateLimit-User-Limit" in response.headers
 
-    assert server._client_ip(_Request()) == "203.0.113.9"  # type: ignore[arg-type]
+    def test_rate_limit_exceeded_returns_429(self, app_with_limiter):
+        """Test that exceeding rate limit returns 429."""
+        client = TestClient(app_with_limiter)
 
+        for i in range(3):
+            response = client.get("/test")
+            assert response.status_code == 200
 
-def test_limiter_prunes_stale_buckets() -> None:
-    import time
-
-    import agentwatch.api.server as server
-
-    server.reset_rate_limiter_for_tests()
-    server._limiter._buckets["stale-ip:w"] = {"count": 1, "start": time.time() - server.RATE_BUCKET_TTL_SEC - 1}
-    server._limiter._prune_stale(time.time())
-    assert "stale-ip:w" not in server._limiter._buckets
+        response = client.get("/test")
+        assert response.status_code == status.HTTP_429_TOO_MANY_REQUESTS

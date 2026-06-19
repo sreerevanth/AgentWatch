@@ -31,6 +31,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
+from agentwatch.api.middleware.rate_limiter import RateLimitMiddleware, RateLimiter
 from agentwatch.core.event_bus import get_event_bus
 from agentwatch.core.models import Repository, init_db
 from agentwatch.core.safety import RiskScorer, SafetyEngine, SafetyPolicy
@@ -496,6 +497,20 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# Initialize rate limiter with configurable limits from environment
+RATE_LIMIT_PER_USER = int(os.getenv("RATE_LIMIT_PER_USER", "100"))
+RATE_LIMIT_GLOBAL = int(os.getenv("RATE_LIMIT_GLOBAL", "10000"))
+RATE_LIMIT_WINDOW_SEC = int(os.getenv("RATE_LIMIT_WINDOW_SEC", "3600"))
+
+_rate_limiter = RateLimiter(
+    user_limit=RATE_LIMIT_PER_USER,
+    global_limit=RATE_LIMIT_GLOBAL,
+    window_sec=RATE_LIMIT_WINDOW_SEC,
+)
+
+# Add rate limiting middleware
+app.add_middleware(RateLimitMiddleware, limiter=_rate_limiter)
 
 
 @app.exception_handler(HTTPException)
