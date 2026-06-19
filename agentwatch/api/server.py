@@ -1075,6 +1075,40 @@ async def compliance_report(_auth: None = Depends(_require_api_key)) -> dict[str
     return _compliance_reporter.generate().to_dict()
 
 
+@app.get("/api/v1/governance/eu-ai-act-report")
+async def eu_ai_act_report(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+    """EU AI Act Article 15 conformity export (CMP-004).
+
+    Maps AgentWatch's safety telemetry to the Article 15 requirements and
+    returns the technical documentation plus a conformity assessment as JSON.
+    """
+    from agentwatch.governance.eu_ai_act import EUAIActPackage, TechnicalDocumentation
+
+    doc = TechnicalDocumentation(
+        system_name="AgentWatch-monitored AI system",
+        intended_purpose="Observability, safety, and reliability layer for AI agents",
+        risk_category="high",
+        data_governance={"pii_phi_redaction": "enabled", "retention": "policy-driven"},
+        robustness_evidence=[
+            "safety_engine_risk_scoring",
+            "automated_red_team_harness",
+            "blast_radius_estimation",
+        ],
+        human_oversight_description=(
+            "The safety engine blocks critical actions and escalates high-risk "
+            "ones for human approval."
+        ),
+        transparency_disclosures=["session_replay", "reasoning_audit_trail"],
+    )
+    pkg = EUAIActPackage()
+    pkg.set_documentation(doc)
+    return {
+        "article": "EU AI Act Article 15",
+        "documentation": doc.to_dict(),
+        "conformity": pkg.assess().to_dict(),
+    }
+
+
 @app.post("/api/v1/demo/seed")
 async def seed_demo(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     _seed_demo_data()

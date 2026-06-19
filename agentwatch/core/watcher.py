@@ -229,6 +229,7 @@ class GenericAdapter:
         session_id: str | None = None,
         agent_id: str | None = None,
         safety_engine: SafetyEngine | None = None,
+        redact: bool = False,
     ):
         self.agent = agent
         self.framework = framework
@@ -239,6 +240,17 @@ class GenericAdapter:
         self._step = 0
         self._wrapped_methods: dict[str, Any] = {}
         self._safety_engine = safety_engine or SafetyEngine()
+        # CMP-003/004: scrub PII/PHI from tool-call payloads before they are
+        # published and persisted. Opt-in to avoid the cost when not required.
+        self._redact = redact
+
+    def _maybe_redact(self, tool_call: ToolCallData) -> ToolCallData:
+        """Redact PII/PHI from a tool call when redaction is enabled."""
+        if not self._redact:
+            return tool_call
+        from agentwatch.security.redaction import redact_tool_call
+
+        return redact_tool_call(tool_call)
 
     def attach(self) -> Any:
         """
@@ -296,7 +308,7 @@ class GenericAdapter:
 
                 # ── Safety gate (async path — full check_event with approval) ──
                 if is_tool_like:
-                    tool_call = _build_tool_call_data(method_name, args, kwargs)
+                    tool_call = self._maybe_redact(_build_tool_call_data(method_name, args, kwargs))
                     safety_event = AgentEvent(
                         session_id=self.session_id,
                         agent_id=self.agent_id,
@@ -360,7 +372,7 @@ class GenericAdapter:
 
             # ── Safety gate (sync path — pattern match only, no approval) ──
             if is_tool_like:
-                tool_call = _build_tool_call_data(method_name, args, kwargs)
+                tool_call = self._maybe_redact(_build_tool_call_data(method_name, args, kwargs))
                 try:
                     blocked, reasons = self._safety_engine.check_tool_call_sync(tool_call)
                     # Build and publish a TOOL_CALL event with safety data so the
