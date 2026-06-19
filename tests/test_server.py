@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import pytest
-from starlette.websockets import WebSocketDisconnect
 from fastapi.testclient import TestClient
+from starlette.websockets import WebSocketDisconnect
 
 import agentwatch.api.server as _server_module
 from agentwatch.api.server import app

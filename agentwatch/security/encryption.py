@@ -157,7 +157,7 @@ class KeyRotationManager:
         rotation_entry = KeyRotationAudit(
             rotation_id=str(uuid4()),
             agent_id=agent_id,
-            old_key_hash=old_key_hash or "initial",
+            old_key_hash=old_key_hash,
             new_key_hash=new_key_hash,
             rotated_by=rotated_by,
             rotated_at=datetime.now(UTC),

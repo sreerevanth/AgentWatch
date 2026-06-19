@@ -1,7 +1,8 @@
 from __future__ import annotations
-import pytest
+
 from agentwatch.core.schema import AgentEvent, AgentFramework, EventType, ToolCallData
 from agentwatch.security.owasp import OwaspScanner, OwaspVector
+
 
 def _tool_event(tool: str, raw: str, args: dict | None = None) -> AgentEvent:
     return AgentEvent(

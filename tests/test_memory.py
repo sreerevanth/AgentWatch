@@ -219,8 +219,9 @@ def test_visualization_payload_marks_corrupted():
 
 
 def test_causal_graph_memory_bounds():
-    from agentwatch.memory.causal_graph import CausalGraph, CausalNode, EdgeKind
     from datetime import UTC, datetime, timedelta
+
+    from agentwatch.memory.causal_graph import CausalGraph, CausalNode, EdgeKind
     
     g = CausalGraph(max_nodes=3)
     n1 = CausalNode(node_id="n1", kind="decision", text="1", timestamp=datetime.now(UTC) - timedelta(seconds=10))

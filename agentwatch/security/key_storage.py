@@ -37,7 +37,7 @@ class KeyRotationAudit(Base):
 
     rotation_id = Column(String(36), primary_key=True)
     agent_id = Column(String(255), nullable=False, index=True)
-    old_key_hash = Column(String(64), nullable=False)
+    old_key_hash = Column(String(64), nullable=True)
     new_key_hash = Column(String(64), nullable=False)
     rotated_by = Column(String(255), nullable=False)
     rotated_at = Column(DateTime(timezone=True), default=datetime.now(UTC))
