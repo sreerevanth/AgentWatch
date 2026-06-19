@@ -54,6 +54,7 @@ from agentwatch.replay.engine import ReplayEngine
 from agentwatch.rollback.engine import RollbackEngine
 from agentwatch.scoring.confidence import ConfidenceScorer
 from agentwatch.tracing.collector import TraceCollector
+from agentwatch.validation.schema_validator import SchemaValidator
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +236,36 @@ _alerting = AlertingEngine(
     )
 )
 _ws_clients: list[WebSocket] = []
+_schema_validator = SchemaValidator()
+
+
+def _init_default_schemas() -> None:
+    """Register built-in JSON schemas for each supported agent framework."""
+    _tool_call_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "tool_name": {"type": "string"},
+            "arguments": {"type": "object"},
+        },
+        "required": ["tool_name"],
+    }
+    _schema_validator.schemas["claude-code"] = _tool_call_schema
+    _schema_validator.schemas["langchain"] = {
+        "type": "object",
+        "properties": {
+            "tool_name": {"type": "string"},
+            "arguments": {"type": "object"},
+        },
+        "required": ["tool_name"],
+    }
+    _schema_validator.schemas["crewai"] = {
+        "type": "object",
+        "properties": {
+            "tool_name": {"type": "string"},
+            "arguments": {"type": "object"},
+        },
+        "required": ["tool_name"],
+    }
 
 
 # Optional API key guard.
@@ -478,6 +509,7 @@ async def lifespan(app: FastAPI):
             logger.info("PostgreSQL connected and tables ready")
         except Exception:
             logger.warning("PostgreSQL unavailable — running in-memory only", exc_info=True)
+    _init_default_schemas()
     bus = get_event_bus()
     bus.subscribe_fn(_collector.ingest, handler_id="api.collector")
     bus.subscribe_fn(_after_publish, handler_id="api.post_publish")
@@ -652,6 +684,16 @@ async def ingest_event(
     _auth: None = Depends(_require_api_key),
 ) -> dict[str, Any]:
     _limiter.check(_rate_limit_key(request, "w"), RATE_WRITE, request)
+    if event.event_type == EventType.TOOL_CALL and event.tool_call is not None:
+        schema_key = event.framework.value.replace("_", "-")
+        if _schema_validator.get_schema(schema_key) is not None:
+            params: dict[str, Any] = {
+                "tool_name": event.tool_call.tool_name,
+                "arguments": dict(event.tool_call.arguments) if event.tool_call.arguments else {},
+            }
+            valid, err = _schema_validator.validate_task_parameters(schema_key, params)
+            if not valid:
+                raise HTTPException(status_code=422, detail=f"Schema validation failed: {err}")
     await get_event_bus().publish(event)
     return {"status": "accepted", "event_id": event.event_id}
 

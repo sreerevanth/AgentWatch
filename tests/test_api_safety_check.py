@@ -1,12 +1,10 @@
-import asyncio
 
 import pytest
-
 from fastapi.testclient import TestClient
 
 from agentwatch.api.server import create_app
-from agentwatch.core.schema import RiskLevel, SafetyCheckData
 from agentwatch.core.safety import SafetyEngine
+from agentwatch.core.schema import RiskLevel, SafetyCheckData
 
 
 @pytest.fixture
