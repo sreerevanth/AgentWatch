@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from decimal import Decimal
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import Enum
 
 
@@ -50,15 +50,13 @@ class BudgetGovernance:
             kw["auto_approve_ceiling_usd"] = Decimal(str(kw["auto_approve_ceiling_usd"]))
         if "hard_block_ceiling_usd" in kw and kw["hard_block_ceiling_usd"] is not None:
             kw["hard_block_ceiling_usd"] = Decimal(str(kw["hard_block_ceiling_usd"]))
-        budget = TeamBudget(
-            team_id=team_id,
-            monthly_cap_usd=Decimal(str(monthly_cap_usd)),
-            **kw
-        )
+        budget = TeamBudget(team_id=team_id, monthly_cap_usd=Decimal(str(monthly_cap_usd)), **kw)
         self._teams[team_id] = budget
         return budget
 
-    def configure_agent(self, agent_id: str, team_id: str, daily_cap_usd: float | Decimal) -> AgentBudget:
+    def configure_agent(
+        self, agent_id: str, team_id: str, daily_cap_usd: float | Decimal
+    ) -> AgentBudget:
         budget = AgentBudget(agent_id=agent_id, daily_cap_usd=Decimal(str(daily_cap_usd)))
         self._agents[agent_id] = budget
         self._agent_to_team[agent_id] = team_id
@@ -83,8 +81,12 @@ class BudgetGovernance:
             return BudgetDecision(
                 action=BudgetAction.BLOCK,
                 reason="team_monthly_cap_exceeded",
-                remaining_team_usd=float(max(Decimal("0.0"), team_b.monthly_cap_usd - team_b.used_usd)),
-                remaining_agent_usd=float(max(Decimal("0.0"), agent_b.daily_cap_usd - agent_b.used_usd)),
+                remaining_team_usd=float(
+                    max(Decimal("0.0"), team_b.monthly_cap_usd - team_b.used_usd)
+                ),
+                remaining_agent_usd=float(
+                    max(Decimal("0.0"), agent_b.daily_cap_usd - agent_b.used_usd)
+                ),
             )
 
         # Agent cap check
@@ -92,8 +94,12 @@ class BudgetGovernance:
             return BudgetDecision(
                 action=BudgetAction.BLOCK,
                 reason="agent_daily_cap_exceeded",
-                remaining_team_usd=float(team_b.monthly_cap_usd - team_b.used_usd) if team_b else 0.0,
-                remaining_agent_usd=float(max(Decimal("0.0"), agent_b.daily_cap_usd - agent_b.used_usd)),
+                remaining_team_usd=float(team_b.monthly_cap_usd - team_b.used_usd)
+                if team_b
+                else 0.0,
+                remaining_agent_usd=float(
+                    max(Decimal("0.0"), agent_b.daily_cap_usd - agent_b.used_usd)
+                ),
             )
 
         # Hard-block on cost
@@ -107,9 +113,7 @@ class BudgetGovernance:
 
         # Auto-approve small actions
         if team_b and cost_dec <= team_b.auto_approve_ceiling_usd:
-            return self._commit(
-                team_b, agent_b, cost_dec, BudgetAction.APPROVE, "auto_approve"
-            )
+            return self._commit(team_b, agent_b, cost_dec, BudgetAction.APPROVE, "auto_approve")
 
         # Otherwise require human
         return BudgetDecision(
@@ -119,13 +123,13 @@ class BudgetGovernance:
             remaining_agent_usd=float(agent_b.daily_cap_usd - agent_b.used_usd),
         )
 
-    def commit_human_approval(self, agent_id: str, action_cost_usd: float | Decimal) -> BudgetDecision:
+    def commit_human_approval(
+        self, agent_id: str, action_cost_usd: float | Decimal
+    ) -> BudgetDecision:
         cost_dec = Decimal(str(action_cost_usd))
         agent_b = self._agents[agent_id]
         team_b = self._teams[self._agent_to_team[agent_id]]
-        return self._commit(
-            team_b, agent_b, cost_dec, BudgetAction.APPROVE, "human_approved"
-        )
+        return self._commit(team_b, agent_b, cost_dec, BudgetAction.APPROVE, "human_approved")
 
     def _commit(
         self,

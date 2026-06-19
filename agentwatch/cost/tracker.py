@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import os
 import threading
-from decimal import Decimal
 import time
 from dataclasses import dataclass, field
+from decimal import Decimal
 
 from agentwatch.core.schema import AgentEvent
 
@@ -174,4 +174,3 @@ class CostTracker:
         if budget.tokens_used > budget.token_budget or budget.usd_used > budget.usd_budget:
             budget.exceeded = True
             budget.warnings.append("budget_exceeded")
-
