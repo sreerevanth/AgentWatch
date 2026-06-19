@@ -1468,9 +1468,7 @@ def upgrade(
             console.print(f"[red]Entitlement rejected:[/red] {exc}")
             raise typer.Exit(1)
         path = store_entitlement_token(activate)
-        console.print(
-            f"[green]Premium activated[/green] ({entitlement.tier}) — stored at {path}."
-        )
+        console.print(f"[green]Premium activated[/green] ({entitlement.tier}) — stored at {path}.")
         raise typer.Exit(0)
 
     session = new_session()
