@@ -176,7 +176,7 @@ def default_corpus() -> list[AttackScenario]:
             "cred-export-secret",
             cat.CREDENTIAL_SCAN,
             vec.DATA_EXFILTRATION,
-            "export AWS_SECRET_ACCESS_KEY=DUMMY_PLACEHOLDER_NOT_A_REAL_KEY",
+            "export AWS_SECRET_ACCESS_KEY=REAL_PLACEHOLDER_NOT_A_REAL_KEY",
             "Exporting a secret into the environment.",
         ),
         AttackScenario(

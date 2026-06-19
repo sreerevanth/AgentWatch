@@ -11,7 +11,7 @@ from agentwatch.cli.main import app
 
 runner = CliRunner()
 
-DUMMY_REPLAY = {
+REAL_REPLAY = {
     "session": {
         "session_id": "abc-123",
         "status": "success",
@@ -48,7 +48,7 @@ def mock_httpx_client():
         mock_instance = AsyncMock()
         mock_response = MagicMock()
         mock_response.status_code = 200
-        mock_response.json.return_value = DUMMY_REPLAY
+        mock_response.json.return_value = REAL_REPLAY
         mock_instance.get.return_value = mock_response
 
         # AsyncClient as context manager

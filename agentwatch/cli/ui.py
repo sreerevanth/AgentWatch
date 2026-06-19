@@ -1,8 +1,8 @@
 from rich.console import Console, Group
-from rich.panel import Panel
-from rich.text import Text
-from rich.rule import Rule
 from rich.padding import Padding
+from rich.panel import Panel
+from rich.rule import Rule
+from rich.text import Text
 
 # Initialize console with support for true color
 console = Console(color_system="truecolor")
@@ -22,8 +22,9 @@ def get_real_metrics() -> dict:
         resp = httpx.get("http://localhost:8000/api/v1/dashboard/summary", timeout=0.5)
         if resp.status_code == 200:
             return resp.json()
-    except Exception:
-        pass
+    except Exception as e:
+        import logging
+        logging.debug("Metrics fetch failed: %s", e)
     return {}
 
 def get_top_panel():

@@ -62,7 +62,6 @@ def main_callback(ctx: typer.Context):
     if _IN_REPL:
         return
 
-    from agentwatch.cli.animator import matrix_type_print
     from agentwatch.cli.ui import print_header, render_ui
 
     if ctx.invoked_subcommand is None:
@@ -73,7 +72,9 @@ def main_callback(ctx: typer.Context):
         finally:
             _IN_REPL = False
     else:
-        print_header()
+        import sys
+        if "--json" not in sys.argv:
+            print_header()
 
 
 def _start_repl_session():
@@ -1230,7 +1231,8 @@ def redteam(
     report = RedTeamHarness().run()
 
     if json_output:
-        console.print_json(data=report.to_dict())
+        import typer
+        typer.echo(json.dumps(report.to_dict(), indent=2))
         raise typer.Exit(0)
 
     score = report.resilience_score

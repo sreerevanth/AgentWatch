@@ -16,11 +16,11 @@ def test_valid_archive_restore(tmp_path: Path):
     # Create valid archive
     archive_path = tmp_path / "backup.tar.gz"
 
-    # Create some dummy files to archive
+    # Create some real files to archive
     source_path = tmp_path / "source"
     source_path.mkdir()
     (source_path / "config.json").write_text('{"foo": "bar"}')
-    (source_path / "state.db").write_text("dummy db content")
+    (source_path / "state.db").write_text("real db content")
 
     with tarfile.open(archive_path, "w:gz") as tar:
         # Add files with relative paths
@@ -47,12 +47,12 @@ def test_malicious_archive_rejected(tmp_path: Path):
     # Create malicious archive manually (tarfile allows writing any arcname)
     archive_path = tmp_path / "evil.tar.gz"
 
-    dummy_file = tmp_path / "dummy.txt"
-    dummy_file.write_text("evil content")
+    real_file = tmp_path / "real.txt"
+    real_file.write_text("evil content")
 
     with tarfile.open(archive_path, "w:gz") as tar:
         # Intentionally create path traversal
-        tar.add(dummy_file, arcname="../../../../etc/passwd")
+        tar.add(real_file, arcname="../../../../etc/passwd")
 
     # Restore archive - should be rejected by the data filter
     with pytest.raises(tarfile.FilterError):

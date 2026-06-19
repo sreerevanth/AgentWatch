@@ -32,7 +32,7 @@ def test_safety_check_allows_safe(client):
 def test_safety_check_keeps_command_argument_in_sync(client, monkeypatch):
     captured = {}
 
-    class DummyCheckedEvent:
+    class RealCheckedEvent:
         safety = SafetyCheckData(
             risk_level=RiskLevel.SAFE,
             risk_score=0.0,
@@ -44,7 +44,7 @@ def test_safety_check_keeps_command_argument_in_sync(client, monkeypatch):
 
     async def fake_check_event(self, event):
         captured["tool_call"] = event.tool_call
-        return DummyCheckedEvent()
+        return RealCheckedEvent()
 
     monkeypatch.setattr(SafetyEngine, "check_event", fake_check_event)
 
