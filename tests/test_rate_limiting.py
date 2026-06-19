@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import time
-
 import pytest
 from fastapi import FastAPI, status
 from fastapi.testclient import TestClient
 
-from agentwatch.api.middleware.rate_limiter import RateLimitMiddleware, RateLimiter
+from agentwatch.api.middleware.rate_limiter import RateLimiter, RateLimitMiddleware
 
 
 class TestRateLimiter:

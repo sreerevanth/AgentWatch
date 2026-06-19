@@ -31,7 +31,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
-from agentwatch.api.middleware.rate_limiter import RateLimitMiddleware, RateLimiter
+from agentwatch.api.middleware.rate_limiter import RateLimiter, RateLimitMiddleware
 from agentwatch.core.event_bus import get_event_bus
 from agentwatch.core.models import Repository, init_db
 from agentwatch.core.safety import RiskScorer, SafetyEngine, SafetyPolicy

@@ -8,8 +8,9 @@ Covers the bypass vectors identified in issues #97 and #98:
 
 from __future__ import annotations
 
-import pytest
 import sys
+
+import pytest
 
 from agentwatch.core.schema import PluginManifest, PluginPermissions
 from agentwatch.plugins.sandbox import (
