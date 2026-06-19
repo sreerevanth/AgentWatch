@@ -57,7 +57,7 @@
 | SAF-009 | Security audit report | ✅ done | `test_safety::test_security_report_*` |
 | SAF-010 | Live safety sandbox | ✅ done | `test_safety::test_sandbox_*` + `frontend/pages/sandbox.tsx` |
 | SAF-011 | Blast radius UI | ✅ surfaces in sandbox + replay pages | n/a |
-| SAF-012 | Automated red-team safety harness (issue #371, originating from the SAF-008 category) | ✅ done | `test_redteam::*` |
+| SAF-012 | Automated red-team safety harness + scheduled automation (issues #371/#399; SAF-008 category) — externalized `payloads.json` corpus and a Celery `run_redteam` task | ✅ done | `test_redteam::*`, `test_redteam_automation::*` |
 | **Phase 6 — Multi-Agent** | | | |
 | MAG-001 | Inter-agent causal DAG | ✅ done | `test_multiagent::test_dag_*` + `frontend/pages/multiagent.tsx` |
 | MAG-002 | Deadlock detector | ✅ done | `test_multiagent::test_deadlock_*` |
