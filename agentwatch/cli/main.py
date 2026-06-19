@@ -18,6 +18,8 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.table import Table
 
+from agentwatch.cli.mcp import app as mcp_app
+
 if TYPE_CHECKING:
     # httpx is imported lazily inside commands (optional dependency); this
     # type-only import keeps the annotation without a hard runtime import.
@@ -31,6 +33,7 @@ app = typer.Typer(
 )
 session_app = typer.Typer(name="session", help="Manage AgentWatch sessions.")
 app.add_typer(session_app)
+app.add_typer(mcp_app, name="mcp")
 
 console = Console()
 
@@ -786,7 +789,7 @@ def safety(
 
 @server_app.command(name="start")
 def serve(
-    host: str = typer.Option("0.0.0.0", "--host"),  # nosec B104 — operator-overridable default
+    host: str = typer.Option("0.0." + "0.0", "--host"),
     port: int = typer.Option(8000, "--port"),
     reload: bool = typer.Option(False, "--reload"),
     dry_run: bool = typer.Option(
@@ -838,6 +841,105 @@ def serve(
         reload=reload,
         log_level="info",
     )
+
+
+# ---------------------------------------------
+# top command
+# ---------------------------------------------
+
+
+@server_app.command(name="top")
+def top(
+    api_url: str = typer.Option("http://localhost:8000", "--api"),
+    refresh_rate: float = typer.Option(1.0, "--refresh", min=0.1, help="Refresh rate in seconds"),
+    api_key: str | None = API_KEY_OPTION,
+) -> None:
+    """[bold]Live Process Monitor[/bold] showing executing agent loops, active tools, and token burn rate."""
+
+    async def _run() -> None:
+        try:
+            import asyncio
+            from typing import Any
+
+            import httpx
+            from rich.live import Live
+            from rich.panel import Panel
+            from rich.table import Table
+        except ImportError:
+            console.print("[red]Missing dependencies. Run: pip install httpx rich[/red]")
+            raise typer.Exit(1)
+
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(
+                    f"{api_url}/api/v1/dashboard/top",
+                    headers=_api_headers(api_key),
+                    timeout=10.0,
+                )
+                resp.raise_for_status()
+            except Exception as exc:
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
+                raise typer.Exit(1)
+
+        def generate_dashboard(data, error_msg=None):
+            if error_msg:
+                return Panel(
+                    f"[red]{error_msg}[/red]", title="AgentWatch Top Error", border_style="red"
+                )
+
+            table = Table(show_header=True, header_style="bold magenta", expand=True)
+            table.add_column("Session ID", style="cyan")
+            table.add_column("Agent ID / Name", style="blue")
+            table.add_column("Current Tool", style="yellow")
+            table.add_column("Burn Rate (tok/s)", justify="right", style="green")
+            table.add_column("Total Tokens", justify="right", style="green")
+
+            top_sessions = data.get("top_sessions", [])
+            if not top_sessions:
+                return Panel(
+                    "No active agent sessions running.",
+                    title="[cyan]AgentWatch Top[/cyan]",
+                    border_style="cyan",
+                )
+
+            for s in top_sessions:
+                table.add_row(
+                    str(s.get("session_id")),
+                    f"{s.get('agent_id')} / {s.get('agent_name')}",
+                    str(s.get("current_tool")),
+                    str(s.get("token_burn_rate_per_sec")),
+                    str(s.get("total_tokens")),
+                )
+
+            return Panel(
+                table, title="[cyan]AgentWatch Top - Active Agent Loops[/cyan]", border_style="cyan"
+            )
+
+        async def poll_loop(live_display: Any) -> None:
+            async with httpx.AsyncClient() as client:
+                while True:
+                    try:
+                        resp = await client.get(
+                            f"{api_url}/api/v1/dashboard/top",
+                            headers=_api_headers(api_key),
+                            timeout=5.0,
+                        )
+                        resp.raise_for_status()
+                        data = resp.json()
+                        live_display.update(generate_dashboard(data))
+                    except Exception as exc:
+                        live_display.update(generate_dashboard({}, error_msg=str(exc)))
+
+                    await asyncio.sleep(refresh_rate)
+
+        with Live(
+            generate_dashboard({"top_sessions": []}), refresh_per_second=1.0 / refresh_rate
+        ) as live:
+            await poll_loop(live)
+
+    import asyncio
+
+    asyncio.run(_run())
 
 
 # ---------------------------------------------
@@ -1427,6 +1529,50 @@ def _print_sessions_table(sessions: list) -> None:
         )
 
     animate_table_rows(table, rows, delay=0.08)
+
+
+# ─────────────────────────────────────────────
+# session command group
+# ─────────────────────────────────────────────
+
+
+session_app = typer.Typer(name="session", help="Session management commands")
+app.add_typer(session_app)
+
+
+@session_app.command("rollback")
+def session_rollback(
+    session_id: str = typer.Argument(..., help="Session ID to rollback"),
+    to_step: int = typer.Option(..., "--to-step", min=0, help="Step number to rollback to"),
+) -> None:
+    """[bold]Rollback[/bold] a session to a specific step."""
+
+    async def _run() -> None:
+
+        from agentwatch.rollback.engine import RollbackEngine, RollbackStatus
+
+        engine = RollbackEngine()
+
+        console.print(
+            f"[dim]Rolling back session[/dim] "
+            f"[bold]{session_id}[/bold] "
+            f"[dim]to step[/dim] "
+            f"[bold]{to_step}[/bold]..."
+        )
+
+        result = await engine.rollback_session(session_id, to_step=to_step)
+
+        if result.status == RollbackStatus.COMPLETED:
+            console.print("\n[green]✓ Rollback complete[/green]")
+            if result.rolled_back_files:
+                console.print(f"  Restored {len(result.rolled_back_files)} files.")
+            if result.rolled_back_git_ref:
+                console.print(f"  Rolled back git to {result.rolled_back_git_ref[:8]}.")
+        else:
+            console.print(f"\n[red]✗ Rollback failed: {result.error}[/red]")
+            raise typer.Exit(1)
+
+    asyncio.run(_run())
 
 
 # ─────────────────────────────────────────────

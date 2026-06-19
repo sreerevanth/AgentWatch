@@ -12,6 +12,7 @@ import statistics
 from collections import deque
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -96,23 +97,32 @@ class ModelRouter:
             return False
         return True
 
-    def choose(self) -> RouteDecision:
+    def choose(self, exclude: list[str] | None = None) -> RouteDecision:
+        exclude = exclude or []
         bypassed: list[str] = []
         for model in self.priority:
+            if model in exclude:
+                bypassed.append(model)
+                continue
             if self.is_healthy(model):
                 reason = (
                     f"primary={model}"
                     if not bypassed
-                    else f"failover_to={model} after {len(bypassed)} unhealthy"
+                    else f"failover_to={model} after {len(bypassed)} skipped"
                 )
                 return RouteDecision(chosen=model, reason=reason, bypassed=bypassed)
             bypassed.append(model)
-        # All unhealthy — fall back to the head of priority list anyway
-        return RouteDecision(
-            chosen=self.priority[0],
-            reason="all_models_unhealthy_falling_back_to_primary",
-            bypassed=bypassed[1:],
-        )
+
+        # All available models unhealthy — fall back to the highest priority model not excluded
+        for model in self.priority:
+            if model not in exclude:
+                return RouteDecision(
+                    chosen=model,
+                    reason="all_models_unhealthy_falling_back_to_primary",
+                    bypassed=bypassed,
+                )
+
+        raise RuntimeError(f"All priority models excluded. Excluded: {exclude}")
 
     def health_snapshot(self) -> dict[str, dict[str, float]]:
         return {
@@ -124,6 +134,28 @@ class ModelRouter:
             }
             for m, h in self._health.items()
         }
+
+    async def execute_with_fallback(self, func) -> Any:
+        """
+        Execute an async function that takes a model name as argument.
+        If it raises an Exception (like 5xx, timeout), mark the model as error
+        and failover to the next healthy model.
+        """
+        attempted: list[str] = []
+        while True:
+            if len(attempted) >= len(self.priority):
+                raise RuntimeError(f"All models failed. Attempted: {attempted}")
+
+            decision = self.choose(exclude=attempted)
+            model = decision.chosen
+
+            attempted.append(model)
+            try:
+                # Assuming the function accepts the chosen model name
+                return await func(model)
+            except Exception as exc:
+                logger.warning("Model %s failed: %s. Failing over...", model, exc)
+                self.observe(model, error=True)
 
 
 __all__ = ["ModelRouter", "ModelHealth", "RouteDecision"]

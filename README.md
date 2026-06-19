@@ -166,6 +166,8 @@ flowchart TB
     style API fill:#1e293b,stroke:#3ecf8e,color:#fff
     style DASH fill:#1e293b,stroke:#3ecf8e,color:#fff
 ```
+### CLI Architecture
+* All shell commands executed by the CLI are routed through a secure, validated wrapper located in `agentwatch/cli/_utils` to prevent injection vulnerabilities.
 
 ---
 
