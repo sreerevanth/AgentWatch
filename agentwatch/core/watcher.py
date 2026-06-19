@@ -42,6 +42,7 @@ from agentwatch.core.schema import (
     SafetyCheckData,
     ToolCallData,
 )
+from agentwatch.telemetry.execution_logger import ExecutionLogger
 
 logger = logging.getLogger(__name__)
 
@@ -239,6 +240,11 @@ class GenericAdapter:
         self._step = 0
         self._wrapped_methods: dict[str, Any] = {}
         self._safety_engine = safety_engine or SafetyEngine()
+        self._exec_logger = ExecutionLogger(
+            agent_id=self.agent_id,
+            session_id=self.session_id,
+            task_id=self.session_id,
+        )
 
     def attach(self) -> Any:
         """
@@ -334,8 +340,13 @@ class GenericAdapter:
                     EventType.AGENT_START,
                     metadata={"method": method_name, "step": self._step},
                 )
+                import time as _time
+                _t0 = _time.monotonic()
+                self._exec_logger.log_step(method_name, {"step": self._step, "args_count": len(args), "kwargs": list(kwargs.keys())})
                 try:
                     result = await original(*args, **kwargs)
+                    _dur = (_time.monotonic() - _t0) * 1000
+                    self._exec_logger.log_execution_complete("success", _dur)
                     await self._async_emit(
                         EventType.AGENT_END,
                         status=ExecutionStatus.SUCCESS,
@@ -345,6 +356,10 @@ class GenericAdapter:
                 except AgentWatchBlockedError:
                     raise
                 except Exception as exc:
+                    import traceback as _tb
+                    _dur = (_time.monotonic() - _t0) * 1000
+                    self._exec_logger.log_error(str(exc), type(exc).__name__, _tb.format_exc(), {"method": method_name, "step": self._step})
+                    self._exec_logger.log_execution_complete("failure", _dur)
                     await self._async_emit(
                         EventType.AGENT_ERROR,
                         status=ExecutionStatus.FAILURE,
@@ -402,8 +417,13 @@ class GenericAdapter:
                 EventType.AGENT_START,
                 metadata={"method": method_name, "step": self._step},
             )
+            import time as _time
+            _t0 = _time.monotonic()
+            self._exec_logger.log_step(method_name, {"step": self._step, "args_count": len(args), "kwargs": list(kwargs.keys())})
             try:
                 result = original(*args, **kwargs)
+                _dur = (_time.monotonic() - _t0) * 1000
+                self._exec_logger.log_execution_complete("success", _dur)
                 self._emit_safely(
                     EventType.AGENT_END,
                     status=ExecutionStatus.SUCCESS,
@@ -413,6 +433,10 @@ class GenericAdapter:
             except AgentWatchBlockedError:
                 raise
             except Exception as exc:
+                import traceback as _tb
+                _dur = (_time.monotonic() - _t0) * 1000
+                self._exec_logger.log_error(str(exc), type(exc).__name__, _tb.format_exc(), {"method": method_name, "step": self._step})
+                self._exec_logger.log_execution_complete("failure", _dur)
                 self._emit_safely(
                     EventType.AGENT_ERROR,
                     status=ExecutionStatus.FAILURE,
