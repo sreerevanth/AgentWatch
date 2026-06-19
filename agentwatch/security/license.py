@@ -128,12 +128,24 @@ def verify_entitlement(
         if bound_machine != expected:
             raise MachineMismatchError("Entitlement is bound to a different machine than this one.")
 
+    # PyJWT validates ``exp`` is numeric during decode; guard the remaining
+    # claims so a malformed token raises LicenseInvalidError rather than an
+    # uncaught TypeError, keeping the typed error contract at the boundary.
+    subject, tier = claims["sub"], claims["tier"]
+    features = claims.get("features", [])
+    if not isinstance(subject, str) or not isinstance(tier, str):
+        raise LicenseInvalidError("Entitlement 'sub' and 'tier' claims must be strings.")
+    if not isinstance(features, (list, tuple, set, frozenset)) or not all(
+        isinstance(f, str) for f in features
+    ):
+        raise LicenseInvalidError("Entitlement 'features' claim must be a list of strings.")
+
     return Entitlement(
-        subject=claims["sub"],
-        tier=claims["tier"],
+        subject=subject,
+        tier=tier,
         expires_at=datetime.fromtimestamp(claims["exp"], tz=UTC),
         machine_id=bound_machine,
-        features=frozenset(claims.get("features", [])),
+        features=frozenset(features),
     )
 
 

@@ -130,6 +130,29 @@ def test_missing_required_claim_rejected(keypair):
         verify_entitlement(token, public_pem)
 
 
+def test_non_numeric_exp_rejected(keypair):
+    private_pem, public_pem = keypair
+    token = jwt.encode(
+        {"sub": "x", "tier": "pro", "exp": "tomorrow"}, private_pem, algorithm="RS256"
+    )
+    with pytest.raises(LicenseInvalidError):
+        verify_entitlement(token, public_pem)
+
+
+def test_non_string_features_rejected(keypair):
+    private_pem, public_pem = keypair
+    token = _make_token(private_pem, features=123)
+    with pytest.raises(LicenseInvalidError):
+        verify_entitlement(token, public_pem)
+
+
+def test_non_string_tier_rejected(keypair):
+    private_pem, public_pem = keypair
+    token = _make_token(private_pem, tier=42)
+    with pytest.raises(LicenseInvalidError):
+        verify_entitlement(token, public_pem)
+
+
 def test_current_machine_id_is_stable_and_hashed():
     first = current_machine_id()
     assert first == current_machine_id()
