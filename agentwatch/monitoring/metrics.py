@@ -34,13 +34,16 @@ db_query_duration = Histogram(
 )
 
 
-def record_failure(agent_id: str) -> None:
-    """Record agent failure metric.
+def record_failure(endpoint: str, status_code: int, error_msg: str = "") -> None:
+    """Record API failure metric.
 
     Args:
-        agent_id: The agent identifier
+        endpoint: The API endpoint that failed
+        status_code: HTTP status code (4xx or 5xx)
+        error_msg: Optional error message for debugging
     """
-    agent_failures.labels(agent_id=agent_id).inc()
+    # Use endpoint as agent_id for tracking
+    agent_failures.labels(agent_id=endpoint).inc()
 
 
 def record_api_latency(endpoint: str, latency_sec: float) -> None:

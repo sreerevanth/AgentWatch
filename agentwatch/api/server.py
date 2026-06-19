@@ -541,13 +541,25 @@ async def rl_headers(request: Request, call_next):
 
 @app.middleware("http")
 async def record_metrics(request: Request, call_next):
-    """Record API latency metrics for all requests."""
+    """Record API latency metrics for all requests including failures."""
     start_time = time.time()
-    response = await call_next(request)
-    duration = time.time() - start_time
     endpoint = request.url.path
-    record_api_latency(endpoint, duration)
-    return response
+    response = None
+
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as exc:
+        # Record failure before re-raising
+        duration = time.time() - start_time
+        record_api_latency(endpoint, duration)
+        record_failure(endpoint, 500, str(exc))
+        raise
+    finally:
+        # Record latency for successful responses
+        if response is not None:
+            duration = time.time() - start_time
+            record_api_latency(endpoint, duration)
 
 
 # CORS configuration.
