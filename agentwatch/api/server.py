@@ -36,11 +36,6 @@ from agentwatch.api.auth import require_permission
 from agentwatch.core.event_bus import get_event_bus
 from agentwatch.core.models import Repository, init_db
 from agentwatch.core.safety import RiskScorer, SafetyEngine, SafetyPolicy
-from agentwatch.monitoring.metrics import (
-    record_api_latency,
-    record_failure,
-    update_health_score,
-)
 from agentwatch.core.schema import (
     AgentEvent,
     AgentFramework,
@@ -56,6 +51,10 @@ from agentwatch.core.schema import (
 from agentwatch.cost.tracker import CostTracker
 from agentwatch.governance.compliance_reporter import ComplianceReporter
 from agentwatch.governance.engine import AuditEventType, GovernanceEngine
+from agentwatch.monitoring.metrics import (
+    record_api_latency,
+    record_failure,
+)
 from agentwatch.reasoning.auditor import ReasoningAuditor
 from agentwatch.replay.counterfactual import CounterfactualEngine, CounterfactualScenario
 from agentwatch.replay.engine import ReplayEngine
