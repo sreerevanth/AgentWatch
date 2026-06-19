@@ -126,9 +126,7 @@ def verify_entitlement(
     if bound_machine is not None:
         expected = machine_id if machine_id is not None else current_machine_id()
         if bound_machine != expected:
-            raise MachineMismatchError(
-                "Entitlement is bound to a different machine than this one."
-            )
+            raise MachineMismatchError("Entitlement is bound to a different machine than this one.")
 
     return Entitlement(
         subject=claims["sub"],

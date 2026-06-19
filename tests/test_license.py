@@ -65,9 +65,7 @@ def test_valid_token_verifies(keypair):
 
 def test_expired_token_rejected(keypair):
     private_pem, public_pem = keypair
-    token = _make_token(
-        private_pem, exp=datetime.now(UTC) - timedelta(seconds=1)
-    )
+    token = _make_token(private_pem, exp=datetime.now(UTC) - timedelta(seconds=1))
 
     with pytest.raises(LicenseExpiredError):
         verify_entitlement(token, public_pem)
