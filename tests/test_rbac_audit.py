@@ -32,9 +32,19 @@ def test_tampering_with_a_record_breaks_verification():
     log.append("role.change", "u1", details={"from": "viewer", "to": "owner"})
 
     assert log.verify()
-    # Mutate a past record's payload — its hash no longer matches.
-    log.records()[0].details["role"] = "owner"
+    # Mutate a stored record's payload — its hash no longer matches.
+    log._records[0].details["role"] = "owner"  # noqa: SLF001 — simulate tampering
     assert not log.verify()
+
+
+def test_records_returns_detached_copies():
+    log = AuditLog()
+    log.append("user.add", "u1", details={"role": "viewer"})
+
+    # Mutating a returned record must not corrupt the stored chain.
+    log.records()[0].details["role"] = "owner"
+    assert log.verify()
+    assert log.records()[0].details["role"] == "viewer"
 
 
 def test_reordering_breaks_verification():

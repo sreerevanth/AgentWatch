@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
@@ -60,6 +61,19 @@ class AuditRecord:
     prev_hash: str
     record_hash: str
 
+    def copy(self) -> AuditRecord:
+        """Return a detached copy so callers can't mutate the stored record."""
+        return AuditRecord(
+            seq=self.seq,
+            timestamp=self.timestamp,
+            actor=self.actor,
+            action=self.action,
+            target=self.target,
+            details=dict(self.details),
+            prev_hash=self.prev_hash,
+            record_hash=self.record_hash,
+        )
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "seq": self.seq,
@@ -67,22 +81,29 @@ class AuditRecord:
             "actor": self.actor,
             "action": self.action,
             "target": self.target,
-            "details": self.details,
+            "details": dict(self.details),
             "prev_hash": self.prev_hash,
             "record_hash": self.record_hash,
         }
 
 
 class AuditLog:
-    """An append-only, hash-chained audit log."""
+    """An append-only, hash-chained audit log.
+
+    Reads return detached copies and writes are guarded by a lock, so the
+    chain can only ever be extended through :meth:`append` — callers cannot
+    corrupt stored records, even from multiple threads.
+    """
 
     def __init__(self) -> None:
         self._records: list[AuditRecord] = []
+        self._lock = threading.RLock()
 
     @property
     def head_hash(self) -> str:
         """Hash of the most recent record (or the genesis hash when empty)."""
-        return self._records[-1].record_hash if self._records else GENESIS_HASH
+        with self._lock:
+            return self._records[-1].record_hash if self._records else GENESIS_HASH
 
     def append(
         self,
@@ -92,50 +113,56 @@ class AuditLog:
         actor: str | None = None,
         details: dict[str, Any] | None = None,
     ) -> AuditRecord:
-        """Append a new record to the chain and return it."""
-        seq = len(self._records)
-        timestamp = datetime.now(UTC).isoformat()
-        prev_hash = self.head_hash
+        """Append a new record to the chain and return a copy of it."""
         details = dict(details or {})
-        record = AuditRecord(
-            seq=seq,
-            timestamp=timestamp,
-            actor=actor,
-            action=action,
-            target=target,
-            details=details,
-            prev_hash=prev_hash,
-            record_hash=_digest(seq, timestamp, actor, action, target, details, prev_hash),
-        )
-        self._records.append(record)
-        return record
+        with self._lock:
+            seq = len(self._records)
+            timestamp = datetime.now(UTC).isoformat()
+            prev_hash = self._records[-1].record_hash if self._records else GENESIS_HASH
+            record = AuditRecord(
+                seq=seq,
+                timestamp=timestamp,
+                actor=actor,
+                action=action,
+                target=target,
+                details=details,
+                prev_hash=prev_hash,
+                record_hash=_digest(seq, timestamp, actor, action, target, details, prev_hash),
+            )
+            self._records.append(record)
+            return record.copy()
 
     def records(self) -> list[AuditRecord]:
-        """Return the records in chronological order."""
-        return list(self._records)
+        """Return detached copies of the records in chronological order."""
+        with self._lock:
+            return [record.copy() for record in self._records]
 
     def verify(self) -> bool:
         """Return whether the chain is intact (no record altered or reordered)."""
-        prev_hash = GENESIS_HASH
-        for record in self._records:
-            if record.prev_hash != prev_hash:
-                return False
-            expected = _digest(
-                record.seq,
-                record.timestamp,
-                record.actor,
-                record.action,
-                record.target,
-                record.details,
-                record.prev_hash,
-            )
-            if expected != record.record_hash:
-                return False
-            prev_hash = record.record_hash
-        return True
+        with self._lock:
+            prev_hash = GENESIS_HASH
+            for expected_seq, record in enumerate(self._records):
+                if record.seq != expected_seq:
+                    return False
+                if record.prev_hash != prev_hash:
+                    return False
+                expected = _digest(
+                    record.seq,
+                    record.timestamp,
+                    record.actor,
+                    record.action,
+                    record.target,
+                    record.details,
+                    record.prev_hash,
+                )
+                if expected != record.record_hash:
+                    return False
+                prev_hash = record.record_hash
+            return True
 
     def __len__(self) -> int:
-        return len(self._records)
+        with self._lock:
+            return len(self._records)
 
 
 __all__ = ["GENESIS_HASH", "AuditRecord", "AuditLog"]
