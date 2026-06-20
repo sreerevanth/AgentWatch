@@ -76,13 +76,9 @@ def test_generic_adapter_wraps_async_method():
     adapter.attach()
 
     # After attach, the wrapped arun must still be a coroutine function
-    assert inspect.iscoroutinefunction(agent.arun), (
-        "arun should be wrapped as a coroutine function"
-    )
+    assert inspect.iscoroutinefunction(agent.arun), "arun should be wrapped as a coroutine function"
     # The sync run wrapper must NOT be a coroutine
-    assert not inspect.iscoroutinefunction(agent.run), (
-        "run should be wrapped as a regular function"
-    )
+    assert not inspect.iscoroutinefunction(agent.run), "run should be wrapped as a regular function"
 
 
 def test_autogen_adapter_wraps_async_method():
@@ -135,8 +131,7 @@ def test_no_asyncio_iscoroutinefunction_deprecation_warning():
     deprecation_msgs = [
         str(w.message)
         for w in caught
-        if issubclass(w.category, DeprecationWarning)
-        and "iscoroutinefunction" in str(w.message)
+        if issubclass(w.category, DeprecationWarning) and "iscoroutinefunction" in str(w.message)
     ]
     assert deprecation_msgs == [], (
         f"Unexpected DeprecationWarnings about iscoroutinefunction: {deprecation_msgs}"

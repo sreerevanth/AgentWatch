@@ -154,9 +154,16 @@ function LiveEventFeed({
       </div>
       <div className="max-h-[24rem] space-y-2 overflow-y-auto pr-1">
         {wsStatus === 'connecting' ? (
-          <div className="flex flex-col items-center justify-center py-10 text-zinc-500">
-            <Loader2 className="mb-2 h-5 w-5 animate-spin" />
-            <div className="text-sm">Connecting…</div>
+          <div className="space-y-2">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="animate-pulse rounded-xl border border-white/5 bg-white/5 p-3 text-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="h-3 w-24 rounded bg-white/10" />
+                  <div className="h-3 w-12 rounded bg-white/10" />
+                </div>
+                <div className="mt-2 h-3 w-40/50 rounded bg-white/10" style={{ width: '60%' }} />
+              </div>
+            ))}
           </div>
         ) : events.length === 0 ? (
           <div className="py-10 text-center text-sm text-zinc-500">Waiting for events…</div>
@@ -217,7 +224,20 @@ function SessionsTable({ sessions, loading }: { sessions: AgentSession[]; loadin
               ))
             ) : (
               sessions.map((session) => (
-                <tr key={session.session_id} className="cursor-pointer border-t border-white/5 transition-colors hover:bg-white/5" onClick={() => router.push(`/sessions/${session.session_id}`)}>
+                <tr
+                  key={session.session_id}
+                  className="cursor-pointer border-t border-white/5 transition-colors hover:bg-white/5 focus:outline-none focus:bg-white/10"
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`View details for session ${session.session_id.slice(0, 8)}`}
+                  onClick={() => router.push(`/sessions/${session.session_id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      router.push(`/sessions/${session.session_id}`);
+                    }
+                  }}
+                >
                   <td className="px-5 py-3">
                     <div className="font-mono text-xs text-zinc-200">{session.session_id.slice(0, 16)}…</div>
                     <div className="max-w-[20rem] truncate text-xs text-zinc-500">{session.goal ?? session.agent_name ?? session.agent_id}</div>
@@ -310,7 +330,7 @@ export default function DashboardPage() {
             <div className="text-xs uppercase tracking-[0.32em] text-zinc-500">AgentWatch</div>
             <h1 className="text-2xl font-semibold text-white">Reliability, safety, and observability</h1>
           </div>
-          <button onClick={() => { refreshSummary(); refreshSessions() }} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/10 hover:text-white">
+          <button onClick={() => { refreshSummary(); refreshSessions() }} aria-label="Refresh dashboard data" className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/10 hover:text-white">
             <RefreshCw size={14} />
             Refresh
           </button>
