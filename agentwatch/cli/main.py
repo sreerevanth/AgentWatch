@@ -31,8 +31,6 @@ app = typer.Typer(
     add_completion=True,
     rich_markup_mode="rich",
 )
-session_app = typer.Typer(name="session", help="Manage AgentWatch sessions.")
-app.add_typer(session_app)
 app.add_typer(mcp_app, name="mcp")
 
 console = Console()
@@ -1529,10 +1527,6 @@ def _print_sessions_table(sessions: list) -> None:
 # ─────────────────────────────────────────────
 # session command group
 # ─────────────────────────────────────────────
-
-
-session_app = typer.Typer(name="session", help="Session management commands")
-app.add_typer(session_app)
 
 
 @session_app.command("rollback")
