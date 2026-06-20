@@ -16,14 +16,15 @@ from __future__ import annotations
 
 from typing import Any
 
-from agentwatch.governance.gdpr import _PII_PATTERNS
-from agentwatch.governance.hipaa import _PHI_PATTERNS
+from agentwatch.governance.gdpr import pii_patterns
+from agentwatch.governance.hipaa import phi_patterns
 
 MASK = "[REDACTED]"
 
 # Regex fallback: PII (email/SSN/credit-card/phone/IP/keys) + PHI (MRN, ICD,
-# diagnosis, conditions), reusing the governance engines' compiled patterns.
-_FALLBACK_PATTERNS = _PII_PATTERNS + _PHI_PATTERNS
+# diagnosis, conditions), reusing the governance engines' public pattern
+# accessors so there is a single source of truth.
+_FALLBACK_PATTERNS = pii_patterns() + phi_patterns()
 
 
 def _load_presidio() -> tuple[Any, Any] | None:

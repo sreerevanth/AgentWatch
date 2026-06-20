@@ -92,6 +92,41 @@ def test_watcher_maybe_redact_scrubs_when_enabled():
     assert "123-45-6789" not in adapter._maybe_redact(tc).raw_command
 
 
+def test_safety_checks_raw_then_publishes_redacted_event():
+    """The safety engine must evaluate the raw payload; only the published /
+    persisted event is scrubbed (redaction must not run before the check)."""
+    from agentwatch.core.event_bus import EventBus
+    from agentwatch.core.schema import EventType
+
+    seen: dict[str, str] = {}
+
+    class _RecordingSafety:
+        def check_tool_call_sync(self, tool_call):
+            seen["raw_command"] = tool_call.raw_command
+            return False, []
+
+    class _Agent:
+        def run(self, command):
+            return "ok"
+
+    bus = EventBus()
+    agent = _Agent()
+    GenericAdapter(
+        agent, event_bus=bus, safety_engine=_RecordingSafety(), redact=True
+    ).attach()
+    agent.run("ssn 123-45-6789")
+
+    # Safety saw the unredacted command.
+    assert seen["raw_command"] == "ssn 123-45-6789"
+
+    # The published TOOL_CALL event is scrubbed.
+    events = bus.get_recent_events(event_type=EventType.TOOL_CALL)
+    assert events
+    published = events[0].tool_call.raw_command
+    assert "123-45-6789" not in published
+    assert MASK in published
+
+
 # ── EU AI Act Article 15 export endpoint ──────────────────────────────────
 
 
@@ -103,4 +138,9 @@ def test_eu_ai_act_report_endpoint():
     assert body["article"] == "EU AI Act Article 15"
     assert "conformity" in body
     assert "requirements_met" in body["conformity"]
+    # Fields are derived from live telemetry/policy, not static literals.
+    assert "telemetry" in body
+    assert "safety_stats" in body["telemetry"]
+    assert "accuracy_metrics" in body["documentation"]
+    assert "active_policy" in body["documentation"]["data_governance"]
     assert body["documentation"]["risk_category"] == "high"

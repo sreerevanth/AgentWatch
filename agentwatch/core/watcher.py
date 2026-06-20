@@ -245,12 +245,22 @@ class GenericAdapter:
         self._redact = redact
 
     def _maybe_redact(self, tool_call: ToolCallData) -> ToolCallData:
-        """Redact PII/PHI from a tool call when redaction is enabled."""
+        """Redact PII/PHI from a tool call when redaction is enabled.
+
+        Applied only when building the event that gets published/persisted —
+        never before the safety check, which must see the raw payload.
+        """
         if not self._redact:
             return tool_call
         from agentwatch.security.redaction import redact_tool_call
 
         return redact_tool_call(tool_call)
+
+    def _redact_event(self, event: AgentEvent) -> AgentEvent:
+        """Return a copy of ``event`` with its tool call scrubbed, if enabled."""
+        if not self._redact or event.tool_call is None:
+            return event
+        return event.model_copy(update={"tool_call": self._maybe_redact(event.tool_call)})
 
     def attach(self) -> Any:
         """
@@ -308,7 +318,9 @@ class GenericAdapter:
 
                 # ── Safety gate (async path — full check_event with approval) ──
                 if is_tool_like:
-                    tool_call = self._maybe_redact(_build_tool_call_data(method_name, args, kwargs))
+                    # Safety must evaluate the RAW payload — redacting first would
+                    # hide signals (paths, secrets, identifiers) the engine needs.
+                    tool_call = _build_tool_call_data(method_name, args, kwargs)
                     safety_event = AgentEvent(
                         session_id=self.session_id,
                         agent_id=self.agent_id,
@@ -320,10 +332,11 @@ class GenericAdapter:
                     )
                     try:
                         checked = await self._safety_engine.check_event(safety_event)
-                        # Publish the checked event directly — it carries the full
-                        # safety metadata (risk_level, blocked status, reasons).
+                        # Publish the checked event — it carries the full safety
+                        # metadata (risk_level, blocked status, reasons). Scrub
+                        # PII/PHI only now, after the decision, before persist.
                         # Await so the HTTP forwarder completes before we proceed.
-                        await self.bus.publish(checked)
+                        await self.bus.publish(self._redact_event(checked))
                         if checked.is_blocked:
                             reasons = checked.safety.reasons if checked.safety else []
                             reason_str = "; ".join(reasons) if reasons else "safety policy"
@@ -372,7 +385,8 @@ class GenericAdapter:
 
             # ── Safety gate (sync path — pattern match only, no approval) ──
             if is_tool_like:
-                tool_call = self._maybe_redact(_build_tool_call_data(method_name, args, kwargs))
+                # Check the raw payload; redact only the event we publish below.
+                tool_call = _build_tool_call_data(method_name, args, kwargs)
                 try:
                     blocked, reasons = self._safety_engine.check_tool_call_sync(tool_call)
                     # Build and publish a TOOL_CALL event with safety data so the
@@ -384,7 +398,7 @@ class GenericAdapter:
                         framework=self.framework,
                         event_type=EventType.TOOL_CALL,
                         step_number=self._step,
-                        tool_call=tool_call,
+                        tool_call=self._maybe_redact(tool_call),
                         status=ExecutionStatus.BLOCKED if blocked else ExecutionStatus.RUNNING,
                         safety=SafetyCheckData(
                             risk_level=RiskLevel.CRITICAL if blocked else RiskLevel.SAFE,
