@@ -11,7 +11,6 @@ from rich.live import Live
 from rich.panel import Panel
 from rich.table import Table
 
-
 console = Console()
 
 CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*!?"
@@ -19,7 +18,6 @@ CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*!?"
 
 def cinematic_logo_reveal(ascii_art: list[str]) -> None:
     """A highly animated movie-style reveal for the ASCII logo."""
-
 
     # Make space for the logo
     sys.stdout.write("\n" * len(ascii_art))

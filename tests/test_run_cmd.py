@@ -82,7 +82,7 @@ def test_run_cmd_whitelist_allowed_characters():
         "~user",
         "john.doe@example.com",
         "100%",
-        "\"double-quoted\"",
+        '"double-quoted"',
         "'single-quoted'",
         "$100",
     ]
@@ -161,7 +161,3 @@ def test_run_cmd_allowed_shell_metacharacters_behavior():
     for pat in blocked_patterns:
         with pytest.raises(run_cmd.CommandError, match="contains forbidden characters"):
             run_cmd.run(["echo", pat])
-
-
-
-

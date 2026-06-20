@@ -55,7 +55,7 @@ def run(
       whitelist (`ALLOWED_ARG_RE`). This serves as defense-in-depth against:
         1. Argument injection (e.g. passing `-` or `--` option flags controlled by untrusted users).
         2. Downstream shell parsing (where the target process itself interprets arguments inside a shell).
-    
+
     When is bypassing validation (`check_args=False`) acceptable?
     - Bypassing validation is acceptable ONLY when:
         1. The command contains safe, hardcoded programmatic arguments that use characters blocked
@@ -132,10 +132,6 @@ def run(
         )
 
     return result
-import logging
-import subprocess  # nosec B404
-
-logger = logging.getLogger(__name__)
 
 
 def run_validated_command(
