@@ -1546,18 +1546,6 @@ def session_prune(
     asyncio.run(_run())
 
 
-@app.command(name="cost-predict")
-def cost_predict(
-    task: str = typer.Option(..., help="Task script to simulate"),
-    model: str = typer.Option(..., help="Model to use"),
-) -> None:
-    """Pro: Pre-flight LLM budget estimation."""
-    console.print("[bold yellow]Validating Pro License...[/bold yellow]")
-    console.print(
-        f"[bold green]Mock Cost Predict[/bold green]: Simulated {task} with {model}. Estimated cost: $1.25."
-    )
-
-
 # ─────────────────────────────────────────────
 # Entrypoint
 # ---------------------------------------------
@@ -1569,3 +1557,9 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+@app.command(name="cost-predict")
+@cost_app.command(name="predict")
+def cost_predict(
+    task: str = typer.Argument(..., help="Task description"),
