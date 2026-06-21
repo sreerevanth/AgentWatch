@@ -1563,3 +1563,41 @@ if __name__ == "__main__":
 @safety_app.command(name="audit")
 def audit_command(
     session_id: str = typer.Argument(..., help="ID of the session to audit"),
+) -> None:
+    """[bold]Security Audit[/bold]: Run a deep security audit on a session."""
+    from agentwatch.core.safety import RiskScorer
+    from agentwatch.core.schema import AgentEvent
+
+    session_file = Path(f"agentwatch-session-{session_id}.json")
+    if not session_file.exists():
+        console.print(f"[red]Session {session_id} not found locally. Export it first.[/red]")
+        raise typer.Exit(1)
+
+    data = _load_session_file(session_file)
+    events = [AgentEvent(**e) for e in data.get("events", [])]
+    scorer = RiskScorer()
+
+    high_risks = 0
+    console.print(
+        Panel(
+            f"Running deep security audit on session [cyan]{session_id}[/cyan]...",
+            title="[red]Audit[/red]",
+            border_style="red",
+        )
+    )
+
+    for event in events:
+        if event.tool_call and event.tool_call.raw_command:
+            level, score, _, _ = scorer.score(event.tool_call)
+            if score >= 0.5:
+                high_risks += 1
+                console.print(
+                    f"[yellow]ΓÜá Found {level.value} risk in step {event.timestamp}[/yellow]: [dim]{event.tool_call.raw_command[:50]}[/dim]"
+                )
+
+    if high_risks > 0:
+        console.print(
+            f"\n[red]Γ£ù Audit complete. Found {high_risks} potentially unsafe operations.[/red]"
+        )
+    else:
+        console.print("\n[green]Γ£ô Audit complete. No critical vulnerabilities found.[/green]")
