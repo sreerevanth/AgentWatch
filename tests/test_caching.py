@@ -40,8 +40,17 @@ async def test_semantic_cache_manager_semantic_match(monkeypatch):
 
     # Mock the embed method to avoid downloading real models
     async def mock_embed(self, texts):
-        return [[1.0, 0.0] if "reverse a string" in t else [0.0, 1.0] for t in texts]
-
+        # Return [1.0, 0.0] for the original prompt and [0.96, 0.28] for the altered prompt.
+        # This results in a cosine similarity of exactly 0.96, testing the fuzzy matching properly.
+        res = []
+        for t in texts:
+            if t == "Can you write a python script to reverse a string?":
+                res.append([1.0, 0.0])
+            elif t == "Please write a python code to reverse a string.":
+                res.append([0.96, 0.28])
+            else:
+                res.append([0.0, 1.0])
+        return res
     monkeypatch.setattr(EmbeddingProvider, "embed", mock_embed)
 
     cache = SemanticCache(similarity_threshold=0.90)
@@ -398,7 +407,7 @@ async def test_interception_streaming_miss(monkeypatch):
         async def net_gen():
             class MockChoice:
                 def __init__(self, c):
-                    self.message = type("msg", (), {"content": c})
+                    self.delta = type("delta", (), {"content": c})
 
             class MockChunk:
                 def __init__(self, c):
@@ -423,6 +432,9 @@ async def test_interception_streaming_miss(monkeypatch):
         chunks = []
         async for chunk in gen:
             chunks.append(chunk)
+
+        assert len(chunks) == 1
+        assert chunks[0].choices[0].delta.content == "chunk1"
 
     finally:
         unpatch_openai()
