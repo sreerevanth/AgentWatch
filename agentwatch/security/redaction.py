@@ -81,11 +81,15 @@ class Redactor:
         return out
 
     def redact_payload(self, payload: Any) -> Any:
-        """Recursively redact every string in a dict/list/scalar payload."""
+        """Recursively redact every string in a dict/list/scalar payload.
+
+        Both keys and values are scrubbed, since a key can itself be sensitive
+        (e.g. an email address used as a map key).
+        """
         if isinstance(payload, str):
             return self.redact_text(payload)
         if isinstance(payload, dict):
-            return {k: self.redact_payload(v) for k, v in payload.items()}
+            return {self.redact_payload(k): self.redact_payload(v) for k, v in payload.items()}
         if isinstance(payload, (list, tuple)):
             return type(payload)(self.redact_payload(v) for v in payload)
         return payload

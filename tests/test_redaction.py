@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 
 from agentwatch.api.server import app
 from agentwatch.core.schema import ToolCallData
-from agentwatch.core.watcher import GenericAdapter
+from agentwatch.core.watcher import GenericAdapter, watch
 from agentwatch.security.redaction import (
     MASK,
     Redactor,
@@ -111,9 +111,7 @@ def test_safety_checks_raw_then_publishes_redacted_event():
 
     bus = EventBus()
     agent = _Agent()
-    GenericAdapter(
-        agent, event_bus=bus, safety_engine=_RecordingSafety(), redact=True
-    ).attach()
+    GenericAdapter(agent, event_bus=bus, safety_engine=_RecordingSafety(), redact=True).attach()
     agent.run("ssn 123-45-6789")
 
     # Safety saw the unredacted command.
@@ -127,10 +125,29 @@ def test_safety_checks_raw_then_publishes_redacted_event():
     assert MASK in published
 
 
+def test_watch_passes_redact_through():
+    from agentwatch.core.event_bus import EventBus
+    from agentwatch.core.schema import EventType
+
+    class _Agent:
+        def run(self, command):
+            return "ok"
+
+    bus = EventBus()
+    agent = watch(_Agent(), event_bus=bus, redact=True)
+    agent.run("ssn 123-45-6789")
+
+    events = bus.get_recent_events(event_type=EventType.TOOL_CALL)
+    assert events
+    assert MASK in events[0].tool_call.raw_command
+
+
 # ── EU AI Act Article 15 export endpoint ──────────────────────────────────
 
 
-def test_eu_ai_act_report_endpoint():
+def test_eu_ai_act_report_endpoint(monkeypatch):
+    # Pin auth off so the test doesn't depend on a stray AGENTWATCH_API_KEY.
+    monkeypatch.setattr("agentwatch.api.server._API_KEY", None)
     client = TestClient(app)
     resp = client.get("/api/v1/governance/eu-ai-act-report")
     assert resp.status_code == 200

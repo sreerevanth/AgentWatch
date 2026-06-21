@@ -1134,7 +1134,8 @@ async def eu_ai_act_report(_auth: None = Depends(_require_api_key)) -> dict[str,
     pkg = EUAIActPackage()
     pkg.set_documentation(doc)
     # Record-keeping evidence: derive decision-log entries from real sessions.
-    for session in sessions[:50]:
+    sessions_used = sessions[:50]
+    for session in sessions_used:
         pkg.log_decision(
             DecisionLogEntry(
                 when=session.started_at,
@@ -1152,7 +1153,7 @@ async def eu_ai_act_report(_auth: None = Depends(_require_api_key)) -> dict[str,
         "article": "EU AI Act Article 15",
         "documentation": doc.to_dict(),
         "conformity": pkg.assess().to_dict(),
-        "telemetry": {"safety_stats": safety, "sessions_considered": len(sessions)},
+        "telemetry": {"safety_stats": safety, "sessions_considered": len(sessions_used)},
     }
 
 

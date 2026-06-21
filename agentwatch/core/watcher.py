@@ -575,6 +575,7 @@ def watch(
     session_id: str | None = None,
     agent_id: str | None = None,
     event_bus: EventBus | None = None,
+    redact: bool = False,
 ) -> Any:
     """
     Instrument an agent for AgentWatch observability.
@@ -588,6 +589,8 @@ def watch(
         session_id:  optional explicit session ID (auto-generated otherwise)
         agent_id:    optional explicit agent ID
         event_bus:   override the default EventBus (mostly for testing)
+        redact:      scrub PII/PHI from tool-call payloads before they are
+                     published/persisted (generic-adapter path only)
     """
     if agent is None:
         logger.warning("watch() called with None — returning None")
@@ -624,6 +627,7 @@ def watch(
             event_bus=bus,
             session_id=session_id,
             agent_id=agent_id,
+            redact=redact,
         )
         return adapter.attach()
 
