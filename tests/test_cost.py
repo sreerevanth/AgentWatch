@@ -102,6 +102,41 @@ def test_router_failover_on_errors():
     assert r.choose().chosen == "backup"
 
 
+def test_router_per_model_timeout():
+    r = ModelRouter(
+        ["primary", "backup"],
+        latency_ceiling_ms=6000.0,
+        route_timeouts={"primary": 2000.0},
+    )
+    r.observe("primary", latency_ms=2100.0, confidence=0.9)
+    r.observe("backup", latency_ms=500.0, confidence=0.9)
+    decision = r.choose()
+    assert decision.chosen == "backup"
+    assert "primary" in decision.bypassed
+
+
+def test_router_global_fallback():
+    r = ModelRouter(["primary", "backup"], latency_ceiling_ms=3000.0)
+    r.observe("primary", latency_ms=2500.0, confidence=0.9)
+    r.observe("backup", latency_ms=2500.0, confidence=0.9)
+    decision = r.choose()
+    assert decision.chosen == "primary"
+
+
+def test_router_mixed_timeouts():
+    r = ModelRouter(
+        ["primary", "backup", "slow"],
+        latency_ceiling_ms=5000.0,
+        route_timeouts={"primary": 1000.0},
+    )
+    r.observe("primary", latency_ms=1500.0, confidence=0.9)
+    r.observe("backup", latency_ms=3000.0, confidence=0.9)
+    r.observe("slow", latency_ms=4000.0, confidence=0.9)
+    decision = r.choose()
+    assert decision.chosen == "backup"
+    assert "primary" in decision.bypassed
+
+
 # ─────────────────────────────────────────────
 # CST-004 — Task cost predictor
 # ─────────────────────────────────────────────

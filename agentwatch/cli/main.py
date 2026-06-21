@@ -1526,6 +1526,10 @@ def _print_sessions_table(sessions: list) -> None:
     animate_table_rows(table, rows, delay=0.08)
 
 
+# ─────────────────────────────────────────────
+# session command group
+# ─────────────────────────────────────────────
+
 
 @session_app.command("rollback")
 def session_rollback(
