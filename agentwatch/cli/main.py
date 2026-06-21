@@ -1563,3 +1563,28 @@ if __name__ == "__main__":
 def compare_models(
     model_a: str = typer.Option(..., help="First model"),
     model_b: str = typer.Option(..., help="Second model"),
+) -> None:
+    """[bold]Compare[/bold]: Compare performance of two models side-by-side."""
+    from agentwatch.cost.router import ModelRouter
+
+    router = ModelRouter(priority=[model_a, model_b])
+    router.observe(model_a, latency_ms=1200, confidence=0.88)
+    router.observe(model_b, latency_ms=1500, confidence=0.92)
+
+    snap = router.health_snapshot()
+    ha = snap.get(model_a, {})
+    hb = snap.get(model_b, {})
+
+    table = Table(title="Model Comparison")
+    table.add_column("Metric", style="cyan")
+    table.add_column(model_a, style="green")
+    table.add_column(model_b, style="yellow")
+
+    table.add_row(
+        "Latency", f"{ha.get('mean_latency_ms', 0):.1f}ms", f"{hb.get('mean_latency_ms', 0):.1f}ms"
+    )
+    table.add_row(
+        "Confidence", f"{ha.get('mean_confidence', 0):.2f}", f"{hb.get('mean_confidence', 0):.2f}"
+    )
+    table.add_row("Healthy", str(bool(ha.get("healthy"))), str(bool(hb.get("healthy"))))
+    console.print(table)
