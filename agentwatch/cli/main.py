@@ -1546,15 +1546,6 @@ def session_prune(
     asyncio.run(_run())
 
 
-@server_app.command(name="audit")
-def audit(format: str = typer.Option("pdf", help="Output format: pdf or json")) -> None:
-    """Enterprise: Generate SOC2/HIPAA compliance report."""
-    console.print("[bold yellow]Validating Enterprise License...[/bold yellow]")
-    console.print(
-        f"[bold green]Mock Audit[/bold green]: Compliance report generated in {format} format."
-    )
-
-
 # ─────────────────────────────────────────────
 # Entrypoint
 # ---------------------------------------------
@@ -1566,3 +1557,9 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+@app.command(name="audit")
+@safety_app.command(name="audit")
+def audit_command(
+    session_id: str = typer.Argument(..., help="ID of the session to audit"),
