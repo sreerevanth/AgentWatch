@@ -24,7 +24,7 @@ from agentwatch.security.license import Entitlement, LicenseError, verify_entitl
 # tests never touch a developer's real ``~/.agentwatch``.
 _HOME_ENV = "AGENTWATCH_HOME"
 _SECTION = "premium"
-_TOKEN_KEY = "entitlement_token"  # noqa: S105 — TOML key name, not a secret
+_TOKEN_KEY = "entitlement_token"  # noqa: S105 # nosec B105 — TOML key name, not a secret
 
 
 def config_home() -> Path:
