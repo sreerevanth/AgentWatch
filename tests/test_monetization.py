@@ -13,6 +13,7 @@ from typer.testing import CliRunner
 from agentwatch.cli.main import app
 from agentwatch.security.checkout import (
     DEFAULT_CHECKOUT_URL,
+    SESSION_TTL,
     checkout_url,
     new_session,
 )
@@ -70,6 +71,9 @@ def test_new_session_is_unique_and_short_lived():
     assert s1.token != s2.token
     assert len(s1.token) >= 32
     assert not s1.is_expired()
+    # Lifetime tracks the configured TTL (small tolerance for clock skew).
+    remaining = s1.expires_at - datetime.now(UTC)
+    assert SESSION_TTL - timedelta(seconds=2) <= remaining <= SESSION_TTL
     assert s1.is_expired(now=datetime.now(UTC) + timedelta(hours=1))
 
 
@@ -165,7 +169,10 @@ def test_upgrade_activate_rejects_unsigned_token(home, keypair, monkeypatch):
 
 
 def test_ensure_premium_prompts_on_free_tier(home):
+    import typer
+
     from agentwatch.cli.main import _ensure_premium
 
-    with pytest.raises(Exception):  # typer.Exit
+    with pytest.raises(typer.Exit) as exc_info:
         _ensure_premium("redteam")
+    assert exc_info.value.exit_code == 1

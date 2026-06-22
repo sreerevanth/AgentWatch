@@ -1381,8 +1381,11 @@ def _license_public_key() -> str | None:
     if inline:
         return inline
     key_file = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY_FILE")
-    if key_file and Path(key_file).exists():
-        return Path(key_file).read_text(encoding="utf-8")
+    if key_file:
+        try:
+            return Path(key_file).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            pass
     return None
 
 
