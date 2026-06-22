@@ -51,6 +51,7 @@ export interface AgentEvent {
   safety?: SafetyData
   token_usage?: TokenUsage
   planner_output_preview?: string
+  duration_ms?: number
 }
 
 export interface AgentSession {
@@ -77,6 +78,25 @@ export interface DashboardSummary {
   estimated_cost_usd: number
   safety_stats: { checked: number; blocked: number; approved: number }
   event_bus_stats: Record<string, number>
+}
+
+export interface FrameworkStats {
+  success: number
+  failure: number
+  total: number
+}
+
+export interface HistoricalTrend {
+  hour: string
+  count: number
+}
+
+export interface DashboardAnalytics {
+  success_rate: number
+  average_execution_time_seconds: number
+  framework_stats: Record<string, FrameworkStats>
+  recent_errors: AgentEvent[]
+  historical_trend: HistoricalTrend[]
 }
 
 export interface ThreatPathNode {

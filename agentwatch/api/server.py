@@ -1070,6 +1070,64 @@ async def dashboard_top(_auth: None = Depends(_require_api_key)) -> dict[str, An
     return {"top_sessions": top_sessions}
 
 
+@app.get("/api/v1/dashboard/analytics")
+async def dashboard_analytics(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+    sessions = _collector.list_sessions(limit=500)
+    
+    success_count = sum(1 for s in sessions if s.status == ExecutionStatus.SUCCESS)
+    failure_count = sum(1 for s in sessions if s.status == ExecutionStatus.FAILURE)
+    total_sessions = len(sessions)
+    
+    success_rate = (success_count / total_sessions) if total_sessions > 0 else 0
+    
+    completed_sessions = [s for s in sessions if s.status in {ExecutionStatus.SUCCESS, ExecutionStatus.FAILURE}]
+    avg_execution_time = 0
+    if completed_sessions:
+        total_time = sum((s.ended_at - s.started_at).total_seconds() for s in completed_sessions if s.ended_at)
+        avg_execution_time = total_time / len(completed_sessions)
+        
+    framework_stats = {}
+    for s in sessions:
+        fw = s.framework.value
+        if fw not in framework_stats:
+            framework_stats[fw] = {"success": 0, "failure": 0, "total": 0}
+        framework_stats[fw]["total"] += 1
+        if s.status == ExecutionStatus.SUCCESS:
+            framework_stats[fw]["success"] += 1
+        elif s.status == ExecutionStatus.FAILURE:
+            framework_stats[fw]["failure"] += 1
+            
+    recent_errors = []
+    for s in sessions:
+        if s.status in {ExecutionStatus.FAILURE, ExecutionStatus.BLOCKED}:
+            trace = _collector.get_trace(s.session_id)
+            if trace:
+                for event in reversed(trace.events):
+                    if event.status == ExecutionStatus.FAILURE or event.is_blocked:
+                        recent_errors.append(event.model_dump_for_storage())
+                        break
+                        
+    recent_errors.sort(key=lambda x: x["timestamp"], reverse=True)
+    recent_errors = recent_errors[:20]
+    
+    now = datetime.now(UTC)
+    historical_trend = []
+    for i in range(24):
+        hour_start = now - timedelta(hours=i+1)
+        hour_end = now - timedelta(hours=i)
+        count = sum(1 for s in sessions if hour_start <= s.started_at < hour_end)
+        historical_trend.append({"hour": hour_end.strftime("%H:00"), "count": count})
+    historical_trend.reverse()
+
+    return {
+        "success_rate": success_rate,
+        "average_execution_time_seconds": avg_execution_time,
+        "framework_stats": framework_stats,
+        "recent_errors": recent_errors,
+        "historical_trend": historical_trend,
+    }
+
+
 @app.get("/api/v1/governance/compliance-report")
 async def compliance_report(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     return _compliance_reporter.generate().to_dict()
