@@ -93,7 +93,7 @@ def build_trajectory(
     loops = _detect_loops([n.label for n in nodes])
 
     # Repeated tools — counts > 1
-    tool_counts = Counter()
+    tool_counts: Counter[str] = Counter()
     for ev in events:
         if ev.tool_call:
             tool_counts[ev.tool_call.tool_name] += 1

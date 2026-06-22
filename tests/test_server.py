@@ -45,6 +45,7 @@ def test_get_governance_report(client):
 # WebSocket /ws/events authentication tests (issue #120)
 # ---------------------------------------------------------------------------
 
+
 class TestWebSocketAuth:
     """Verify that /ws/events enforces API key authentication consistently
     with the REST layer, covering both the header and query-param paths as
@@ -70,9 +71,7 @@ class TestWebSocketAuth:
         monkeypatch.setattr(_server_module, "_IS_PROD", False)
         client = TestClient(app)
         with pytest.raises(WebSocketDisconnect):
-            with client.websocket_connect(
-                "/ws/events", headers={"x-api-key": "wrong-secret"}
-            ):
+            with client.websocket_connect("/ws/events", headers={"x-api-key": "wrong-secret"}):
                 pass
 
     def test_wrong_key_rejected_via_query_param(self, monkeypatch):
@@ -89,9 +88,7 @@ class TestWebSocketAuth:
         monkeypatch.setattr(_server_module, "_API_KEY", "correct-secret")
         monkeypatch.setattr(_server_module, "_IS_PROD", False)
         client = TestClient(app)
-        with client.websocket_connect(
-            "/ws/events", headers={"x-api-key": "correct-secret"}
-        ) as ws:
+        with client.websocket_connect("/ws/events", headers={"x-api-key": "correct-secret"}) as ws:
             # Connection accepted; send a keepalive ping and verify no error.
             ws.send_text("ping")
 
@@ -100,9 +97,7 @@ class TestWebSocketAuth:
         monkeypatch.setattr(_server_module, "_API_KEY", "correct-secret")
         monkeypatch.setattr(_server_module, "_IS_PROD", False)
         client = TestClient(app)
-        with client.websocket_connect(
-            "/ws/events?api_key=correct-secret"
-        ) as ws:
+        with client.websocket_connect("/ws/events?api_key=correct-secret") as ws:
             ws.send_text("ping")
 
     def test_no_key_configured_development_allows_connection(self, monkeypatch):
@@ -126,6 +121,32 @@ class TestWebSocketAuth:
         with pytest.raises(WebSocketDisconnect):
             with client.websocket_connect("/ws/events"):
                 pass
+
+
+def test_websocket_payload_sanitization(client):
+    from agentwatch.core.event_bus import get_event_bus
+    from agentwatch.core.schema import AgentEvent, AgentFramework, EventType
+
+    # Connect to websocket
+    with client.websocket_connect("/ws/events") as ws:
+        # Publish an event to the bus containing HTML
+        event = AgentEvent(
+            session_id="ws-test-session",
+            agent_id="test-agent",
+            framework=AgentFramework.CUSTOM,
+            event_type=EventType.PLANNER_OUTPUT,
+            planner_output_preview="<script>alert('xss')</script>",
+        )
+
+        # Publish synchronously
+        get_event_bus().publish_sync(event)
+
+        # Read from websocket
+        received = ws.receive_json()
+        assert (
+            received["planner_output_preview"]
+            == "&lt;script&gt;alert(&#x27;xss&#x27;)&lt;/script&gt;"
+        )
 
 
 def test_update_safety_policy_validation(client):
@@ -159,4 +180,3 @@ def test_update_safety_policy_validation(client):
         },
     )
     assert resp.status_code == 422
-

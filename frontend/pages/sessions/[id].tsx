@@ -5,6 +5,7 @@ import { AlertTriangle, ArrowLeft, ChevronDown, ChevronUp, RotateCcw } from 'luc
 import { format } from 'date-fns'
 
 import { FailureAnalysis, ReplayStep, api } from '../../lib/api'
+import { Modal } from '../../components/Modal'
 
 // Resolved at build time from the NEXT_PUBLIC_API_HOST Docker build arg.
 // In production the browser calls the API origin directly (no proxy hop).
@@ -92,6 +93,7 @@ export default function SessionPage() {
   const router = useRouter()
   const { id } = router.query as { id?: string }
   const [rollbackStep, setRollbackStep] = useState('')
+  const [isRollbackModalOpen, setIsRollbackModalOpen] = useState(false)
   const { data: session } = useSWR(id ? `${API_BASE}/sessions/${id}` : null, fetcher)
   const { data: replayData } = useSWR(id ? `${API_BASE}/sessions/${id}/replay` : null, fetcher)
   const { data: confidenceData } = useSWR(id ? `${API_BASE}/sessions/${id}/confidence` : null, fetcher)
@@ -101,6 +103,7 @@ export default function SessionPage() {
 
   const handleRollback = async () => {
     if (!rollbackStep) return
+    setIsRollbackModalOpen(false)
     await api.rollback(id, { to_step: Number(rollbackStep) })
     window.alert(`Rollback to step ${rollbackStep} triggered.`)
   }
@@ -156,10 +159,34 @@ export default function SessionPage() {
                   </option>
                 ))}
               </select>
-              <button type="button" disabled={!rollbackStep} onClick={handleRollback} className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50">
+              <button type="button" disabled={!rollbackStep} onClick={() => setIsRollbackModalOpen(true)} className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50">
                 Trigger rollback
               </button>
             </div>
+
+            <Modal 
+              isOpen={isRollbackModalOpen} 
+              onClose={() => setIsRollbackModalOpen(false)} 
+              title="Confirm Rollback"
+            >
+              <div className="space-y-4">
+                <p>Are you sure you want to rollback to step {rollbackStep}? This will revert any changes made after this point.</p>
+                <div className="flex justify-end gap-3">
+                  <button
+                    onClick={() => setIsRollbackModalOpen(false)}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-300 transition hover:bg-white/10 hover:text-white"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleRollback}
+                    className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500"
+                  >
+                    Confirm Rollback
+                  </button>
+                </div>
+              </div>
+            </Modal>
           </section>
         ) : null}
       </main>
