@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Interactive Application Suite Demos for AgentWatch.
 
-This module provides step-by-step CLI simulation scenarios demonstrating safety engines, 
-session replay mechanisms, real-time model confidence evaluation tracks, episodic causal memory, 
+This module provides step-by-step CLI simulation scenarios demonstrating safety engines,
+session replay mechanisms, real-time model confidence evaluation tracks, episodic causal memory,
 and advanced orchestration multi-agent task execution loops.
 """
 
@@ -571,9 +571,9 @@ async def main():
     print(f"\n{bold(green('✓ All demos complete'))}\n")
     print("Next steps:")
     print(f"  {bold('agentwatch serve')}           — Start the API server")
-    print(f"  {bold('agentwatch watch \"<prompt>\"')} — Watch a Claude Code session")
+    print(f"  {bold('agentwatch watch "<prompt>"')} — Watch a Claude Code session")
     print(f"  {bold('agentwatch replay <file>')}   — Replay a saved session")
-    print(f"  {bold('agentwatch safety \"<cmd>\"')}  — Risk-score a command")
+    print(f"  {bold('agentwatch safety "<cmd>"')}  — Risk-score a command")
     print(f"  {bold('agentwatch sessions')}         — List sessions via API\n")
 
 

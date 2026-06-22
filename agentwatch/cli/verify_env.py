@@ -1,7 +1,7 @@
 """Environment Verification and Diagnostic Utilities for AgentWatch.
 
-This module provides structural system checks, checks for required core python 
-dependencies, and verifies system environment variable configurations with 
+This module provides structural system checks, checks for required core python
+dependencies, and verifies system environment variable configurations with
 animated validation progress feedback.
 """
 
