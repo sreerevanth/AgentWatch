@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from agentwatch.core.schema import AgentEvent, EventType, TokenUsage
 from agentwatch.cost.anomaly import CostAnomalyDetector
 from agentwatch.cost.comparator import estimate, estimate_for_text
@@ -98,6 +100,41 @@ def test_router_failover_on_errors():
         r.observe("primary", error=True)
     r.observe("backup", confidence=0.9)
     assert r.choose().chosen == "backup"
+
+
+def test_router_per_model_timeout():
+    r = ModelRouter(
+        ["primary", "backup"],
+        latency_ceiling_ms=6000.0,
+        route_timeouts={"primary": 2000.0},
+    )
+    r.observe("primary", latency_ms=2100.0, confidence=0.9)
+    r.observe("backup", latency_ms=500.0, confidence=0.9)
+    decision = r.choose()
+    assert decision.chosen == "backup"
+    assert "primary" in decision.bypassed
+
+
+def test_router_global_fallback():
+    r = ModelRouter(["primary", "backup"], latency_ceiling_ms=3000.0)
+    r.observe("primary", latency_ms=2500.0, confidence=0.9)
+    r.observe("backup", latency_ms=2500.0, confidence=0.9)
+    decision = r.choose()
+    assert decision.chosen == "primary"
+
+
+def test_router_mixed_timeouts():
+    r = ModelRouter(
+        ["primary", "backup", "slow"],
+        latency_ceiling_ms=5000.0,
+        route_timeouts={"primary": 1000.0},
+    )
+    r.observe("primary", latency_ms=1500.0, confidence=0.9)
+    r.observe("backup", latency_ms=3000.0, confidence=0.9)
+    r.observe("slow", latency_ms=4000.0, confidence=0.9)
+    decision = r.choose()
+    assert decision.chosen == "backup"
+    assert "primary" in decision.bypassed
 
 
 # ─────────────────────────────────────────────
@@ -200,8 +237,6 @@ def test_budget_governance_requires_human_above_auto_approve():
 # ─────────────────────────────────────────────
 # CST-008 — Stale session eviction (Issue #137)
 # ─────────────────────────────────────────────
-
-import time
 
 def test_tracker_expired_session_evicted():
     tracker = CostTracker(ttl_seconds=60.0)

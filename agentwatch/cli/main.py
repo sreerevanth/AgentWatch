@@ -31,8 +31,6 @@ app = typer.Typer(
     add_completion=True,
     rich_markup_mode="rich",
 )
-session_app = typer.Typer(name="session", help="Manage AgentWatch sessions.")
-app.add_typer(session_app)
 app.add_typer(mcp_app, name="mcp")
 
 console = Console()
@@ -844,6 +842,105 @@ def serve(
 
 
 # ---------------------------------------------
+# top command
+# ---------------------------------------------
+
+
+@server_app.command(name="top")
+def top(
+    api_url: str = typer.Option("http://localhost:8000", "--api"),
+    refresh_rate: float = typer.Option(1.0, "--refresh", min=0.1, help="Refresh rate in seconds"),
+    api_key: str | None = API_KEY_OPTION,
+) -> None:
+    """[bold]Live Process Monitor[/bold] showing executing agent loops, active tools, and token burn rate."""
+
+    async def _run() -> None:
+        try:
+            import asyncio
+            from typing import Any
+
+            import httpx
+            from rich.live import Live
+            from rich.panel import Panel
+            from rich.table import Table
+        except ImportError:
+            console.print("[red]Missing dependencies. Run: pip install httpx rich[/red]")
+            raise typer.Exit(1)
+
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(
+                    f"{api_url}/api/v1/dashboard/top",
+                    headers=_api_headers(api_key),
+                    timeout=10.0,
+                )
+                resp.raise_for_status()
+            except Exception as exc:
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
+                raise typer.Exit(1)
+
+        def generate_dashboard(data, error_msg=None):
+            if error_msg:
+                return Panel(
+                    f"[red]{error_msg}[/red]", title="AgentWatch Top Error", border_style="red"
+                )
+
+            table = Table(show_header=True, header_style="bold magenta", expand=True)
+            table.add_column("Session ID", style="cyan")
+            table.add_column("Agent ID / Name", style="blue")
+            table.add_column("Current Tool", style="yellow")
+            table.add_column("Burn Rate (tok/s)", justify="right", style="green")
+            table.add_column("Total Tokens", justify="right", style="green")
+
+            top_sessions = data.get("top_sessions", [])
+            if not top_sessions:
+                return Panel(
+                    "No active agent sessions running.",
+                    title="[cyan]AgentWatch Top[/cyan]",
+                    border_style="cyan",
+                )
+
+            for s in top_sessions:
+                table.add_row(
+                    str(s.get("session_id")),
+                    f"{s.get('agent_id')} / {s.get('agent_name')}",
+                    str(s.get("current_tool")),
+                    str(s.get("token_burn_rate_per_sec")),
+                    str(s.get("total_tokens")),
+                )
+
+            return Panel(
+                table, title="[cyan]AgentWatch Top - Active Agent Loops[/cyan]", border_style="cyan"
+            )
+
+        async def poll_loop(live_display: Any) -> None:
+            async with httpx.AsyncClient() as client:
+                while True:
+                    try:
+                        resp = await client.get(
+                            f"{api_url}/api/v1/dashboard/top",
+                            headers=_api_headers(api_key),
+                            timeout=5.0,
+                        )
+                        resp.raise_for_status()
+                        data = resp.json()
+                        live_display.update(generate_dashboard(data))
+                    except Exception as exc:
+                        live_display.update(generate_dashboard({}, error_msg=str(exc)))
+
+                    await asyncio.sleep(refresh_rate)
+
+        with Live(
+            generate_dashboard({"top_sessions": []}), refresh_per_second=1.0 / refresh_rate
+        ) as live:
+            await poll_loop(live)
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
+# ---------------------------------------------
 # status command
 # ---------------------------------------------
 
@@ -1267,6 +1364,145 @@ def redteam(
 
 
 # ─────────────────────────────────────────────
+# upgrade command — CLI-to-Web monetization handoff
+# ─────────────────────────────────────────────
+
+
+def _license_public_key() -> str | None:
+    """Resolve the PEM public key used to verify entitlements, if configured.
+
+    Read from ``AGENTWATCH_LICENSE_PUBLIC_KEY`` (inline PEM) or, failing that,
+    ``AGENTWATCH_LICENSE_PUBLIC_KEY_FILE`` (path to a PEM file). Returns ``None``
+    when no key is configured, in which case the CLI behaves as free tier.
+    """
+    import os
+
+    inline = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY")
+    if inline:
+        return inline
+    key_file = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY_FILE")
+    if key_file:
+        try:
+            return Path(key_file).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            pass
+    return None
+
+
+def _active_entitlement():
+    """Return the verified active entitlement, or ``None`` for free tier."""
+    from agentwatch.security.entitlement_store import load_entitlement
+
+    public_key = _license_public_key()
+    if public_key is None:
+        return None
+    return load_entitlement(public_key)
+
+
+def _ensure_premium(feature: str):
+    """Gate a premium feature: return the entitlement or prompt to upgrade.
+
+    Raises ``typer.Exit`` (code 1) with an upgrade prompt when the current
+    install is not entitled to ``feature``.
+    """
+    entitlement = _active_entitlement()
+    if entitlement is not None and entitlement.grants(feature):
+        return entitlement
+    console.print(
+        f"[yellow]'{feature}' is a premium feature.[/yellow] "
+        "Run [bold cyan]agentwatch upgrade[/bold cyan] to unlock it."
+    )
+    raise typer.Exit(1)
+
+
+@app.command()
+def upgrade(
+    activate: str | None = typer.Option(
+        None,
+        "--activate",
+        help="Store the entitlement token returned by the checkout page.",
+    ),
+    show_status: bool = typer.Option(
+        False, "--status", help="Show the current entitlement status and exit."
+    ),
+    no_browser: bool = typer.Option(
+        False, "--no-browser", help="Print the checkout URL instead of opening a browser."
+    ),
+    base_url: str | None = typer.Option(
+        None, "--checkout-url", help="Override the checkout portal base URL."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview the handoff without opening a browser."
+    ),
+) -> None:
+    """[bold]Upgrade[/bold] to AgentWatch Premium via the secure web checkout."""
+    from agentwatch.security.checkout import DEFAULT_CHECKOUT_URL, checkout_url, new_session
+
+    if show_status:
+        entitlement = _active_entitlement()
+        if entitlement is None:
+            console.print("[dim]Tier:[/dim] [yellow]Free[/yellow] — no active entitlement.")
+        else:
+            console.print(
+                Panel(
+                    f"[dim]Tier:[/dim]    [green]{entitlement.tier}[/green]\n"
+                    f"[dim]Account:[/dim] {entitlement.subject}\n"
+                    f"[dim]Expires:[/dim] {entitlement.expires_at:%Y-%m-%d}",
+                    title="AgentWatch Premium",
+                    border_style="green",
+                )
+            )
+        raise typer.Exit(0)
+
+    if activate is not None:
+        public_key = _license_public_key()
+        if public_key is None:
+            console.print(
+                "[red]No license public key configured.[/red] Set "
+                "AGENTWATCH_LICENSE_PUBLIC_KEY before activating."
+            )
+            raise typer.Exit(1)
+        from agentwatch.security.entitlement_store import store_entitlement_token
+        from agentwatch.security.license import LicenseError, verify_entitlement
+
+        try:
+            entitlement = verify_entitlement(activate, public_key)
+        except LicenseError as exc:
+            console.print(f"[red]Entitlement rejected:[/red] {exc}")
+            raise typer.Exit(1)
+        path = store_entitlement_token(activate)
+        console.print(f"[green]Premium activated[/green] ({entitlement.tier}) — stored at {path}.")
+        raise typer.Exit(0)
+
+    session = new_session()
+    url = checkout_url(session, base=base_url or DEFAULT_CHECKOUT_URL)
+
+    if dry_run:
+        _dry_run_print("open browser to checkout", f"URL: {url}")
+        console.print("\n[yellow]Dry-run complete. No browser was opened.[/yellow]")
+        raise typer.Exit(0)
+
+    console.print(
+        Panel(
+            "[bold cyan]AgentWatch Premium[/bold cyan]\n"
+            "Complete checkout in your browser, then run\n"
+            "[bold]agentwatch upgrade --activate <token>[/bold] with the token shown there.",
+            border_style="cyan",
+        )
+    )
+
+    if no_browser:
+        console.print(f"\nCheckout URL: [link]{url}[/link]")
+    else:
+        import webbrowser
+
+        if webbrowser.open(url):
+            console.print(f"\n[green]Opened checkout in your browser.[/green]\n[dim]{url}[/dim]")
+        else:
+            console.print(f"\nCould not open a browser. Visit: [link]{url}[/link]")
+
+
+# ─────────────────────────────────────────────
 # Print helpers
 # ---------------------------------------------
 
@@ -1425,6 +1661,46 @@ def _print_sessions_table(sessions: list) -> None:
         )
 
     animate_table_rows(table, rows, delay=0.08)
+
+
+# ─────────────────────────────────────────────
+# session command group
+# ─────────────────────────────────────────────
+
+
+@session_app.command("rollback")
+def session_rollback(
+    session_id: str = typer.Argument(..., help="Session ID to rollback"),
+    to_step: int = typer.Option(..., "--to-step", min=0, help="Step number to rollback to"),
+) -> None:
+    """[bold]Rollback[/bold] a session to a specific step."""
+
+    async def _run() -> None:
+
+        from agentwatch.rollback.engine import RollbackEngine, RollbackStatus
+
+        engine = RollbackEngine()
+
+        console.print(
+            f"[dim]Rolling back session[/dim] "
+            f"[bold]{session_id}[/bold] "
+            f"[dim]to step[/dim] "
+            f"[bold]{to_step}[/bold]..."
+        )
+
+        result = await engine.rollback_session(session_id, to_step=to_step)
+
+        if result.status == RollbackStatus.COMPLETED:
+            console.print("\n[green]✓ Rollback complete[/green]")
+            if result.rolled_back_files:
+                console.print(f"  Restored {len(result.rolled_back_files)} files.")
+            if result.rolled_back_git_ref:
+                console.print(f"  Rolled back git to {result.rolled_back_git_ref[:8]}.")
+        else:
+            console.print(f"\n[red]✗ Rollback failed: {result.error}[/red]")
+            raise typer.Exit(1)
+
+    asyncio.run(_run())
 
 
 # ─────────────────────────────────────────────

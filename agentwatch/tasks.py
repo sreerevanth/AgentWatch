@@ -24,3 +24,19 @@ celery_app.conf.update(
 @celery_app.task(name="agentwatch.tasks.ping")
 def ping() -> str:
     return "pong"
+
+
+@celery_app.task(name="agentwatch.tasks.run_redteam")
+def run_redteam(payloads_path: str | None = None) -> dict:
+    """Scheduled red-team pass (SAF-008 automation).
+
+    Runs the attack corpus through the safety detectors and returns a
+    vulnerability report. ``bypassed`` lists the attacks whose guardrails
+    failed. Schedule it with Celery beat to continuously pen-test agents; the
+    JSON-serializable return value is stored in the Celery result backend.
+    ``payloads_path`` overrides the bundled corpus.
+    """
+    from agentwatch.security.redteam import RedTeamHarness, load_corpus
+
+    scenarios = load_corpus(payloads_path) if payloads_path else None
+    return RedTeamHarness(scenarios).run().to_dict()
