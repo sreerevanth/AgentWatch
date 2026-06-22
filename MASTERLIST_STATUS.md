@@ -79,8 +79,8 @@
 | **Phase 8 — Compliance** | | | |
 | CMP-001 | GDPR data handling | ✅ done | `test_compliance::test_pii_*`, `test_gdpr_erasure_*` |
 | CMP-002 | SOC 2 audit trail | ✅ existing `governance/engine.py` + reports.py | `test_compliance::test_compliance_export_*` |
-| CMP-003 | HIPAA compliance mode | ✅ done | `test_compliance::test_phi_*`, `test_hipaa_*` |
-| CMP-004 | EU AI Act Article 15 package | ✅ done | `test_compliance::test_eu_ai_act_*` |
+| CMP-003 | HIPAA compliance mode + telemetry PII/PHI redaction (issue #398) | ✅ done | `test_compliance::test_phi_*`, `test_hipaa_*`, `test_redaction::*` |
+| CMP-004 | EU AI Act Article 15 package + conformity export endpoint (issue #398) | ✅ done | `test_compliance::test_eu_ai_act_*`, `test_redaction::test_eu_ai_act_report_endpoint` |
 | CMP-005 | Enterprise RBAC + SAML SSO | ✅ done | `test_compliance::test_rbac_*`, `test_saml_*` |
 | CMP-006 | Compliance report generator | ✅ done | `test_compliance::test_compliance_export_*` |
 | CMP-007 | Data residency controls | ✅ done | `test_compliance::test_residency_*` |
