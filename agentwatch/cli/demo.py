@@ -564,9 +564,11 @@ async def run_demo():
     print(f"\n{bold(green('✓ All demos complete'))}\n")
     print("Next steps:")
     print(f"  {bold('agentwatch serve')}           — Start the API server")
-    print(f"  {bold('agentwatch watch "<prompt>"')} — Watch a Claude Code session")
+    watch_cmd = "agentwatch watch '<prompt>'"
+    safety_cmd = "agentwatch safety '<cmd>'"
+    print(f"  {bold(watch_cmd)} — Watch a Claude Code session")
     print(f"  {bold('agentwatch replay <file>')}   — Replay a saved session")
-    print(f"  {bold('agentwatch safety "<cmd>"')}  — Risk-score a command")
+    print(f"  {bold(safety_cmd)}  — Risk-score a command")
     print(f"  {bold('agentwatch sessions')}         — List sessions via API\n")
 
 

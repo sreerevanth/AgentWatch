@@ -75,6 +75,7 @@
 | CST-005 | Cost anomaly detector | ✅ done | `test_cost::test_anomaly_*` |
 | CST-006 | ROI calculator | ✅ done | `test_cost::test_roi_*` |
 | CST-007 | Budget governance policies | ✅ done | `test_cost::test_budget_governance_*` + `frontend/pages/costs.tsx` |
+| CST-009 | Cost-aware model router — complexity → cheapest capable model (issue #375, CST-004 scope) | ✅ done | `test_cost_router::*` |
 | **Phase 8 — Compliance** | | | |
 | CMP-001 | GDPR data handling | ✅ done | `test_compliance::test_pii_*`, `test_gdpr_erasure_*` |
 | CMP-002 | SOC 2 audit trail | ✅ existing `governance/engine.py` + reports.py | `test_compliance::test_compliance_export_*` |
