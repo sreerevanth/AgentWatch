@@ -82,9 +82,7 @@ def main_callback(ctx: typer.Context):
 
     if ctx.invoked_subcommand is None:
         cinematic_logo_reveal(ascii_art)
-        matrix_type_print(
-            "Initializing runtime components...", color="90;3m", delay=0.01
-        )
+        matrix_type_print("Initializing runtime components...", color="90;3m", delay=0.01)
         print_systematic_menu()
         _IN_REPL = True
         try:
@@ -239,12 +237,8 @@ def watch(
     prompt: str = typer.Argument(..., help="Prompt to run with Claude Code"),
     model: str = typer.Option("claude-opus-4-5", "--model", "-m"),
     max_turns: int = typer.Option(50, "--max-turns"),
-    output: Path | None = typer.Option(
-        None, "--output", "-o", help="Save session to file"
-    ),
-    no_safety: bool = typer.Option(
-        False, "--no-safety", help="Disable safety checks (dangerous)"
-    ),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Save session to file"),
+    no_safety: bool = typer.Option(False, "--no-safety", help="Disable safety checks (dangerous)"),
     policy: str = typer.Option(
         "default", "--policy", help="Safety policy: default|strict|permissive"
     ),
@@ -277,12 +271,8 @@ def watch(
                 f"Path: {output.resolve()}",
             )
         else:
-            _dry_run_print(
-                "run agent (no --output specified, session would not be saved)"
-            )
-        console.print(
-            "\n[yellow]Dry-run complete. Nothing was executed or written.[/yellow]"
-        )
+            _dry_run_print("run agent (no --output specified, session would not be saved)")
+        console.print("\n[yellow]Dry-run complete. Nothing was executed or written.[/yellow]")
         raise typer.Exit(0)
 
     async def _run() -> None:
@@ -363,17 +353,11 @@ def watch(
 @session_app.command(name="replay")
 def replay(
     session_file: Path = typer.Argument(..., help="Path to session JSON file"),
-    speed: str = typer.Option(
-        "instant", "--speed", "-s", help="instant|fast|normal|slow"
-    ),
+    speed: str = typer.Option("instant", "--speed", "-s", help="instant|fast|normal|slow"),
     from_step: int = typer.Option(0, "--from", help="Start from step N"),
     to_step: int | None = typer.Option(None, "--to", help="End at step N"),
-    show_all: bool = typer.Option(
-        False, "--all", help="Show all events including metadata"
-    ),
-    failure_only: bool = typer.Option(
-        False, "--failures", "-f", help="Show only failure points"
-    ),
+    show_all: bool = typer.Option(False, "--all", help="Show all events including metadata"),
+    failure_only: bool = typer.Option(False, "--failures", "-f", help="Show only failure points"),
 ) -> None:
     """[bold]Replay[/bold] a captured session step-by-step."""
 
@@ -471,9 +455,7 @@ def sessions(
             except httpx.HTTPStatusError as exc:
                 _handle_http_status_error(exc, api_url)
             except httpx.HTTPError as exc:
-                console.print(
-                    f"[red]Failed to connect to API at {api_url}: {exc}[/red]"
-                )
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
 
         data = resp.json()
@@ -498,9 +480,7 @@ def export(
     format: ExportFormat = typer.Option(
         ExportFormat.json, "--format", help="Export format: json or md"
     ),
-    output: Path | None = typer.Option(
-        None, "--output", "-o", help="Custom output file path"
-    ),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Custom output file path"),
     api_url: str = typer.Option("http://localhost:8000", "--api"),
     api_key: str | None = API_KEY_OPTION,
 ) -> None:
@@ -527,9 +507,7 @@ def export(
             except httpx.HTTPStatusError as exc:
                 _handle_http_status_error(exc, api_url)
             except httpx.HTTPError as exc:
-                console.print(
-                    f"[red]Failed to connect to API at {api_url}: {exc}[/red]"
-                )
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
 
         data = resp.json()
@@ -670,7 +648,9 @@ def confidence(
     score_color = (
         "green"
         if result.overall_score >= 0.7
-        else "yellow" if result.overall_score >= 0.4 else "red"
+        else "yellow"
+        if result.overall_score >= 0.4
+        else "red"
     )
 
     console.print(
@@ -697,9 +677,7 @@ def confidence(
         f"[{score_color}]{result.overall_score:.3f}[/{score_color}]",
         _rate(result.overall_score),
     )
-    table.add_row(
-        "Goal Alignment", f"{result.goal_alignment:.3f}", _rate(result.goal_alignment)
-    )
+    table.add_row("Goal Alignment", f"{result.goal_alignment:.3f}", _rate(result.goal_alignment))
     table.add_row(
         "Consistency",
         f"{result.consistency_score:.3f}",
@@ -749,9 +727,7 @@ def safety(
     from agentwatch.core.schema import ToolCallData
 
     scorer = RiskScorer()
-    tool = ToolCallData(
-        tool_name="bash", raw_command=command, arguments={"command": command}
-    )
+    tool = ToolCallData(tool_name="bash", raw_command=command, arguments={"command": command})
 
     # Live animated analysis phase
     with Progress(
@@ -976,9 +952,7 @@ def top(
 @server_app.command(name="status")
 def status(
     api_url: str = typer.Option("http://localhost:8000", "--api"),
-    refresh_rate: float = typer.Option(
-        1.0, "--refresh", help="Refresh rate in seconds"
-    ),
+    refresh_rate: float = typer.Option(1.0, "--refresh", help="Refresh rate in seconds"),
     api_key: str | None = API_KEY_OPTION,
 ) -> None:
     """[bold]Show[/bold] a real-time live dashboard of AgentWatch runtime status."""
@@ -990,9 +964,7 @@ def status(
             from rich.layout import Layout
             from rich.live import Live
         except ImportError:
-            console.print(
-                "[red]Missing dependencies. Run: pip install httpx rich[/red]"
-            )
+            console.print("[red]Missing dependencies. Run: pip install httpx rich[/red]")
             raise typer.Exit(1)
 
         # Initial connection check
@@ -1007,9 +979,7 @@ def status(
             except httpx.HTTPStatusError as exc:
                 _handle_http_status_error(exc, api_url)
             except httpx.HTTPError as exc:
-                console.print(
-                    f"[red]Failed to connect to API at {api_url}: {exc}[/red]"
-                )
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
 
         def generate_dashboard(data, error_msg=None):
@@ -1029,9 +999,7 @@ def status(
             activity.add_row("Active Sessions:", f"[green]{active}[/green]")
             activity.add_row("Failed Sessions:", f"[red]{failed}[/red]")
             activity.add_row("Blocked Sessions:", f"[yellow]{blocked}[/yellow]")
-            p1 = Panel(
-                activity, title="[cyan]Agent Activity[/cyan]", border_style="cyan"
-            )
+            p1 = Panel(activity, title="[cyan]Agent Activity[/cyan]", border_style="cyan")
 
             tokens = data.get("total_tokens", 0)
             cost = data.get("estimated_cost_usd", 0.0)
@@ -1049,12 +1017,8 @@ def status(
             eb_stats = data.get("event_bus_stats", {})
 
             pipeline = Table.grid(padding=(0, 2))
-            pipeline.add_row(
-                "Blocked Ops:", f"[red]{safety_stats.get('blocked', 0)}[/red]"
-            )
-            pipeline.add_row(
-                "Event T-Put:", f"{eb_stats.get('total_published', 0):,} processed"
-            )
+            pipeline.add_row("Blocked Ops:", f"[red]{safety_stats.get('blocked', 0)}[/red]")
+            pipeline.add_row("Event T-Put:", f"{eb_stats.get('total_published', 0):,} processed")
             pipeline.add_row("Subscribers:", f"{eb_stats.get('active_subscribers', 0)}")
             p3 = Panel(
                 pipeline,
@@ -1167,14 +1131,10 @@ def compare(
                 )
 
                 if rep1_resp.status_code == 404:
-                    console.print(
-                        f"[red]Session {session_id_1} replay not found.[/red]"
-                    )
+                    console.print(f"[red]Session {session_id_1} replay not found.[/red]")
                     raise typer.Exit(1)
                 if rep2_resp.status_code == 404:
-                    console.print(
-                        f"[red]Session {session_id_2} replay not found.[/red]"
-                    )
+                    console.print(f"[red]Session {session_id_2} replay not found.[/red]")
                     raise typer.Exit(1)
 
                 rep1_resp.raise_for_status()
@@ -1186,9 +1146,7 @@ def compare(
             except httpx.HTTPStatusError as exc:
                 _handle_http_status_error(exc, api_url)
             except httpx.HTTPError as exc:
-                console.print(
-                    f"[red]Failed to connect to API at {api_url}: {exc}[/red]"
-                )
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
 
         def _compute_metrics(conf, rep):
@@ -1457,9 +1415,7 @@ def _print_live_event(event) -> None:
             rc = _risk_color(event.safety.risk_level.value)
             risk_str = f" [{rc}][{event.safety.risk_level.value}][/{rc}]"
         status_str = " [red][BLOCKED][/red]" if event.is_blocked else ""
-        console.print(
-            f"[dim]{ts}[/dim] {icon} [bold]{name}[/bold]{risk_str}{status_str}"
-        )
+        console.print(f"[dim]{ts}[/dim] {icon} [bold]{name}[/bold]{risk_str}{status_str}")
         if cmd:
             console.print(f"         [dim]{cmd}[/dim]")
 
@@ -1521,12 +1477,12 @@ def _print_session_summary(session, events) -> None:
     cc = (
         "green"
         if result.overall_score >= 0.7
-        else "yellow" if result.overall_score >= 0.4 else "red"
+        else "yellow"
+        if result.overall_score >= 0.4
+        else "red"
     )
 
-    matrix_type_print(
-        f"SESSION COMPLETE: {session.session_id}", color="1;96m", delay=0.03
-    )
+    matrix_type_print(f"SESSION COMPLETE: {session.session_id}", color="1;96m", delay=0.03)
 
     console.print(
         Panel(
@@ -1676,9 +1632,7 @@ def session_prune(
             except httpx.HTTPStatusError as exc:
                 _handle_http_status_error(exc, api_url)
             except httpx.HTTPError as exc:
-                console.print(
-                    f"[red]Failed to connect to API at {api_url}: {exc}[/red]"
-                )
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
 
         data = resp.json()
