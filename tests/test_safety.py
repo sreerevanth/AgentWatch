@@ -375,7 +375,7 @@ async def test_safety_engine_blocks_on_low_confidence_via_dsl():
                 score=0.1,  # Critical low
                 verdict="FAIL",
                 rationale="Reasoning is non-sensical",
-                evidence={},
+                evidence=[],
             )
 
     # DSL rule: block if confidence < 0.5

@@ -10,10 +10,13 @@ import logging
 from datetime import UTC, datetime
 
 from sqlalchemy import Column, DateTime, String, Text
-from sqlalchemy.orm import declarative_base
+from sqlalchemy.orm import DeclarativeBase
 
 logger = logging.getLogger(__name__)
-Base = declarative_base()
+
+
+class Base(DeclarativeBase):
+    pass
 
 
 class EncryptedAPIKey(Base):

@@ -422,7 +422,7 @@ class RollbackEngine:
 
         # Scan all meta files to discover checkpoints on disk not in memory
         meta_dir = self._checkpoints_dir / "meta"
-        disk_checkpoints = {}
+        disk_checkpoints: dict[str, list[str]] = {}
         if meta_dir.exists():
             for path in meta_dir.glob("*.json"):
                 try:
@@ -487,7 +487,7 @@ class RollbackEngine:
         Returns:
             list[str]: A list of session IDs older than the cutoff.
         """
-        session_ids = set()
+        session_ids: set[str] = set()
         meta_dir = self._checkpoints_dir / "meta"
         if not meta_dir.exists():
             return list(session_ids)

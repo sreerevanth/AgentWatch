@@ -219,7 +219,7 @@ class AgentWatchMCPServer:
         @mcp.tool()
         def get_session_replay(session_id: str, step: int | None = None) -> dict[str, Any]:
             """Retrieve a stored session for step-by-step inspection."""
-            args = {"session_id": session_id}
+            args: dict[str, Any] = {"session_id": session_id}
             if step is not None:
                 args["step"] = step
             res = self.dispatch("agentwatch_session_replay", args)
