@@ -331,6 +331,7 @@ class GenericAdapter:
                 self._step += 1
 
                 import time as _time
+
                 _t0 = _time.monotonic()
                 self._exec_logger.log_step(
                     method_name,
@@ -394,8 +395,14 @@ class GenericAdapter:
                     raise
                 except Exception as exc:
                     import traceback as _tb
+
                     _dur = (_time.monotonic() - _t0) * 1000
-                    self._exec_logger.log_error(str(exc), type(exc).__name__, _tb.format_exc(), {"method": method_name, "step": self._step})
+                    self._exec_logger.log_error(
+                        str(exc),
+                        type(exc).__name__,
+                        _tb.format_exc(),
+                        {"method": method_name, "step": self._step},
+                    )
                     self._exec_logger.log_execution_complete("failure", _dur)
                     await self._async_emit(
                         EventType.AGENT_ERROR,
@@ -412,6 +419,7 @@ class GenericAdapter:
             self._step += 1
 
             import time as _time
+
             _t0 = _time.monotonic()
             self._exec_logger.log_step(
                 method_name,
@@ -477,8 +485,14 @@ class GenericAdapter:
                 raise
             except Exception as exc:
                 import traceback as _tb
+
                 _dur = (_time.monotonic() - _t0) * 1000
-                self._exec_logger.log_error(str(exc), type(exc).__name__, _tb.format_exc(), {"method": method_name, "step": self._step})
+                self._exec_logger.log_error(
+                    str(exc),
+                    type(exc).__name__,
+                    _tb.format_exc(),
+                    {"method": method_name, "step": self._step},
+                )
                 self._exec_logger.log_execution_complete("failure", _dur)
                 self._emit_safely(
                     EventType.AGENT_ERROR,
