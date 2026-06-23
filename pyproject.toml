@@ -36,6 +36,7 @@ dependencies = [
   "rich>=13.8.0",
   "python-multipart>=0.0.12",
   "mcp>=1.0.0",
+  "prometheus-client>=0.21.0",
 ]
 
 [project.optional-dependencies]
