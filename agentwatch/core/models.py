@@ -289,6 +289,45 @@ class Repository:
         result = await self._session.execute(q)
         return list(result.scalars())
 
+    async def get_sessions_older_than(self, cutoff: datetime) -> list[str]:
+        """Find IDs of sessions that started before the cutoff time.
+
+        Args:
+            cutoff (datetime): The threshold date/time.
+
+        Returns:
+            list[str]: A list of session IDs older than the cutoff.
+        """
+        from sqlalchemy import select
+
+        q = select(SessionRecord.session_id).where(SessionRecord.started_at < cutoff)
+        result = await self._session.execute(q)
+        return list(result.scalars())
+
+    async def prune_sessions(self, session_ids: list[str]) -> int:
+        """Delete specific sessions and their dependent records from the database.
+
+        Args:
+            session_ids (list[str]): The IDs of the sessions to delete.
+
+        Returns:
+            int: The number of sessions deleted.
+        """
+        if not session_ids:
+            return 0
+
+        from sqlalchemy import delete
+
+        # Remove dependent task rows first (no ON DELETE CASCADE on task_nodes.session_id)
+        await self._session.execute(
+            delete(TaskRecord).where(TaskRecord.session_id.in_(session_ids))
+        )
+
+        d = delete(SessionRecord).where(SessionRecord.session_id.in_(session_ids))
+        result = await self._session.execute(d)
+        await self._session.flush()
+        return result.rowcount
+
 
 # ─────────────────────────────────────────────
 # Database initialization
