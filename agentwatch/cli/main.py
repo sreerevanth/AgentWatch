@@ -1870,7 +1870,7 @@ def compliance_export_csv(
     api_url: str = typer.Option("http://localhost:8000", "--api"),
     api_key: str | None = API_KEY_OPTION,
 ) -> None:
-    """Export compliance audit log as CSV."""
+    """Export compliance audit log as CSV from the running API server."""
 
     async def _run() -> None:
         try:
@@ -1885,7 +1885,7 @@ def compliance_export_csv(
                 if include_allowed:
                     params["include_allowed"] = "true"
                 resp = await client.get(
-                    f"{api_url}/api/v1/compliance/audit-log",
+                    f"{api_url}/api/v1/governance/compliance-report",
                     headers=_api_headers(api_key),
                     params=params,
                     timeout=10.0,
@@ -1904,6 +1904,9 @@ def compliance_export_csv(
     asyncio.run(_run())
 
 
+_DEFAULT_AUDIT_LOG_PATH = Path("data/audit-log.jsonl")
+
+
 @compliance_app.command(name="export-local")
 def compliance_export_local(
     output: Path = typer.Option(
@@ -1914,18 +1917,29 @@ def compliance_export_local(
         "--include-allowed",
         help="Include allowed actions (denials only by default)",
     ),
+    audit_log: Path = typer.Option(
+        _DEFAULT_AUDIT_LOG_PATH,
+        "--audit-log",
+        help="Path to the persisted audit log JSONL file",
+    ),
 ) -> None:
-    """Export compliance audit log from a local GovernanceEngine as CSV."""
+    """Export compliance audit log from a local JSONL file as CSV."""
     from agentwatch.governance.compliance_reporter import ComplianceReporter
     from agentwatch.governance.engine import GovernanceEngine
 
-    engine = GovernanceEngine()
+    engine = GovernanceEngine(audit_log_path=audit_log)
+    loaded = len(engine._audit_log)
+    if loaded == 0:
+        console.print(
+            f"[yellow]No audit entries found in {audit_log}. "
+            "The server persists audit data when AGENTWATCH_AUDIT_LOG_PATH is set.[/yellow]"
+        )
     reporter = ComplianceReporter(engine)
     csv_content = reporter.generate_csv(include_allowed=include_allowed)
 
     with open(output, "w", encoding="utf-8", newline="") as f:
         f.write(csv_content)
-    console.print(f"[green]{output} created successfully[/green]")
+    console.print(f"[green]{output} created successfully ({loaded} entries exported)[/green]")
 
 
 # ─────────────────────────────────────────────

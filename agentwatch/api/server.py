@@ -12,6 +12,7 @@ import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from fastapi import (
@@ -236,7 +237,8 @@ _safety_engine = SafetyEngine()
 _confidence_scorer = ConfidenceScorer()
 _cost_tracker = CostTracker()
 _reasoning_auditor = ReasoningAuditor()
-_governance = GovernanceEngine()
+_audit_log_path = Path(os.getenv("AGENTWATCH_AUDIT_LOG_PATH", "data/audit-log.jsonl"))
+_governance = GovernanceEngine(audit_log_path=_audit_log_path)
 _compliance_reporter = ComplianceReporter(_governance, _collector)
 _alerting = AlertingEngine(
     AlertingConfig(
@@ -1174,7 +1176,16 @@ async def dashboard_top(_auth: None = Depends(_require_api_key)) -> dict[str, An
 
 
 @app.get("/api/v1/governance/compliance-report")
-async def compliance_report(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+async def compliance_report(
+    _auth: None = Depends(_require_api_key),
+    format: str = Query("json", alias="format"),
+    include_allowed: bool = Query(False),
+):
+    if format == "csv":
+        from fastapi.responses import PlainTextResponse
+
+        csv_content = _compliance_reporter.generate_csv(include_allowed=include_allowed)
+        return PlainTextResponse(csv_content, media_type="text/csv")
     return _compliance_reporter.generate().to_dict()
 
 
@@ -1214,10 +1225,7 @@ async def eu_ai_act_report(_auth: None = Depends(_require_api_key)) -> dict[str,
         TechnicalDocumentation,
     )
 
-    # Derive the report from live telemetry and the active safety policy rather
-    # than static literals, so the conformity evidence reflects the running
-    # system (Article 15 record-keeping / accuracy-robustness requirements).
-    safety = _safety_engine.stats()  # {"checked", "blocked", "approved"}
+    safety = _safety_engine.stats()
     policy = _safety_engine.policy
     sessions = _collector.list_sessions(limit=200)
     checked = safety["checked"]
@@ -1259,7 +1267,6 @@ async def eu_ai_act_report(_auth: None = Depends(_require_api_key)) -> dict[str,
 
     pkg = EUAIActPackage()
     pkg.set_documentation(doc)
-    # Record-keeping evidence: derive decision-log entries from real sessions.
     sessions_used = sessions[:50]
     for session in sessions_used:
         pkg.log_decision(
@@ -1281,6 +1288,18 @@ async def eu_ai_act_report(_auth: None = Depends(_require_api_key)) -> dict[str,
         "conformity": pkg.assess().to_dict(),
         "telemetry": {"safety_stats": safety, "sessions_considered": len(sessions_used)},
     }
+
+
+@app.get("/api/v1/compliance/audit-log")
+async def compliance_audit_log_csv(
+    _auth: None = Depends(_require_api_key),
+    format: str = Query("csv", alias="format"),
+    include_allowed: bool = Query(False),
+):
+    from fastapi.responses import PlainTextResponse
+
+    csv_content = _compliance_reporter.generate_csv(include_allowed=include_allowed)
+    return PlainTextResponse(csv_content, media_type="text/csv")
 
 
 @app.post("/api/v1/demo/seed")
