@@ -1364,6 +1364,145 @@ def redteam(
 
 
 # ─────────────────────────────────────────────
+# upgrade command — CLI-to-Web monetization handoff
+# ─────────────────────────────────────────────
+
+
+def _license_public_key() -> str | None:
+    """Resolve the PEM public key used to verify entitlements, if configured.
+
+    Read from ``AGENTWATCH_LICENSE_PUBLIC_KEY`` (inline PEM) or, failing that,
+    ``AGENTWATCH_LICENSE_PUBLIC_KEY_FILE`` (path to a PEM file). Returns ``None``
+    when no key is configured, in which case the CLI behaves as free tier.
+    """
+    import os
+
+    inline = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY")
+    if inline:
+        return inline
+    key_file = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY_FILE")
+    if key_file:
+        try:
+            return Path(key_file).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            pass
+    return None
+
+
+def _active_entitlement():
+    """Return the verified active entitlement, or ``None`` for free tier."""
+    from agentwatch.security.entitlement_store import load_entitlement
+
+    public_key = _license_public_key()
+    if public_key is None:
+        return None
+    return load_entitlement(public_key)
+
+
+def _ensure_premium(feature: str):
+    """Gate a premium feature: return the entitlement or prompt to upgrade.
+
+    Raises ``typer.Exit`` (code 1) with an upgrade prompt when the current
+    install is not entitled to ``feature``.
+    """
+    entitlement = _active_entitlement()
+    if entitlement is not None and entitlement.grants(feature):
+        return entitlement
+    console.print(
+        f"[yellow]'{feature}' is a premium feature.[/yellow] "
+        "Run [bold cyan]agentwatch upgrade[/bold cyan] to unlock it."
+    )
+    raise typer.Exit(1)
+
+
+@app.command()
+def upgrade(
+    activate: str | None = typer.Option(
+        None,
+        "--activate",
+        help="Store the entitlement token returned by the checkout page.",
+    ),
+    show_status: bool = typer.Option(
+        False, "--status", help="Show the current entitlement status and exit."
+    ),
+    no_browser: bool = typer.Option(
+        False, "--no-browser", help="Print the checkout URL instead of opening a browser."
+    ),
+    base_url: str | None = typer.Option(
+        None, "--checkout-url", help="Override the checkout portal base URL."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview the handoff without opening a browser."
+    ),
+) -> None:
+    """[bold]Upgrade[/bold] to AgentWatch Premium via the secure web checkout."""
+    from agentwatch.security.checkout import DEFAULT_CHECKOUT_URL, checkout_url, new_session
+
+    if show_status:
+        entitlement = _active_entitlement()
+        if entitlement is None:
+            console.print("[dim]Tier:[/dim] [yellow]Free[/yellow] — no active entitlement.")
+        else:
+            console.print(
+                Panel(
+                    f"[dim]Tier:[/dim]    [green]{entitlement.tier}[/green]\n"
+                    f"[dim]Account:[/dim] {entitlement.subject}\n"
+                    f"[dim]Expires:[/dim] {entitlement.expires_at:%Y-%m-%d}",
+                    title="AgentWatch Premium",
+                    border_style="green",
+                )
+            )
+        raise typer.Exit(0)
+
+    if activate is not None:
+        public_key = _license_public_key()
+        if public_key is None:
+            console.print(
+                "[red]No license public key configured.[/red] Set "
+                "AGENTWATCH_LICENSE_PUBLIC_KEY before activating."
+            )
+            raise typer.Exit(1)
+        from agentwatch.security.entitlement_store import store_entitlement_token
+        from agentwatch.security.license import LicenseError, verify_entitlement
+
+        try:
+            entitlement = verify_entitlement(activate, public_key)
+        except LicenseError as exc:
+            console.print(f"[red]Entitlement rejected:[/red] {exc}")
+            raise typer.Exit(1)
+        path = store_entitlement_token(activate)
+        console.print(f"[green]Premium activated[/green] ({entitlement.tier}) — stored at {path}.")
+        raise typer.Exit(0)
+
+    session = new_session()
+    url = checkout_url(session, base=base_url or DEFAULT_CHECKOUT_URL)
+
+    if dry_run:
+        _dry_run_print("open browser to checkout", f"URL: {url}")
+        console.print("\n[yellow]Dry-run complete. No browser was opened.[/yellow]")
+        raise typer.Exit(0)
+
+    console.print(
+        Panel(
+            "[bold cyan]AgentWatch Premium[/bold cyan]\n"
+            "Complete checkout in your browser, then run\n"
+            "[bold]agentwatch upgrade --activate <token>[/bold] with the token shown there.",
+            border_style="cyan",
+        )
+    )
+
+    if no_browser:
+        console.print(f"\nCheckout URL: [link]{url}[/link]")
+    else:
+        import webbrowser
+
+        if webbrowser.open(url):
+            console.print(f"\n[green]Opened checkout in your browser.[/green]\n[dim]{url}[/dim]")
+        else:
+            console.print(f"\nCould not open a browser. Visit: [link]{url}[/link]")
+
+
+# ─────────────────────────────────────────────
 # Print helpers
 # ---------------------------------------------
 

@@ -20,6 +20,11 @@ _PHI_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
+def phi_patterns() -> list[tuple[re.Pattern[str], str]]:
+    """Public accessor for the compiled (pattern, label) PHI detectors."""
+    return list(_PHI_PATTERNS)
+
+
 @dataclass
 class PHIFinding:
     label: str
@@ -83,5 +88,6 @@ __all__ = [
     "AccessLogEntry",
     "HIPAAEngine",
     "detect_phi",
+    "phi_patterns",
     "redact_phi",
 ]

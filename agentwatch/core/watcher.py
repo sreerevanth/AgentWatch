@@ -230,6 +230,7 @@ class GenericAdapter:
         session_id: str | None = None,
         agent_id: str | None = None,
         safety_engine: SafetyEngine | None = None,
+        redact: bool = False,
     ):
         self.agent = agent
         self.framework = framework
@@ -245,6 +246,27 @@ class GenericAdapter:
             session_id=self.session_id,
             task_id=self.session_id,
         )
+        # CMP-003/004: scrub PII/PHI from tool-call payloads before they are
+        # published and persisted. Opt-in to avoid the cost when not required.
+        self._redact = redact
+
+    def _maybe_redact(self, tool_call: ToolCallData) -> ToolCallData:
+        """Redact PII/PHI from a tool call when redaction is enabled.
+
+        Applied only when building the event that gets published/persisted —
+        never before the safety check, which must see the raw payload.
+        """
+        if not self._redact:
+            return tool_call
+        from agentwatch.security.redaction import redact_tool_call
+
+        return redact_tool_call(tool_call)
+
+    def _redact_event(self, event: AgentEvent) -> AgentEvent:
+        """Return a copy of ``event`` with its tool call scrubbed, if enabled."""
+        if not self._redact or event.tool_call is None:
+            return event
+        return event.model_copy(update={"tool_call": self._maybe_redact(event.tool_call)})
 
     def attach(self) -> Any:
         """
@@ -289,6 +311,13 @@ class GenericAdapter:
         return self.agent
 
     def _wrap(self, method_name: str, original: Any) -> Any:
+        """Return a wrapper for *original* that emits AgentEvents and logs execution steps.
+
+        Detects whether the original is a coroutine function and returns the
+        appropriate async or sync wrapper. Both wrappers apply the safety gate
+        for tool-like methods, emit lifecycle events (AGENT_START / AGENT_END /
+        AGENT_ERROR), and record structured execution logs via ExecutionLogger.
+        """
         import functools
         import inspect
 
@@ -298,10 +327,20 @@ class GenericAdapter:
 
             @functools.wraps(original)
             async def async_wrapped(*args: Any, **kwargs: Any) -> Any:
+                """Async wrapper that logs execution and applies the safety gate."""
                 self._step += 1
+
+                import time as _time
+                _t0 = _time.monotonic()
+                self._exec_logger.log_step(
+                    method_name,
+                    {"step": self._step, "args_count": len(args), "kwargs": list(kwargs.keys())},
+                )
 
                 # ── Safety gate (async path — full check_event with approval) ──
                 if is_tool_like:
+                    # Safety must evaluate the RAW payload — redacting first would
+                    # hide signals (paths, secrets, identifiers) the engine needs.
                     tool_call = _build_tool_call_data(method_name, args, kwargs)
                     safety_event = AgentEvent(
                         session_id=self.session_id,
@@ -314,10 +353,11 @@ class GenericAdapter:
                     )
                     try:
                         checked = await self._safety_engine.check_event(safety_event)
-                        # Publish the checked event directly — it carries the full
-                        # safety metadata (risk_level, blocked status, reasons).
+                        # Publish the checked event — it carries the full safety
+                        # metadata (risk_level, blocked status, reasons). Scrub
+                        # PII/PHI only now, after the decision, before persist.
                         # Await so the HTTP forwarder completes before we proceed.
-                        await self.bus.publish(checked)
+                        await self.bus.publish(self._redact_event(checked))
                         if checked.is_blocked:
                             reasons = checked.safety.reasons if checked.safety else []
                             reason_str = "; ".join(reasons) if reasons else "safety policy"
@@ -340,9 +380,6 @@ class GenericAdapter:
                     EventType.AGENT_START,
                     metadata={"method": method_name, "step": self._step},
                 )
-                import time as _time
-                _t0 = _time.monotonic()
-                self._exec_logger.log_step(method_name, {"step": self._step, "args_count": len(args), "kwargs": list(kwargs.keys())})
                 try:
                     result = await original(*args, **kwargs)
                     _dur = (_time.monotonic() - _t0) * 1000
@@ -371,10 +408,19 @@ class GenericAdapter:
 
         @functools.wraps(original)
         def sync_wrapped(*args: Any, **kwargs: Any) -> Any:
+            """Sync wrapper that logs execution and applies the pattern-match safety gate."""
             self._step += 1
+
+            import time as _time
+            _t0 = _time.monotonic()
+            self._exec_logger.log_step(
+                method_name,
+                {"step": self._step, "args_count": len(args), "kwargs": list(kwargs.keys())},
+            )
 
             # ── Safety gate (sync path — pattern match only, no approval) ──
             if is_tool_like:
+                # Check the raw payload; redact only the event we publish below.
                 tool_call = _build_tool_call_data(method_name, args, kwargs)
                 try:
                     blocked, reasons = self._safety_engine.check_tool_call_sync(tool_call)
@@ -387,7 +433,7 @@ class GenericAdapter:
                         framework=self.framework,
                         event_type=EventType.TOOL_CALL,
                         step_number=self._step,
-                        tool_call=tool_call,
+                        tool_call=self._maybe_redact(tool_call),
                         status=ExecutionStatus.BLOCKED if blocked else ExecutionStatus.RUNNING,
                         safety=SafetyCheckData(
                             risk_level=RiskLevel.CRITICAL if blocked else RiskLevel.SAFE,
@@ -417,9 +463,6 @@ class GenericAdapter:
                 EventType.AGENT_START,
                 metadata={"method": method_name, "step": self._step},
             )
-            import time as _time
-            _t0 = _time.monotonic()
-            self._exec_logger.log_step(method_name, {"step": self._step, "args_count": len(args), "kwargs": list(kwargs.keys())})
             try:
                 result = original(*args, **kwargs)
                 _dur = (_time.monotonic() - _t0) * 1000
@@ -573,6 +616,7 @@ def watch(
     session_id: str | None = None,
     agent_id: str | None = None,
     event_bus: EventBus | None = None,
+    redact: bool = False,
 ) -> Any:
     """
     Instrument an agent for AgentWatch observability.
@@ -586,6 +630,8 @@ def watch(
         session_id:  optional explicit session ID (auto-generated otherwise)
         agent_id:    optional explicit agent ID
         event_bus:   override the default EventBus (mostly for testing)
+        redact:      scrub PII/PHI from tool-call payloads before they are
+                     published/persisted (generic-adapter path only)
     """
     if agent is None:
         logger.warning("watch() called with None — returning None")
@@ -622,6 +668,7 @@ def watch(
             event_bus=bus,
             session_id=session_id,
             agent_id=agent_id,
+            redact=redact,
         )
         return adapter.attach()
 

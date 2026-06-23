@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+import traceback
 from collections.abc import Generator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -71,7 +72,7 @@ class ExecutionLogger:
                     f"API call: {method} {endpoint}",
                     api_endpoint=endpoint,
                     api_method=method,
-                    api_parameters=parameters,
+                    api_parameters=self._redact_sensitive(parameters),
                     api_headers=self._redact_sensitive(headers),
                 )
             )
@@ -92,7 +93,7 @@ class ExecutionLogger:
                     f"API response: {status_code}",
                     api_endpoint=endpoint,
                     api_status=status_code,
-                    api_response=response_body,
+                    api_response=self._redact_sensitive(response_body),
                     latency_ms=latency_ms,
                 )
             )
@@ -132,20 +133,36 @@ class ExecutionLogger:
                     f"Execution complete: {status}",
                     execution_status=status,
                     duration_ms=duration_ms,
-                    result=result,
+                    result=self._redact_sensitive(result),
                 )
             )
         )
 
-    @staticmethod
-    def _redact_sensitive(data: dict[str, Any]) -> dict[str, Any]:
-        """Remove sensitive data from logs (API keys, tokens, etc)."""
-        redacted = data.copy()
-        sensitive_keys = {"authorization", "api_key", "token", "password", "secret"}
-        for key in sensitive_keys:
-            if key in redacted:
-                redacted[key] = "***REDACTED***"
-        return redacted
+    _SENSITIVE_SUBSTRINGS: frozenset[str] = frozenset(
+        {"authorization", "x-api-key", "api_key", "token", "password", "secret"}
+    )
+
+    @classmethod
+    def _redact_sensitive(cls, data: Any) -> Any:
+        """Recursively redact sensitive keys from dicts and lists.
+
+        Matching is case-insensitive and covers common variations such as
+        Authorization, X-API-Key, api_key, token, password, and secret.
+        Nested dicts and lists are traversed; all other values are returned
+        unchanged. The original structure is never mutated.
+        """
+        if isinstance(data, dict):
+            result: dict[str, Any] = {}
+            for k, v in data.items():
+                normalized = k.lower().replace("-", "_")
+                if any(sub in normalized for sub in cls._SENSITIVE_SUBSTRINGS):
+                    result[k] = "***REDACTED***"
+                else:
+                    result[k] = cls._redact_sensitive(v)
+            return result
+        if isinstance(data, list):
+            return [cls._redact_sensitive(item) for item in data]
+        return data
 
     @contextmanager
     def log_api_execution(
@@ -163,7 +180,7 @@ class ExecutionLogger:
             self.log_error(
                 f"API call failed: {str(e)}",
                 type(e).__name__,
-                str(e),
+                traceback.format_exc(),
                 {"endpoint": endpoint, "method": method},
             )
             raise
