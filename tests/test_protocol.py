@@ -181,6 +181,7 @@ def test_mcp_server_unknown_tool():
 
 @pytest.mark.asyncio
 async def test_mcp_server_build_fastmcp():
+    pytest.importorskip("mcp")
     srv = AgentWatchMCPServer()
     fastmcp = srv.build_fastmcp()
 

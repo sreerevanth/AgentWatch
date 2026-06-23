@@ -104,9 +104,8 @@ def test_validate_channels_invalid_slack_raises():
         validate_channels(slack_webhook_url="not-a-valid-url")
 
 
-def test_validate_channels_empty_slack_raises():
-    with pytest.raises(ChannelConfigError):
-        validate_channels(slack_webhook_url="")
+def test_validate_channels_empty_slack_is_ignored():
+    validate_channels(slack_webhook_url="")
 
 
 def test_validate_channels_valid_pagerduty():
@@ -138,3 +137,11 @@ def test_validate_channels_missing_pagerduty_url_raises():
             pagerduty_webhook_url=None,
             pagerduty_routing_key="a" * 32,
         )
+
+
+def test_validate_channels_empty_pagerduty_webhook_is_ignored():
+    validate_channels(pagerduty_webhook_url="")
+
+
+def test_validate_channels_empty_pagerduty_routing_key_is_ignored():
+    validate_channels(pagerduty_routing_key="")

@@ -81,7 +81,7 @@ def validate_channels(
     """Validate all provided notification channel configurations.
 
     Call this at startup to catch invalid configurations before any alerts fire.
-    Empty strings are treated as invalid values and will raise ChannelConfigError.
+    Empty strings are treated as unset/disabled.
 
     If either pagerduty_webhook_url or pagerduty_routing_key is provided,
     both must be present and valid (incomplete PagerDuty config fails fast).
@@ -94,6 +94,13 @@ def validate_channels(
     Raises:
         ChannelConfigError: If any provided value is invalid or incomplete.
     """
+    if slack_webhook_url == "":
+        slack_webhook_url = None
+    if pagerduty_webhook_url == "":
+        pagerduty_webhook_url = None
+    if pagerduty_routing_key == "":
+        pagerduty_routing_key = None
+
     if slack_webhook_url is not None:
         validate_slack_webhook(slack_webhook_url)
 
