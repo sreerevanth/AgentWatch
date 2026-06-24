@@ -1676,7 +1676,6 @@ def session_rollback(
     """[bold]Rollback[/bold] a session to a specific step."""
 
     async def _run() -> None:
-
         from agentwatch.rollback.engine import RollbackEngine, RollbackStatus
 
         engine = RollbackEngine()
