@@ -8,6 +8,7 @@ traffic to backup models without context loss. Configurable priority order.
 from __future__ import annotations
 
 import logging
+import math
 import statistics
 from collections import deque
 from dataclasses import dataclass, field
@@ -54,6 +55,7 @@ class ModelRouter:
         confidence_floor: float = 0.55,
         latency_ceiling_ms: float = 6000.0,
         error_ceiling: int = 5,
+        route_timeouts: dict[str, float] | None = None,
     ):
         if not priority:
             raise ValueError("priority list must be non-empty")
@@ -61,6 +63,16 @@ class ModelRouter:
         self.confidence_floor = confidence_floor
         self.latency_ceiling_ms = latency_ceiling_ms
         self.error_ceiling = error_ceiling
+        route_timeouts = dict(route_timeouts or {})
+        unknown = set(route_timeouts) - set(priority)
+        if unknown:
+            raise ValueError(f"route_timeouts contains unknown models: {sorted(unknown)}")
+        for model, timeout in route_timeouts.items():
+            t = float(timeout)
+            if not math.isfinite(t) or t <= 0:
+                raise ValueError(f"route_timeouts[{model!r}] must be a finite positive number")
+            route_timeouts[model] = t
+        self.route_timeouts = route_timeouts
         self._health: dict[str, ModelHealth] = {m: ModelHealth(model=m) for m in priority}
 
     def observe(
@@ -93,7 +105,8 @@ class ModelRouter:
             return False
         if h.samples and h.mean_confidence < self.confidence_floor:
             return False
-        if h.latencies_ms and h.mean_latency_ms > self.latency_ceiling_ms:
+        latency_ceiling = self.route_timeouts.get(model, self.latency_ceiling_ms)
+        if h.latencies_ms and h.mean_latency_ms > latency_ceiling:
             return False
         return True
 
@@ -131,6 +144,7 @@ class ModelRouter:
                 "mean_latency_ms": h.mean_latency_ms,
                 "error_count": h.error_count,
                 "healthy": float(self.is_healthy(m)),
+                "latency_ceiling_ms": self.route_timeouts.get(m, self.latency_ceiling_ms),
             }
             for m, h in self._health.items()
         }

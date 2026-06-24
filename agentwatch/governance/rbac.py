@@ -16,6 +16,8 @@ import time
 from dataclasses import dataclass, field
 from enum import Enum
 
+from agentwatch.governance.audit_log import AuditLog
+
 
 class Role(str, Enum):
     VIEWER = "viewer"
@@ -73,15 +75,51 @@ class RBACEngine:
     def __init__(self) -> None:
         self._users: dict[str, User] = {}
         self._team_policies: dict[str, TeamPolicy] = {}
+        # Tamper-evident record of every RBAC / policy change (CMP-005).
+        self.audit = AuditLog()
 
-    def add_user(self, user: User) -> None:
+    def add_user(self, user: User, *, actor: str | None = None) -> None:
         self._users[user.user_id] = user
+        self.audit.append(
+            "user.add",
+            user.user_id,
+            actor=actor,
+            details={"role": user.role.value, "team_id": user.team_id},
+        )
+
+    def set_role(self, user_id: str, role: Role, *, actor: str | None = None) -> bool:
+        """Change a user's role, recording the change in the audit log.
+
+        Returns ``False`` when the user is unknown (no change, no audit entry).
+        """
+        user = self._users.get(user_id)
+        if user is None:
+            return False
+        previous = user.role
+        user.role = role
+        self.audit.append(
+            "role.change",
+            user_id,
+            actor=actor,
+            details={"from": previous.value, "to": role.value},
+        )
+        return True
 
     def get_user(self, user_id: str) -> User | None:
         return self._users.get(user_id)
 
-    def set_team_policy(self, policy: TeamPolicy) -> None:
+    def set_team_policy(self, policy: TeamPolicy, *, actor: str | None = None) -> None:
         self._team_policies[policy.team_id] = policy
+        self.audit.append(
+            "policy.set",
+            policy.team_id,
+            actor=actor,
+            details={
+                "allowed_tools": sorted(policy.allowed_tools),
+                "blocked_tools": sorted(policy.blocked_tools),
+                "require_approval_above_usd": policy.require_approval_above_usd,
+            },
+        )
 
     def team_policy(self, team_id: str) -> TeamPolicy | None:
         return self._team_policies.get(team_id)

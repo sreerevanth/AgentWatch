@@ -27,7 +27,8 @@ from fastapi import (
 )
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import generate_latest
 from pydantic import BaseModel, Field
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
@@ -50,6 +51,10 @@ from agentwatch.core.schema import (
 from agentwatch.cost.tracker import CostTracker
 from agentwatch.governance.compliance_reporter import ComplianceReporter
 from agentwatch.governance.engine import AuditEventType, GovernanceEngine
+from agentwatch.monitoring.metrics import (
+    record_api_latency,
+    record_failure,
+)
 from agentwatch.reasoning.auditor import ReasoningAuditor
 from agentwatch.replay.counterfactual import CounterfactualEngine, CounterfactualScenario
 from agentwatch.replay.engine import ReplayEngine
@@ -533,6 +538,29 @@ async def rl_headers(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def record_metrics(request: Request, call_next):
+    """Record API latency metrics for all requests including failures."""
+    start_time = time.time()
+    endpoint = request.url.path
+    response = None
+
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as exc:
+        # Record failure before re-raising
+        duration = time.time() - start_time
+        record_api_latency(endpoint, duration)
+        record_failure(endpoint, 500, str(exc))
+        raise
+    finally:
+        # Record latency for successful responses
+        if response is not None:
+            duration = time.time() - start_time
+            record_api_latency(endpoint, duration)
+
+
 # CORS configuration.
 #
 # allow_credentials=True requires an explicit origin list -- the CORS spec
@@ -590,6 +618,12 @@ async def health(request: Request) -> dict[str, Any]:
         "safety": _safety_engine.stats(),
         "cost": _cost_tracker.stats(),
     }
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    """Expose Prometheus metrics endpoint."""
+    return Response(content=generate_latest(), media_type="text/plain; version=0.0.4")
 
 
 @app.get("/api/v1/sessions", response_model=SessionListResponse)
@@ -728,6 +762,11 @@ async def ingest_event(
 ) -> dict[str, Any]:
     _limiter.check(_rate_limit_key(request, "w"), RATE_WRITE, request)
     await get_event_bus().publish(event)
+
+    if event.agent_id and hasattr(event, "status"):
+        if getattr(event, "status", None) == ExecutionStatus.FAILURE:
+            record_failure(event.agent_id)
+
     return {"status": "accepted", "event_id": event.event_id}
 
 
@@ -1073,6 +1112,88 @@ async def dashboard_top(_auth: None = Depends(_require_api_key)) -> dict[str, An
 @app.get("/api/v1/governance/compliance-report")
 async def compliance_report(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     return _compliance_reporter.generate().to_dict()
+
+
+@app.get("/api/v1/governance/eu-ai-act-report")
+async def eu_ai_act_report(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+    """EU AI Act Article 15 conformity export (CMP-004).
+
+    Maps AgentWatch's safety telemetry to the Article 15 requirements and
+    returns the technical documentation plus a conformity assessment as JSON.
+    """
+    from agentwatch.governance.eu_ai_act import (
+        DecisionLogEntry,
+        EUAIActPackage,
+        TechnicalDocumentation,
+    )
+
+    # Derive the report from live telemetry and the active safety policy rather
+    # than static literals, so the conformity evidence reflects the running
+    # system (Article 15 record-keeping / accuracy-robustness requirements).
+    safety = _safety_engine.stats()  # {"checked", "blocked", "approved"}
+    policy = _safety_engine.policy
+    sessions = _collector.list_sessions(limit=200)
+    checked = safety["checked"]
+
+    robustness: list[str] = []
+    if checked:
+        robustness.append(f"safety_engine_risk_scoring:{checked}_events_checked")
+    if safety["blocked"]:
+        robustness.append(f"actions_blocked:{safety['blocked']}")
+    if policy.block_on_critical:
+        robustness.append("block_on_critical")
+    if policy.block_on_high:
+        robustness.append("block_on_high")
+
+    oversight: list[str] = []
+    if policy.block_on_critical:
+        oversight.append("critical actions are blocked")
+    if policy.require_approval_on_high:
+        oversight.append("high-risk actions require human approval")
+    if policy.require_approval_on_medium:
+        oversight.append("medium-risk actions require human approval")
+
+    doc = TechnicalDocumentation(
+        system_name="AgentWatch-monitored AI system",
+        intended_purpose="Observability, safety, and reliability layer for AI agents",
+        risk_category="high",
+        data_governance={
+            "active_policy": policy.name,
+            "approval_required_high": str(policy.require_approval_on_high),
+        },
+        accuracy_metrics={
+            "events_checked": float(checked),
+            "safety_block_rate": round(safety["blocked"] / checked, 4) if checked else 0.0,
+        },
+        robustness_evidence=robustness,
+        human_oversight_description="; ".join(oversight) or "no oversight gates configured",
+        transparency_disclosures=["session_replay", "reasoning_audit_trail"],
+    )
+
+    pkg = EUAIActPackage()
+    pkg.set_documentation(doc)
+    # Record-keeping evidence: derive decision-log entries from real sessions.
+    sessions_used = sessions[:50]
+    for session in sessions_used:
+        pkg.log_decision(
+            DecisionLogEntry(
+                when=session.started_at,
+                decision_id=session.session_id,
+                inputs_hash="",
+                outputs_hash="",
+                confidence=0.0,
+                safety_checks_passed=session.status != ExecutionStatus.BLOCKED,
+                human_oversight_required=policy.require_approval_on_high,
+                explanation=f"session status={session.status.value}",
+            )
+        )
+
+    return {
+        "article": "EU AI Act Article 15",
+        "documentation": doc.to_dict(),
+        "conformity": pkg.assess().to_dict(),
+        "telemetry": {"safety_stats": safety, "sessions_considered": len(sessions_used)},
+    }
 
 
 @app.post("/api/v1/demo/seed")
