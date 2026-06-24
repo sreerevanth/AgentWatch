@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react'
+ ComponentType } from 'react'
 import { useState } from 'react'
 import { useRouter } from 'next/router'
 import useSWR from 'swr'
