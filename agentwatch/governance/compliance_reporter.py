@@ -4,10 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from agentwatch.governance.engine import AuditEventType, GovernanceEngine
-from agentwatch.tracing.collector import TraceCollector
+
+if TYPE_CHECKING:
+    # Imported lazily to break the governance <-> tracing import cycle that
+    # otherwise breaks a cold `import agentwatch.cli.main`. Only used as a
+    # type annotation, so the runtime import is unnecessary.
+    from agentwatch.tracing.collector import TraceCollector
 
 
 @dataclass

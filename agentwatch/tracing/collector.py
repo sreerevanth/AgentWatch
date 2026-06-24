@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from agentwatch.core.schema import AgentEvent, AgentSession, EventType, ExecutionStatus
+from agentwatch.governance.hipaa import redact_phi
 
 logger = logging.getLogger(__name__)
 
@@ -105,6 +106,7 @@ class TraceCollector:
         max_traces: int = 500,
         storage_path: Path | None = None,
         flush_interval_seconds: float = 30.0,
+        hipaa_compliance_mode: bool = False,
     ):
         self._traces: dict[str, Trace] = {}
         self._session_index: dict[str, AgentSession] = {}
@@ -114,9 +116,38 @@ class TraceCollector:
         self._event_buffer: list[AgentEvent] = []
         self._lock = asyncio.Lock()
         self._stats: dict[str, int] = defaultdict(int)
+        self.hipaa_compliance_mode = hipaa_compliance_mode
 
     async def ingest(self, event: AgentEvent) -> None:
         """Process one event into the trace collection."""
+        if self.hipaa_compliance_mode:
+            # Redact common text fields
+            if event.goal:
+                event.goal = redact_phi(event.goal).redacted
+            if event.tool_call and event.tool_call.raw_command:
+                event.tool_call.raw_command = redact_phi(event.tool_call.raw_command).redacted
+            if event.prompt_preview:
+                event.prompt_preview = redact_phi(event.prompt_preview).redacted
+            if event.planner_output_preview:
+                event.planner_output_preview = redact_phi(event.planner_output_preview).redacted
+            if event.tool_result and isinstance(event.tool_result.output, str):
+                event.tool_result.output = redact_phi(event.tool_result.output).redacted
+            if event.agent_message and getattr(event.agent_message, "content", None):
+                if isinstance(event.agent_message.content, dict):
+                    # Shallow copy and redact string values
+                    event.agent_message.content = {
+                        k: redact_phi(v).redacted if isinstance(v, str) else v
+                        for k, v in event.agent_message.content.items()
+                    }
+                elif isinstance(event.agent_message.content, str):
+                    event.agent_message.content = redact_phi(event.agent_message.content).redacted
+            if event.metadata:
+                # Shallow copy to avoid mutating original
+                event.metadata = {
+                    k: redact_phi(v).redacted if isinstance(v, str) else v
+                    for k, v in event.metadata.items()
+                }
+
         async with self._lock:
             self._stats["ingested"] += 1
 
@@ -146,6 +177,9 @@ class TraceCollector:
                 trace.session.status = event.status
             elif event.event_type == EventType.AGENT_ERROR:
                 trace.session.status = ExecutionStatus.FAILURE
+
+            if event.tool_call and event.tool_call.tool_name:
+                trace.session.metadata["current_tool"] = event.tool_call.tool_name
 
             if event.token_usage:
                 trace.session.total_tokens += event.token_usage.total_tokens
@@ -242,3 +276,70 @@ class TraceCollector:
 
         logger.info("Loaded %d traces from disk", count)
         return count
+
+    async def prune(self, session_ids: list[str], dry_run: bool = False) -> int:
+        """Remove traces for specific sessions from memory and disk.
+
+        Args:
+            session_ids (list[str]): The IDs of the sessions to delete.
+            dry_run (bool): If True, only return the count of files that would be deleted.
+
+        Returns:
+            int: The number of files that were (or would be) deleted.
+        """
+        count = 0
+        paths_to_check: list[Path] = []
+
+        async with self._lock:
+            for session_id in session_ids:
+                if not dry_run:
+                    self._traces.pop(session_id, None)
+                    self._session_index.pop(session_id, None)
+
+                if self._storage_path:
+                    base = self._storage_path.resolve()
+                    path = (base / f"{session_id}.json").resolve()
+                    if base not in path.parents:
+                        logger.warning(
+                            "Skipping suspicious session_id during prune: %s", session_id
+                        )
+                        continue
+                    paths_to_check.append(path)
+
+        for path in paths_to_check:
+            if path.exists():
+                if not dry_run:
+                    try:
+                        path.unlink()
+                        count += 1
+                    except Exception as exc:
+                        logger.error("Failed to delete trace file %s: %s", path, exc)
+                else:
+                    count += 1
+
+        return count
+
+    async def get_sessions_older_than(self, cutoff: datetime) -> list[str]:
+        """Find IDs of sessions that started before the cutoff time.
+
+        This checks the modification time of the trace files on disk to determine age.
+
+        Args:
+            cutoff (datetime): The threshold date/time.
+
+        Returns:
+            list[str]: A list of session IDs older than the cutoff.
+        """
+        session_ids: list[str] = []
+        if not self._storage_path or not self._storage_path.exists():
+            return session_ids
+
+        cutoff_timestamp = cutoff.timestamp()
+        for path in self._storage_path.glob("*.json"):
+            try:
+                if path.stat().st_mtime < cutoff_timestamp:
+                    session_ids.append(path.stem)
+            except Exception as exc:
+                logger.warning("Failed to check modification time for %s: %s", path, exc)
+
+        return session_ids

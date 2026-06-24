@@ -6,10 +6,30 @@ Detect infinite agent loops. Alert and break loop automatically.
 
 from __future__ import annotations
 
+import os
 from collections import deque
 from dataclasses import dataclass
 
 from agentwatch.core.schema import AgentEvent, EventType
+
+DEFAULT_LOOP_THRESHOLD = 3
+
+
+def _get_loop_threshold() -> int:
+    value = os.getenv("AGENTWATCH_LOOP_THRESHOLD")
+
+    if value is None:
+        return DEFAULT_LOOP_THRESHOLD
+
+    try:
+        threshold = int(value)
+    except ValueError:
+        return DEFAULT_LOOP_THRESHOLD
+
+    if threshold < 1:
+        return DEFAULT_LOOP_THRESHOLD
+
+    return threshold
 
 
 @dataclass
@@ -26,10 +46,12 @@ class LoopDetector:
     appears N times back-to-back, flag a loop.
     """
 
-    def __init__(self, window: int = 50, min_cycle: int = 1, min_reps: int = 3):
+    def __init__(self, window: int = 50, min_cycle: int = 1, min_reps: int | None = None):
         self.window = window
         self.min_cycle = min_cycle
-        self.min_reps = min_reps
+        self.min_reps = min_reps if min_reps is not None else _get_loop_threshold()
+        if self.min_reps < 1:
+            raise ValueError(f"min_reps must be >= 1, got {self.min_reps}")
         self._buffer: deque[str] = deque(maxlen=window)
 
     def signature_of(self, event: AgentEvent) -> str:
