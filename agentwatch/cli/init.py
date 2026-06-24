@@ -20,6 +20,14 @@ def init_cmd(
     Initialize AgentWatch in a project.
     """
     base_path = Path(project_path).resolve()
+    # Validate path exists and is a directory
+    if not base_path.exists():
+       console.print(f"[red]❌ Error: Path '{base_path}' does not exist[/red]")
+       raise typer.Exit(1)
+
+    if not base_path.is_dir():
+       console.print(f"[red]❌ Error: '{base_path}' is not a directory[/red]")
+       raise typer.Exit(1)
     console.print(Panel.fit(
         "[bold blue]🚀 AgentWatch Init[/bold blue]",
         border_style="blue"
