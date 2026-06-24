@@ -302,16 +302,18 @@ export default function DashboardPage() {
   const { data: sessionsData, mutate: refreshSessions, isLoading: sessionsLoading } = useSWR<{ sessions: AgentSession[]; total: number }>(`${API_BASE}/sessions?limit=20`, fetcher, { refreshInterval: 15000 })
  const { data: blockedData, mutate: refreshBlocked, isLoading: blockedLoading } = useSWR<{ blocked_events: AgentEvent[]; total: number }>(`${API_BASE}/safety/blocked?limit=20`, fetcher, { refreshInterval: 15000 })
   const [liveEvents, setLiveEvents] = useState<AgentEvent[]>([])
-  const { status: wsStatus, reconnectElapsedSec } = useLiveEventSocket(
-    (event) => {
-      setLiveEvents((previous) => [event, ...previous].slice(0, 200))
-    },
-    () => {
-      refreshSummary();
-      refreshSessions();
-      refreshBlocked(); // Add this line here
-    },
-  )
+ const { status: wsStatus, reconnectElapsedSec } = useLiveEventSocket(
+  (event) => {
+    // Only handle the event here
+    setLiveEvents((previous) => [event, ...previous].slice(0, 200))
+  },
+  () => {
+    // ONLY perform refreshes here (when the connection recovers)
+    refreshSummary()
+    refreshSessions()
+    refreshBlocked() 
+  },
+)
 
   const sessions = sessionsData?.sessions ?? []
   const blockedEvents = blockedData?.blocked_events ?? []
