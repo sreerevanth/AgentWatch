@@ -12,7 +12,10 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from agentwatch.memory.temporal_decay import TemporalDecayManager
 
 logger = logging.getLogger(__name__)
 
@@ -202,6 +205,19 @@ class MemoryStore:
     def update(self, entry: MemoryEntry) -> None:
         self._entries[entry.entry_id] = entry
 
+    def remove(self, entry_id: str) -> bool:
+        """Delete an entry and drop it from the agent index. Returns success."""
+        entry = self._entries.pop(entry_id, None)
+        if entry is None:
+            return False
+        ids = self._agent_index.get(entry.agent_id)
+        if ids and entry_id in ids:
+            ids.remove(entry_id)
+        return True
+
+    def all_entries(self) -> list[MemoryEntry]:
+        return list(self._entries.values())
+
     def count(self) -> int:
         return len(self._entries)
 
@@ -227,11 +243,16 @@ class MemoryEngine:
         self,
         embedding_provider: EmbeddingProvider | None = None,
         max_entries_per_agent: int = 10_000,
+        decay_manager: TemporalDecayManager | None = None,
     ):
+        # Imported lazily: TemporalDecayManager imports from this module.
+        from agentwatch.memory.temporal_decay import TemporalDecayManager
+
         self._store = MemoryStore()
         self._embedder = embedding_provider or EmbeddingProvider()
         self._max_entries = max_entries_per_agent
         self._contradiction_reports: list[ContradictionReport] = []
+        self._decay = decay_manager or TemporalDecayManager()
 
     async def store(
         self,
@@ -313,9 +334,12 @@ class MemoryEngine:
 
             score = similarity
             if recency_boost and entry.memory_type == MemoryType.EPISODIC:
-                age_hours = (now - entry.created_at).total_seconds() / 3600
-                recency = max(0.1, 1.0 - (age_hours / (24 * 30)))
-                score = score * 0.7 + recency * 0.3
+                # Deprioritize stale episodic memories using the importance-
+                # weighted forgetting curve. Read strength before the rehearsal
+                # bump below so older memories score lower; decay_factor is
+                # refreshed afterwards to reflect the post-access state.
+                strength = self._decay.strength(entry, now)
+                score = score * 0.7 + strength * 0.3
 
             importance_boost = {
                 ImportanceLevel.LOW: 0.9,
@@ -334,6 +358,7 @@ class MemoryEngine:
 
             entry.last_accessed = now
             entry.access_count += 1
+            self._decay.refresh(entry, now)
             self._store.update(entry)
 
         results.sort(key=lambda r: r.similarity_score, reverse=True)
@@ -353,7 +378,7 @@ class MemoryEngine:
         results = await self.retrieve(agent_id, query, top_k=20)
 
         context_parts: list[str] = []
-        estimated_tokens = 0
+        estimated_tokens = 0.0
         tokens_per_char = 0.25
 
         ordered = sorted(
@@ -446,6 +471,35 @@ class MemoryEngine:
 
     def get_contradictions(self, agent_id: str | None = None) -> list[ContradictionReport]:
         return list(self._contradiction_reports)
+
+    def prune_decayed(
+        self,
+        agent_id: str | None = None,
+        *,
+        now: datetime | None = None,
+    ) -> list[str]:
+        """Evict memories that have decayed below the strength threshold.
+
+        Background cleanup pass for the forgetting curve. Eligibility is by
+        decayed strength, not importance level directly — but importance sets
+        the half-life, so higher-importance entries decay slower and survive
+        longer. CRITICAL memories (and, by default, non-episodic knowledge) are
+        never evicted. Pass ``agent_id`` to scope the sweep to a single agent,
+        or omit it to sweep all agents. Returns the entry IDs that were removed.
+        """
+        now = now or datetime.now(UTC)
+        if agent_id is not None:
+            entries = self._store.get_for_agent(agent_id, active_only=False)
+        else:
+            entries = self._store.all_entries()
+
+        removed: list[str] = []
+        for entry in self._decay.select_prunable(entries, now):
+            if self._store.remove(entry.entry_id):
+                removed.append(entry.entry_id)
+        if removed:
+            logger.info("Pruned %d decayed memory entries", len(removed))
+        return removed
 
     def stats(self, agent_id: str | None = None) -> dict[str, Any]:
         if agent_id:

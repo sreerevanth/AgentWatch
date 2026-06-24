@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
-    "start": "next start"
+    "start": "next start",
+    "install-nextjs-docs": "npx @next/codemod@canary agents-md"
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",

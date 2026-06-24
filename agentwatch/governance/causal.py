@@ -65,13 +65,14 @@ def attribute(
             )
         )
 
+    remediation_steps = remediation or _default_remediation(outcome.severity)
     machine = {
         "outcome_id": outcome.outcome_id,
         "description": outcome.description,
         "severity": outcome.severity,
         "occurred_at": outcome.occurred_at.isoformat(),
         "causal_chain": [step.__dict__ for step in chain],
-        "remediation": remediation or _default_remediation(outcome.severity),
+        "remediation": remediation_steps,
     }
     body = json.dumps(machine, sort_keys=True, default=str).encode()
     sig = "sha256:" + hashlib.sha256(body).hexdigest()
@@ -79,7 +80,7 @@ def attribute(
     return AttributionReport(
         outcome=outcome,
         chain=chain,
-        remediation=machine["remediation"],
+        remediation=remediation_steps,
         machine_readable=machine,
         signature=sig,
     )

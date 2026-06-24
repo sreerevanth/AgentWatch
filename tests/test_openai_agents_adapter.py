@@ -1,6 +1,7 @@
 from agentwatch.adapters.openai_agents import AgentWatchOpenAIAgentsAdapter
 from agentwatch.core.event_bus import EventBus
 from agentwatch.core.schema import EventType, ExecutionStatus
+import pytest
 
 
 def _make_bus():
@@ -75,8 +76,6 @@ def test_agent_error_emits_failure():
     assert captured[0].status == ExecutionStatus.FAILURE
 
 
-import pytest
-
 def test_tool_call_populates_tool_call_data():
     bus, captured = _make_bus()
 
@@ -135,4 +134,4 @@ async def test_openai_agents_safety_bypass_regression():
     assert event.status == ExecutionStatus.BLOCKED
     assert event.safety is not None
     assert event.safety.blocked is True
-    assert any("FS_DELETE_CRITICAL" in policy for policy in event.safety.matched_policies)
+    assert any("FS_DELETE_CRITICAL" in policy for policy in event.safety.matched_policies)
