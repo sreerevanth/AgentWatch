@@ -28,7 +28,8 @@ from fastapi import (
 )
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import generate_latest
 from pydantic import BaseModel, Field
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
@@ -51,6 +52,10 @@ from agentwatch.core.schema import (
 from agentwatch.cost.tracker import CostTracker
 from agentwatch.governance.compliance_reporter import ComplianceReporter
 from agentwatch.governance.engine import AuditEventType, GovernanceEngine
+from agentwatch.monitoring.metrics import (
+    record_api_latency,
+    record_failure,
+)
 from agentwatch.reasoning.auditor import ReasoningAuditor
 from agentwatch.replay.counterfactual import CounterfactualEngine, CounterfactualScenario
 from agentwatch.replay.engine import ReplayEngine
@@ -534,6 +539,29 @@ async def rl_headers(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def record_metrics(request: Request, call_next):
+    """Record API latency metrics for all requests including failures."""
+    start_time = time.time()
+    endpoint = request.url.path
+    response = None
+
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as exc:
+        # Record failure before re-raising
+        duration = time.time() - start_time
+        record_api_latency(endpoint, duration)
+        record_failure(endpoint, 500, str(exc))
+        raise
+    finally:
+        # Record latency for successful responses
+        if response is not None:
+            duration = time.time() - start_time
+            record_api_latency(endpoint, duration)
+
+
 # CORS configuration.
 #
 # allow_credentials=True requires an explicit origin list -- the CORS spec
@@ -591,6 +619,12 @@ async def health(request: Request) -> dict[str, Any]:
         "safety": _safety_engine.stats(),
         "cost": _cost_tracker.stats(),
     }
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    """Expose Prometheus metrics endpoint."""
+    return Response(content=generate_latest(), media_type="text/plain; version=0.0.4")
 
 
 @app.get("/api/v1/sessions", response_model=SessionListResponse)
@@ -729,6 +763,11 @@ async def ingest_event(
 ) -> dict[str, Any]:
     _limiter.check(_rate_limit_key(request, "w"), RATE_WRITE, request)
     await get_event_bus().publish(event)
+
+    if event.agent_id and hasattr(event, "status"):
+        if getattr(event, "status", None) == ExecutionStatus.FAILURE:
+            record_failure(event.agent_id)
+
     return {"status": "accepted", "event_id": event.event_id}
 
 

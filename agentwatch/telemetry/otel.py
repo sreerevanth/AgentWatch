@@ -304,6 +304,121 @@ class TelemetryProvider:
                 duration_seconds, {"framework": framework, "status": status}
             )
 
+    def export_reasoning_trace(self, trace_data: dict[str, Any]) -> bool:
+        """Export a finalized ReasoningTrace dict to OpenTelemetry."""
+        if not self._initialized or not _OTEL_AVAILABLE or not self._tracer:
+            return False
+
+        import hashlib
+        import uuid
+        from datetime import datetime
+
+        from opentelemetry.context import Context
+        from opentelemetry.trace import (
+            NonRecordingSpan,
+            SpanContext,
+            TraceFlags,
+            set_span_in_context,
+        )
+
+        def _safe_int_from_id(id_str: str | None, bits: int) -> int | None:
+            if not id_str:
+                return None
+            try:
+                return uuid.UUID(id_str).int & ((1 << bits) - 1)
+            except ValueError:
+                # Deterministic fallback ID generation for malformed identifiers.
+                # Not used for security.
+                h = hashlib.blake2b(
+                    id_str.encode("utf-8"),
+                    digest_size=16 if bits == 128 else 8,
+                    usedforsecurity=False,
+                ).digest()
+                return int.from_bytes(h, byteorder="big") & ((1 << bits) - 1)
+
+        def _parse_time(time_str: str | None) -> int | None:
+            if not time_str:
+                return None
+            try:
+                dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                return int(dt.timestamp() * 1e9)
+            except Exception:
+                try:
+                    return int(float(time_str) * 1e9)
+                except Exception:
+                    return None
+
+        agent = trace_data.get("agent", {})
+        base_attrs = {
+            "agent.id": agent.get("id", ""),
+            "agent.name": agent.get("name", ""),
+            "agent.framework": agent.get("framework", ""),
+            "agent.model": agent.get("model", ""),
+        }
+        base_attrs = {k: str(v) for k, v in base_attrs.items() if v}
+
+        trace_id_int = _safe_int_from_id(trace_data.get("trace_id"), 128)
+        if not trace_id_int:
+            return False
+
+        # Create a fake root context to enforce trace_id
+        dummy_span_id = _safe_int_from_id(trace_data.get("trace_id", "root"), 64) or 1
+        root_span_context = SpanContext(
+            trace_id=trace_id_int,
+            span_id=dummy_span_id,
+            is_remote=True,
+            trace_flags=TraceFlags.SAMPLED,
+        )
+        base_context = set_span_in_context(NonRecordingSpan(root_span_context), Context())
+
+        otel_contexts = {}  # span_id -> Context
+
+        # Sort spans by start_time to ensure parents are processed first
+        spans = sorted(trace_data.get("spans", []), key=lambda s: s.get("start_time") or "")
+
+        for span_data in spans:
+            aw_span_id = str(span_data.get("span_id", ""))
+            parent_aw_id = str(span_data.get("parent_span_id", ""))
+
+            parent_context = otel_contexts.get(parent_aw_id, base_context)
+            start_time_ns = _parse_time(span_data.get("start_time")) or int(time.time() * 1e9)
+            end_time_ns = _parse_time(span_data.get("end_time")) or start_time_ns
+
+            span = self._tracer.start_span(
+                name=str(span_data.get("name", "span")),
+                context=parent_context,
+                start_time=start_time_ns,
+            )
+
+            # Attributes
+            for k, v in base_attrs.items():
+                span.set_attribute(k, v)
+
+            span.set_attribute("agentwatch.span_id", aw_span_id)
+            if parent_aw_id:
+                span.set_attribute("agentwatch.parent_span_id", parent_aw_id)
+
+            kind = span_data.get("kind")
+            if kind:
+                span.set_attribute("agentwatch.kind", str(kind))
+
+            token_count = span_data.get("token_count")
+            if token_count is not None:
+                span.set_attribute("agentwatch.token_count", int(token_count))
+                self.record_tokens(int(token_count), str(agent.get("framework", "custom")))
+
+            # Extra attributes
+            attrs = span_data.get("attributes", {})
+            if isinstance(attrs, dict):
+                for k, v in attrs.items():
+                    if isinstance(v, (str, int, float, bool)):
+                        span.set_attribute(str(k), v)
+
+            span.end(end_time=end_time_ns)
+            otel_contexts[aw_span_id] = set_span_in_context(span, Context())
+
+        return True
+
 
 # Compatibility alias for OBS tests
 OTELExporter = TelemetryProvider
