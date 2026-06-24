@@ -21,16 +21,13 @@ def init_cmd(
     base_path = Path(project_path).resolve()
     # Validate path exists and is a directory
     if not base_path.exists():
-       console.print(f"[red]❌ Error: Path '{base_path}' does not exist[/red]")
-       raise typer.Exit(1)
+        console.print(f"[red]❌ Error: Path '{base_path}' does not exist[/red]")
+        raise typer.Exit(1)
 
     if not base_path.is_dir():
-       console.print(f"[red]❌ Error: '{base_path}' is not a directory[/red]")
-       raise typer.Exit(1)
-    console.print(Panel.fit(
-        "[bold blue]🚀 AgentWatch Init[/bold blue]",
-        border_style="blue"
-    ))
+        console.print(f"[red]❌ Error: '{base_path}' is not a directory[/red]")
+        raise typer.Exit(1)
+    console.print(Panel.fit("[bold blue]🚀 AgentWatch Init[/bold blue]", border_style="blue"))
 
     console.print(f"📁 Project: {base_path}")
 
@@ -42,7 +39,9 @@ def init_cmd(
     # Step 1: Create agentwatch.toml
     config_path = base_path / "agentwatch.toml"
     if config_path.exists() and not force:
-        console.print("[yellow]⚠️ agentwatch.toml already exists (use --force to overwrite)[/yellow]")
+        console.print(
+            "[yellow]⚠️ agentwatch.toml already exists (use --force to overwrite)[/yellow]"
+        )
         failed_steps.append("agentwatch.toml already exists")
     else:
         if not dry_run:
@@ -90,10 +89,11 @@ def init_cmd(
         console.print(f"[yellow]Failed steps: {', '.join(failed_steps)}[/yellow]")
         raise typer.Exit(1)
 
-    console.print(Panel.fit(
-        "[bold green]✅ AgentWatch initialized successfully![/bold green]",
-        border_style="green"
-    ))
+    console.print(
+        Panel.fit(
+            "[bold green]✅ AgentWatch initialized successfully![/bold green]", border_style="green"
+        )
+    )
     console.print("📝 Next steps:")
     console.print("  1. Review agentwatch.toml")
     console.print("  2. Set API keys in .env")
