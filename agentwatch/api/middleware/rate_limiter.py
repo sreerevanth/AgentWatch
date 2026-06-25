@@ -90,11 +90,11 @@ class RateLimiter:
         # Check if buckets need reset (but don't actually reset)
         user_bucket = self.user_buckets[user_id]
         global_count = (
-            0 if now - self.global_bucket["start"] > self.window_sec else self.global_bucket["count"]
+            0
+            if now - self.global_bucket["start"] > self.window_sec
+            else self.global_bucket["count"]
         )
-        user_count = (
-            0 if now - user_bucket["start"] > self.window_sec else user_bucket["count"]
-        )
+        user_count = 0 if now - user_bucket["start"] > self.window_sec else user_bucket["count"]
 
         return {
             "user_limit": self.user_limit,

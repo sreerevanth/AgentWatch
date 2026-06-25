@@ -2,8 +2,9 @@
 AgentWatch init command - Project initialization
 """
 
-import typer
 from pathlib import Path
+
+import typer
 from rich.console import Console
 from rich.panel import Panel
 
