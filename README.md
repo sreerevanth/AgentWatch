@@ -166,6 +166,8 @@ flowchart TB
     style API fill:#1e293b,stroke:#3ecf8e,color:#fff
     style DASH fill:#1e293b,stroke:#3ecf8e,color:#fff
 ```
+### CLI Architecture
+* All shell commands executed by the CLI are routed through a secure, validated wrapper located in `agentwatch/cli/_utils` to prevent injection vulnerabilities.
 
 ---
 
@@ -299,6 +301,22 @@ if checked.status == ExecutionStatus.BLOCKED:
 ```
 
 Blocks **40+ dangerous patterns pre-execution**, not post-hoc logging.
+
+### 🔒 Secure Subprocess Wrapper
+
+To prevent command-injection risks when invoking external utilities in CLI extensions or scripts, use the central secure command execution utility:
+
+```python
+from agentwatch.cli._utils import run, CommandError
+
+try:
+    # Runs securely (shell=False) with strict argument character whitelisting
+    result = run(["echo", "hello world"])
+    print(result.stdout)
+except CommandError as exc:
+    print(f"Command execution failed: {exc}")
+```
+
 
 ### ⏪ One-Click Rollback
 

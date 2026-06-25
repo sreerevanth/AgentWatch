@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import cast
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +81,7 @@ def validate_channels(
     """Validate all provided notification channel configurations.
 
     Call this at startup to catch invalid configurations before any alerts fire.
-    Empty strings are treated as invalid values and will raise ChannelConfigError.
+    Empty strings are treated as unset/disabled.
 
     If either pagerduty_webhook_url or pagerduty_routing_key is provided,
     both must be present and valid (incomplete PagerDuty config fails fast).
@@ -93,6 +94,13 @@ def validate_channels(
     Raises:
         ChannelConfigError: If any provided value is invalid or incomplete.
     """
+    if slack_webhook_url == "":
+        slack_webhook_url = None
+    if pagerduty_webhook_url == "":
+        pagerduty_webhook_url = None
+    if pagerduty_routing_key == "":
+        pagerduty_routing_key = None
+
     if slack_webhook_url is not None:
         validate_slack_webhook(slack_webhook_url)
 
@@ -111,5 +119,6 @@ def validate_channels(
                 "Incomplete PagerDuty configuration: "
                 "pagerduty_routing_key is required when pagerduty_webhook_url is set."
             )
-        validate_pagerduty_webhook(pagerduty_webhook_url)
-        validate_pagerduty_key(pagerduty_routing_key)
+        # Type narrowing: prior checks at lines 100-113 guarantee non-None here.
+        validate_pagerduty_webhook(cast(str, pagerduty_webhook_url))
+        validate_pagerduty_key(cast(str, pagerduty_routing_key))
