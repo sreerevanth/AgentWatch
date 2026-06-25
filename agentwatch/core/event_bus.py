@@ -244,17 +244,21 @@ class EventBus:
             handlers_to_dispatch = [
                 self._handlers[hid]
                 for hid in handler_ids
-                if hid in self._handlers
-                and not (
-                    self._handlers[hid].event_filter
-                    and not self._handlers[hid].event_filter.matches(event)
-                )
+                if hid in self._handlers and self._handler_accepts(self._handlers[hid], event)
             ]
 
         # Dispatch outside the lock to avoid holding it during handler I/O
         tasks = [self._dispatch(reg, event) for reg in handlers_to_dispatch]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
+
+    @staticmethod
+    def _handler_accepts(reg: HandlerRegistration, event: AgentEvent) -> bool:
+        """Return True if the handler's optional event filter accepts the event."""
+        event_filter = reg.event_filter
+        if event_filter is None:
+            return True
+        return event_filter.matches(event)
 
     async def _dispatch(self, reg: HandlerRegistration, event: AgentEvent) -> None:
         """Invoke one handler, running sync callables in a thread pool.
@@ -353,7 +357,9 @@ class EventBus:
         Returns:
             Copy of internal stats (e.g. ``total_published``, ``type.*``).
         """
-        return dict(self._stats)
+        result = dict(self._stats)
+        result["active_subscribers"] = self.handler_count()
+        return result
 
     def handler_count(self) -> int:
         """Return the number of registered handlers."""

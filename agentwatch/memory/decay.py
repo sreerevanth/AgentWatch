@@ -28,6 +28,30 @@ _IMPORTANCE_HALFLIFE_DAYS = {
 }
 
 
+def strength_at(
+    importance: Importance,
+    last_accessed: datetime,
+    access_count: int = 0,
+    now: datetime | None = None,
+) -> float:
+    """Exponential forgetting-curve strength in ``[0.0, 1.0]``.
+
+    Importance sets the half-life; CRITICAL memories never decay. Each prior
+    access adds a small rehearsal boost so frequently-used memories resist
+    forgetting. This is the single source of truth for the decay curve — both
+    :class:`DecayingMemory` and the engine's ``TemporalDecayManager`` use it.
+    """
+    now = now or datetime.now(UTC)
+    halflife = _IMPORTANCE_HALFLIFE_DAYS[importance]
+    if halflife == float("inf"):
+        return 1.0
+    age_days = (now - last_accessed).total_seconds() / 86400
+    base = math.exp(-math.log(2) * age_days / halflife)
+    # Each access slightly boosts strength (rehearsal effect)
+    boost = min(0.5, 0.05 * access_count)
+    return min(1.0, base + boost)
+
+
 @dataclass
 class DecayingMemory:
     key: str
@@ -38,15 +62,7 @@ class DecayingMemory:
     access_count: int = 0
 
     def strength(self, now: datetime | None = None) -> float:
-        now = now or datetime.now(UTC)
-        halflife = _IMPORTANCE_HALFLIFE_DAYS[self.importance]
-        if halflife == float("inf"):
-            return 1.0
-        age_days = (now - self.last_accessed).total_seconds() / 86400
-        base = math.exp(-math.log(2) * age_days / halflife)
-        # Each access slightly boosts strength (rehearsal effect)
-        boost = min(0.5, 0.05 * self.access_count)
-        return min(1.0, base + boost)
+        return strength_at(self.importance, self.last_accessed, self.access_count, now)
 
 
 class ForgettingEngine:
@@ -90,4 +106,4 @@ class ForgettingEngine:
         return len(self._store)
 
 
-__all__ = ["DecayingMemory", "Importance", "ForgettingEngine"]
+__all__ = ["DecayingMemory", "Importance", "ForgettingEngine", "strength_at"]

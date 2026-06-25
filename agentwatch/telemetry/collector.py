@@ -68,6 +68,7 @@ class Trace:
         self.session = session
         self.spans: list[TraceSpan] = []
         self._event_count = 0
+        self.is_exported = False
 
     def add_event(self, event: AgentEvent) -> TraceSpan:
         span = TraceSpan(event)
@@ -90,6 +91,7 @@ class Trace:
             "trace_id": self.trace_id,
             "session": self.session.model_dump(mode="json"),
             "span_count": len(self.spans),
+            "is_exported": self.is_exported,
             "spans": [s.to_dict() for s in self.spans],
         }
 
@@ -117,6 +119,9 @@ class TraceCollector:
 
     async def ingest(self, event: AgentEvent) -> None:
         """Process one event into the trace collection."""
+        trace_to_export = None
+        trace_obj = None
+
         async with self._lock:
             self._stats["ingested"] += 1
 
@@ -155,6 +160,22 @@ class TraceCollector:
                 trace.session.total_tokens += event.token_usage.total_tokens
                 if event.token_usage.estimated_cost_usd:
                     trace.session.estimated_cost_usd += event.token_usage.estimated_cost_usd
+
+            if not trace.is_exported and event.event_type in (
+                EventType.SESSION_END,
+                EventType.AGENT_ERROR,
+            ):
+                trace_to_export = trace.to_dict()
+                trace_obj = trace
+
+        if trace_to_export and trace_obj:
+            try:
+                from agentwatch.telemetry.otel import get_telemetry
+
+                if get_telemetry().export_reasoning_trace(trace_to_export):
+                    trace_obj.is_exported = True
+            except Exception as exc:
+                logger.warning("Telemetry export failed: %s", exc)
 
     def register_session(self, session: AgentSession) -> None:
         """Register a session explicitly (before events arrive)."""
@@ -238,6 +259,7 @@ class TraceCollector:
                     data = json.load(f)
                 session = AgentSession(**data["session"])
                 trace = Trace(session=session)
+                trace.is_exported = data.get("is_exported", False)
                 # Reconstruct minimal spans (events only, no full re-parse)
                 self._traces[session.session_id] = trace
                 self._session_index[session.session_id] = session

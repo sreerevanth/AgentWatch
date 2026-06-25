@@ -87,7 +87,7 @@ class PromptRegistry:
         split = self._splits.get(name)
         if not split:
             return self.active(name)
-        r = random.random()  # noqa: S311 — A/B routing, not crypto
+        r = random.random()  # noqa: S311  # nosec B311 — A/B routing, not crypto
         cumulative = 0.0
         for version, weight in split.items():
             cumulative += weight

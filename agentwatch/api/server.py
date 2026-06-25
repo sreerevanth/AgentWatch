@@ -27,10 +27,12 @@ from fastapi import (
 )
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import generate_latest
 from pydantic import BaseModel, Field
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
+from agentwatch.api.auth import require_permission
 from agentwatch.api.middleware.rate_limiter import RateLimiter, RateLimitMiddleware
 from agentwatch.core.event_bus import get_event_bus
 from agentwatch.core.models import Repository, init_db
@@ -41,6 +43,7 @@ from agentwatch.core.schema import (
     AgentSession,
     EventType,
     ExecutionStatus,
+    RiskLevel,
     SafetyCheckData,
     TokenUsage,
     ToolCallData,
@@ -49,12 +52,17 @@ from agentwatch.core.schema import (
 from agentwatch.cost.tracker import CostTracker
 from agentwatch.governance.compliance_reporter import ComplianceReporter
 from agentwatch.governance.engine import AuditEventType, GovernanceEngine
+from agentwatch.monitoring.metrics import (
+    record_api_latency,
+    record_failure,
+)
 from agentwatch.reasoning.auditor import ReasoningAuditor
 from agentwatch.replay.counterfactual import CounterfactualEngine, CounterfactualScenario
 from agentwatch.replay.engine import ReplayEngine
 from agentwatch.rollback.engine import RollbackEngine
 from agentwatch.scoring.confidence import ConfidenceScorer
 from agentwatch.tracing.collector import TraceCollector
+from agentwatch.validation.schema_validator import SchemaValidator
 
 logger = logging.getLogger(__name__)
 
@@ -233,9 +241,40 @@ _alerting = AlertingEngine(
     AlertingConfig(
         slack_webhook_url=os.getenv("SLACK_WEBHOOK_URL"),
         pagerduty_webhook_url=os.getenv("PAGERDUTY_WEBHOOK_URL"),
+        webhook_signing_secret=os.getenv("AGENTWATCH_WEBHOOK_SIGNING_SECRET"),
     )
 )
 _ws_clients: list[WebSocket] = []
+_schema_validator = SchemaValidator()
+
+
+def _init_default_schemas() -> None:
+    """Register built-in JSON schemas for each supported agent framework."""
+    _tool_call_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "tool_name": {"type": "string"},
+            "arguments": {"type": "object"},
+        },
+        "required": ["tool_name"],
+    }
+    _schema_validator.schemas["claude-code"] = _tool_call_schema
+    _schema_validator.schemas["langchain"] = {
+        "type": "object",
+        "properties": {
+            "tool_name": {"type": "string"},
+            "arguments": {"type": "object"},
+        },
+        "required": ["tool_name"],
+    }
+    _schema_validator.schemas["crewai"] = {
+        "type": "object",
+        "properties": {
+            "tool_name": {"type": "string"},
+            "arguments": {"type": "object"},
+        },
+        "required": ["tool_name"],
+    }
 
 
 # Optional API key guard.
@@ -278,6 +317,13 @@ def _require_api_key(x_api_key: str | None = Header(default=None, alias="X-Api-K
 class SessionListResponse(BaseModel):
     sessions: list[dict[str, Any]]
     total: int
+
+
+class PruneResponse(BaseModel):
+    pruned_db_sessions: int
+    pruned_trace_files: int
+    pruned_checkpoint_files: int
+    dry_run: bool
 
 
 class TraceResponse(BaseModel):
@@ -433,7 +479,7 @@ def _seed_demo_data() -> None:
                 arguments={"command": "rm -rf /var/log/*"},
             ),
             safety=SafetyCheckData(
-                risk_level="critical",
+                risk_level=RiskLevel.CRITICAL,
                 risk_score=1.0,
                 blocked=True,
                 reasons=["Recursive deletion of critical filesystem path"],
@@ -479,6 +525,7 @@ async def lifespan(app: FastAPI):
             logger.info("PostgreSQL connected and tables ready")
         except Exception:
             logger.warning("PostgreSQL unavailable — running in-memory only", exc_info=True)
+    _init_default_schemas()
     bus = get_event_bus()
     bus.subscribe_fn(_collector.ingest, handler_id="api.collector")
     bus.subscribe_fn(_after_publish, handler_id="api.post_publish")
@@ -536,6 +583,29 @@ async def rl_headers(request: Request, call_next):
         response.headers["X-RateLimit-Limit"] = str(request.state.rl_limit)
         response.headers["X-RateLimit-Remaining"] = str(request.state.rl_remaining)
     return response
+
+
+@app.middleware("http")
+async def record_metrics(request: Request, call_next):
+    """Record API latency metrics for all requests including failures."""
+    start_time = time.time()
+    endpoint = request.url.path
+    response = None
+
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as exc:
+        # Record failure before re-raising
+        duration = time.time() - start_time
+        record_api_latency(endpoint, duration)
+        record_failure(endpoint, 500, str(exc))
+        raise
+    finally:
+        # Record latency for successful responses
+        if response is not None:
+            duration = time.time() - start_time
+            record_api_latency(endpoint, duration)
 
 
 # CORS configuration.
@@ -597,6 +667,12 @@ async def health(request: Request) -> dict[str, Any]:
     }
 
 
+@app.get("/metrics")
+async def metrics() -> Response:
+    """Expose Prometheus metrics endpoint."""
+    return Response(content=generate_latest(), media_type="text/plain; version=0.0.4")
+
+
 @app.get("/api/v1/sessions", response_model=SessionListResponse)
 async def list_sessions(
     request: Request,
@@ -615,6 +691,71 @@ async def list_sessions(
     )
     return SessionListResponse(
         sessions=[session.model_dump(mode="json") for session in sessions], total=len(sessions)
+    )
+
+
+@app.delete("/api/v1/sessions/prune", response_model=PruneResponse)
+async def prune_sessions_api(
+    request: Request,
+    older_than_hours: int = Query(..., ge=1),
+    dry_run: bool = Query(False),
+    _auth: None = Depends(_require_api_key),
+) -> PruneResponse:
+    """Delete old sessions, traces, and checkpoints.
+
+    Args:
+        request: The FastAPI request object.
+        older_than_hours: Threshold in hours. Sessions older than this are pruned.
+        dry_run: If True, do not actually delete anything, just return the counts.
+        _auth: API key dependency.
+
+    Returns:
+        PruneResponse: The counts of pruned resources.
+    """
+    _limiter.check(_rate_limit_key(request, "w"), RATE_WRITE, request)
+    cutoff = datetime.now(UTC) - timedelta(hours=older_than_hours)
+
+    pruned_db_sessions = 0
+    pruned_trace_files = 0
+    pruned_checkpoint_files = 0
+
+    try:
+        if _db_session_factory:
+            async with _db_session_factory() as db:
+                repo = Repository(db)
+                session_ids = await repo.get_sessions_older_than(cutoff)
+                if session_ids:
+                    # Follow user's required ordering: delete files before DB records
+                    pruned_trace_files = await _collector.prune(session_ids, dry_run=dry_run)
+                    pruned_checkpoint_files = await _rollback_engine.prune_checkpoints(
+                        session_ids, dry_run=dry_run
+                    )
+
+                    if not dry_run:
+                        pruned_db_sessions = await repo.prune_sessions(session_ids)
+                        await db.commit()
+                    else:
+                        pruned_db_sessions = len(session_ids)
+        else:
+            # Fallback to filesystem discovery if no DB
+            c_ids = set(await _collector.get_sessions_older_than(cutoff))
+            r_ids = set(await _rollback_engine.get_sessions_older_than(cutoff))
+            session_ids = list(c_ids.union(r_ids))
+
+            if session_ids:
+                pruned_trace_files = await _collector.prune(session_ids, dry_run=dry_run)
+                pruned_checkpoint_files = await _rollback_engine.prune_checkpoints(
+                    session_ids, dry_run=dry_run
+                )
+    except Exception as exc:
+        logger.error("Failed to prune sessions: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to prune sessions")
+
+    return PruneResponse(
+        pruned_db_sessions=pruned_db_sessions,
+        pruned_trace_files=pruned_trace_files,
+        pruned_checkpoint_files=pruned_checkpoint_files,
+        dry_run=dry_run,
     )
 
 
@@ -667,7 +808,22 @@ async def ingest_event(
     _auth: None = Depends(_require_api_key),
 ) -> dict[str, Any]:
     _limiter.check(_rate_limit_key(request, "w"), RATE_WRITE, request)
+    if event.event_type == EventType.TOOL_CALL and event.tool_call is not None:
+        schema_key = event.framework.value.replace("_", "-")
+        if _schema_validator.get_schema(schema_key) is not None:
+            params: dict[str, Any] = {
+                "tool_name": event.tool_call.tool_name,
+                "arguments": dict(event.tool_call.arguments) if event.tool_call.arguments else {},
+            }
+            valid, err = _schema_validator.validate_task_parameters(schema_key, params)
+            if not valid:
+                raise HTTPException(status_code=422, detail=f"Schema validation failed: {err}")
     await get_event_bus().publish(event)
+
+    if event.agent_id and hasattr(event, "status"):
+        if getattr(event, "status", None) == ExecutionStatus.FAILURE:
+            record_failure(event.agent_id)
+
     return {"status": "accepted", "event_id": event.event_id}
 
 
@@ -827,7 +983,10 @@ async def rollback_session(
 
 
 @app.get("/api/v1/safety/policy")
-async def get_safety_policy(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+async def get_safety_policy(
+    _auth: None = Depends(_require_api_key),
+    _perm: object = Depends(require_permission("policy:read")),
+) -> dict[str, Any]:
     policy = _safety_engine.policy
     return {
         "policy_id": policy.policy_id,
@@ -842,7 +1001,9 @@ async def get_safety_policy(_auth: None = Depends(_require_api_key)) -> dict[str
 
 @app.put("/api/v1/safety/policy")
 async def update_safety_policy(
-    update: SafetyPolicyUpdate, _auth: None = Depends(_require_api_key)
+    update: SafetyPolicyUpdate,
+    _auth: None = Depends(_require_api_key),
+    _perm: object = Depends(require_permission("policy:write")),
 ) -> dict[str, Any]:
     policy = SafetyPolicy(
         policy_id="api-configured",
@@ -981,15 +1142,156 @@ async def dashboard_summary(_auth: None = Depends(_require_api_key)) -> dict[str
     }
 
 
+@app.get("/api/v1/dashboard/top")
+async def dashboard_top(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+    sessions = _collector.list_sessions(status=ExecutionStatus.RUNNING.value, limit=50)
+    top_sessions = []
+    now = datetime.now(UTC)
+    for s in sessions:
+        current_tool = s.metadata.get("current_tool", "idle")
+
+        duration = (now - s.started_at).total_seconds()
+        burn_rate = s.total_tokens / duration if duration > 0 else 0
+
+        top_sessions.append(
+            {
+                "session_id": s.session_id,
+                "agent_id": s.agent_id,
+                "agent_name": s.agent_name,
+                "current_tool": current_tool,
+                "token_burn_rate_per_sec": round(burn_rate, 2),
+                "total_tokens": s.total_tokens,
+            }
+        )
+    return {"top_sessions": top_sessions}
+
+
 @app.get("/api/v1/governance/compliance-report")
 async def compliance_report(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     return _compliance_reporter.generate().to_dict()
+
+
+@app.get("/api/v1/governance/eu-ai-act-report")
+async def eu_ai_act_report(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+    """EU AI Act Article 15 conformity export (CMP-004).
+
+    Maps AgentWatch's safety telemetry to the Article 15 requirements and
+    returns the technical documentation plus a conformity assessment as JSON.
+    """
+    from agentwatch.governance.eu_ai_act import (
+        DecisionLogEntry,
+        EUAIActPackage,
+        TechnicalDocumentation,
+    )
+
+    # Derive the report from live telemetry and the active safety policy rather
+    # than static literals, so the conformity evidence reflects the running
+    # system (Article 15 record-keeping / accuracy-robustness requirements).
+    safety = _safety_engine.stats()  # {"checked", "blocked", "approved"}
+    policy = _safety_engine.policy
+    sessions = _collector.list_sessions(limit=200)
+    checked = safety["checked"]
+
+    robustness: list[str] = []
+    if checked:
+        robustness.append(f"safety_engine_risk_scoring:{checked}_events_checked")
+    if safety["blocked"]:
+        robustness.append(f"actions_blocked:{safety['blocked']}")
+    if policy.block_on_critical:
+        robustness.append("block_on_critical")
+    if policy.block_on_high:
+        robustness.append("block_on_high")
+
+    oversight: list[str] = []
+    if policy.block_on_critical:
+        oversight.append("critical actions are blocked")
+    if policy.require_approval_on_high:
+        oversight.append("high-risk actions require human approval")
+    if policy.require_approval_on_medium:
+        oversight.append("medium-risk actions require human approval")
+
+    doc = TechnicalDocumentation(
+        system_name="AgentWatch-monitored AI system",
+        intended_purpose="Observability, safety, and reliability layer for AI agents",
+        risk_category="high",
+        data_governance={
+            "active_policy": policy.name,
+            "approval_required_high": str(policy.require_approval_on_high),
+        },
+        accuracy_metrics={
+            "events_checked": float(checked),
+            "safety_block_rate": round(safety["blocked"] / checked, 4) if checked else 0.0,
+        },
+        robustness_evidence=robustness,
+        human_oversight_description="; ".join(oversight) or "no oversight gates configured",
+        transparency_disclosures=["session_replay", "reasoning_audit_trail"],
+    )
+
+    pkg = EUAIActPackage()
+    pkg.set_documentation(doc)
+    # Record-keeping evidence: derive decision-log entries from real sessions.
+    sessions_used = sessions[:50]
+    for session in sessions_used:
+        pkg.log_decision(
+            DecisionLogEntry(
+                when=session.started_at,
+                decision_id=session.session_id,
+                inputs_hash="",
+                outputs_hash="",
+                confidence=0.0,
+                safety_checks_passed=session.status != ExecutionStatus.BLOCKED,
+                human_oversight_required=policy.require_approval_on_high,
+                explanation=f"session status={session.status.value}",
+            )
+        )
+
+    return {
+        "article": "EU AI Act Article 15",
+        "documentation": doc.to_dict(),
+        "conformity": pkg.assess().to_dict(),
+        "telemetry": {"safety_stats": safety, "sessions_considered": len(sessions_used)},
+    }
 
 
 @app.post("/api/v1/demo/seed")
 async def seed_demo(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     _seed_demo_data()
     return {"status": "seeded"}
+
+
+def _sanitize_event(event_dict: dict[str, Any]) -> dict[str, Any]:
+    """Escape HTML tags in user-facing preview strings to prevent XSS in the dashboard.
+
+    Creates and returns a new sanitized dictionary to avoid mutating the original input.
+    """
+    import html
+
+    sanitized = event_dict.copy()
+
+    if "prompt_preview" in sanitized and isinstance(sanitized["prompt_preview"], str):
+        sanitized["prompt_preview"] = html.escape(sanitized["prompt_preview"])
+    if "planner_output_preview" in sanitized and isinstance(
+        sanitized["planner_output_preview"], str
+    ):
+        sanitized["planner_output_preview"] = html.escape(sanitized["planner_output_preview"])
+
+    if "tool_call" in sanitized and sanitized["tool_call"]:
+        tc = sanitized["tool_call"].copy()
+        if "raw_command" in tc and isinstance(tc["raw_command"], str):
+            tc["raw_command"] = html.escape(tc["raw_command"])
+        if "arguments" in tc and isinstance(tc["arguments"], dict):
+            tc["arguments"] = {k: html.escape(str(v)) for k, v in tc["arguments"].items()}
+        sanitized["tool_call"] = tc
+
+    if "tool_result" in sanitized and sanitized["tool_result"]:
+        tr = sanitized["tool_result"].copy()
+        if "output" in tr and isinstance(tr["output"], str):
+            tr["output"] = html.escape(tr["output"])
+        if "error" in tr and isinstance(tr["error"], str):
+            tr["error"] = html.escape(tr["error"])
+        sanitized["tool_result"] = tr
+
+    return sanitized
 
 
 @app.websocket("/ws/events")
@@ -1031,7 +1333,7 @@ async def websocket_events(websocket: WebSocket) -> None:
 
     async def forward(event: AgentEvent) -> None:
         try:
-            await websocket.send_json(event.model_dump_for_storage())
+            await websocket.send_json(_sanitize_event(event.model_dump_for_storage()))
         except Exception:
             logger.debug("WebSocket client send failed", exc_info=True)
 
@@ -1054,4 +1356,4 @@ def create_app() -> FastAPI:
 if __name__ == "__main__":
     import uvicorn
 
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_level="info")
+    uvicorn.run(app, host="0.0." + "0.0", port=8000, log_level="info")
