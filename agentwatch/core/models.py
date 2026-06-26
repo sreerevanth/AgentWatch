@@ -326,7 +326,7 @@ class Repository:
         d = delete(SessionRecord).where(SessionRecord.session_id.in_(session_ids))
         result = await self._session.execute(d)
         await self._session.flush()
-        return result.rowcount
+        return result.rowcount  # type: ignore[attr-defined]
 
 
 # ─────────────────────────────────────────────

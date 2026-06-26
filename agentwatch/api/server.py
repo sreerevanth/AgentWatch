@@ -5,6 +5,7 @@ FastAPI-based REST API for the observability dashboard, CLI, and integrations.
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import re
@@ -1166,6 +1167,66 @@ async def dashboard_top(_auth: None = Depends(_require_api_key)) -> dict[str, An
     return {"top_sessions": top_sessions}
 
 
+@app.get("/api/v1/dashboard/analytics")
+async def dashboard_analytics(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+    sessions = _collector.list_sessions(limit=500)
+
+    success_count = sum(1 for s in sessions if s.status == ExecutionStatus.SUCCESS)
+    total_sessions = len(sessions)
+
+    success_rate = (success_count / total_sessions) if total_sessions > 0 else 0
+
+    completed_sessions = [
+        s for s in sessions if s.status in {ExecutionStatus.SUCCESS, ExecutionStatus.FAILURE}
+    ]
+    avg_execution_time = 0.0
+    if completed_sessions:
+        total_time = sum(
+            (s.ended_at - s.started_at).total_seconds() for s in completed_sessions if s.ended_at
+        )
+        avg_execution_time = total_time / len(completed_sessions)
+
+    framework_stats = {}
+    for s in sessions:
+        fw = s.framework.value
+        if fw not in framework_stats:
+            framework_stats[fw] = {"success": 0, "failure": 0, "total": 0}
+        framework_stats[fw]["total"] += 1
+        if s.status == ExecutionStatus.SUCCESS:
+            framework_stats[fw]["success"] += 1
+        elif s.status == ExecutionStatus.FAILURE:
+            framework_stats[fw]["failure"] += 1
+
+    recent_errors = []
+    for s in sessions:
+        if s.status in {ExecutionStatus.FAILURE, ExecutionStatus.BLOCKED}:
+            events = _collector.get_events(s.session_id)
+            for event in reversed(events):
+                if event.status == ExecutionStatus.FAILURE or event.is_blocked:
+                    recent_errors.append(event.model_dump_for_storage())
+                    break
+
+    recent_errors.sort(key=lambda x: x["timestamp"], reverse=True)
+    recent_errors = recent_errors[:20]
+
+    now = datetime.now(UTC)
+    historical_trend = []
+    for i in range(24):
+        hour_start = now - timedelta(hours=i + 1)
+        hour_end = now - timedelta(hours=i)
+        count = sum(1 for s in sessions if hour_start <= s.started_at < hour_end)
+        historical_trend.append({"hour": hour_end.strftime("%H:00"), "count": count})
+    historical_trend.reverse()
+
+    return {
+        "success_rate": success_rate,
+        "average_execution_time_seconds": avg_execution_time,
+        "framework_stats": framework_stats,
+        "recent_errors": recent_errors,
+        "historical_trend": historical_trend,
+    }
+
+
 @app.get("/api/v1/governance/compliance-report")
 async def compliance_report(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     return _compliance_reporter.generate().to_dict()
@@ -1257,6 +1318,454 @@ async def eu_ai_act_report(_auth: None = Depends(_require_api_key)) -> dict[str,
 async def seed_demo(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     _seed_demo_data()
     return {"status": "seeded"}
+
+
+# ─────────────────────────────────────────────
+# Visual Workflow Builder Endpoints (#447)
+# ─────────────────────────────────────────────
+
+
+class WorkflowNode(BaseModel):
+    id: str
+    type: str
+    position: dict[str, float]
+    data: dict[str, Any]
+
+
+class WorkflowEdge(BaseModel):
+    id: str
+    source: str
+    target: str
+    source_handle: str | None = None
+    target_handle: str | None = None
+
+
+class Workflow(BaseModel):
+    id: str
+    name: str
+    description: str | None = None
+    nodes: list[WorkflowNode]
+    edges: list[WorkflowEdge]
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+DEFAULT_TEMPLATES = [
+    {
+        "id": "tpl-code-review",
+        "name": "Multi-Agent Code Review Pipeline",
+        "description": "Orchestrates LLM nodes to review pull requests, check security policies, and post summaries.",
+        "nodes": [
+            {
+                "id": "node-1",
+                "type": "scheduler",
+                "position": {"x": 100, "y": 200},
+                "data": {
+                    "name": "PR Webhook Trigger",
+                    "cron": "*/5 * * * *",
+                    "triggerEvent": "pull_request",
+                },
+            },
+            {
+                "id": "node-2",
+                "type": "custom-tool",
+                "position": {"x": 300, "y": 200},
+                "data": {
+                    "name": "Fetch PR Diff",
+                    "toolName": "github_pr_fetcher",
+                    "arguments": '{\n  "pr_id": "{{trigger.pr_id}}"\n}',
+                },
+            },
+            {
+                "id": "node-3",
+                "type": "llm",
+                "position": {"x": 550, "y": 100},
+                "data": {
+                    "name": "Security Analyzer",
+                    "model": "claude-3-5-sonnet",
+                    "temperature": 0.2,
+                    "systemPrompt": "Analyze the git diff for security vulnerabilities.",
+                },
+            },
+            {
+                "id": "node-4",
+                "type": "llm",
+                "position": {"x": 550, "y": 300},
+                "data": {
+                    "name": "Style Guide Checker",
+                    "model": "gpt-4o",
+                    "temperature": 0.5,
+                    "systemPrompt": "Check the code for style violations.",
+                },
+            },
+            {
+                "id": "node-5",
+                "type": "conditional",
+                "position": {"x": 800, "y": 200},
+                "data": {
+                    "name": "Vulnerabilities Found?",
+                    "property": "security_issues",
+                    "operator": "gt",
+                    "value": "0",
+                },
+            },
+            {
+                "id": "node-6",
+                "type": "agent",
+                "position": {"x": 1020, "y": 100},
+                "data": {
+                    "name": "Senior Reviewer Agent",
+                    "framework": "crewai",
+                    "agentName": "Reviewer",
+                    "systemPrompt": "Draft a detailed PR rejection comment detailing safety and style issues.",
+                },
+            },
+            {
+                "id": "node-7",
+                "type": "http",
+                "position": {"x": 1020, "y": 300},
+                "data": {
+                    "name": "Post Approval Webhook",
+                    "url": "https://api.github.com/repos/owner/repo/pulls/comments",
+                    "method": "POST",
+                },
+            },
+        ],
+        "edges": [
+            {"id": "edge-1", "source": "node-1", "target": "node-2"},
+            {"id": "edge-2", "source": "node-2", "target": "node-3"},
+            {"id": "edge-3", "source": "node-2", "target": "node-4"},
+            {"id": "edge-4", "source": "node-3", "target": "node-5"},
+            {"id": "edge-5", "source": "node-4", "target": "node-5"},
+            {"id": "edge-6", "source": "node-5", "target": "node-6", "source_handle": "true"},
+            {"id": "edge-7", "source": "node-5", "target": "node-7", "source_handle": "false"},
+        ],
+    },
+    {
+        "id": "tpl-rag",
+        "name": "Retrieval-Augmented LLM Search",
+        "description": "Retrieves local memory context, processes it with LLM, and writes back findings to memory.",
+        "nodes": [
+            {
+                "id": "node-1",
+                "type": "http",
+                "position": {"x": 100, "y": 200},
+                "data": {
+                    "name": "Search Query Input",
+                    "url": "https://api.agentwatch.com/search-intent",
+                    "method": "GET",
+                },
+            },
+            {
+                "id": "node-2",
+                "type": "memory",
+                "position": {"x": 350, "y": 200},
+                "data": {
+                    "name": "Semantic Vector Search",
+                    "memoryKey": "knowledge_base",
+                    "mode": "read",
+                    "storageType": "semantic",
+                },
+            },
+            {
+                "id": "node-3",
+                "type": "llm",
+                "position": {"x": 600, "y": 200},
+                "data": {
+                    "name": "Synthesis Model",
+                    "model": "claude-3-5-sonnet",
+                    "temperature": 0.3,
+                    "systemPrompt": "Answer user query using the retrieved context.",
+                },
+            },
+            {
+                "id": "node-4",
+                "type": "memory",
+                "position": {"x": 850, "y": 200},
+                "data": {
+                    "name": "Cache Result",
+                    "memoryKey": "search_history",
+                    "mode": "write",
+                    "storageType": "episodic",
+                },
+            },
+        ],
+        "edges": [
+            {"id": "edge-1", "source": "node-1", "target": "node-2"},
+            {"id": "edge-2", "source": "node-2", "target": "node-3"},
+            {"id": "edge-3", "source": "node-3", "target": "node-4"},
+        ],
+    },
+]
+
+WORKFLOWS_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "workflows.json"
+)
+
+
+def load_workflows_from_disk() -> list[dict]:
+    try:
+        if os.path.exists(WORKFLOWS_FILE):
+            with open(WORKFLOWS_FILE) as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    # Ensure defaults exist
+                    existing_ids = {w["id"] for w in data}
+                    for default in DEFAULT_TEMPLATES:
+                        if default["id"] not in existing_ids:
+                            data.append(default)
+                    return data
+    except Exception as e:
+        logger.warning(f"Failed to load workflows: {e}")
+    return list(DEFAULT_TEMPLATES)
+
+
+def save_workflows_to_disk(workflows: list[dict]) -> None:
+    try:
+        with open(WORKFLOWS_FILE, "w") as f:
+            json.dump(workflows, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Failed to save workflows: {e}")
+
+
+@app.get("/api/workflows")
+@app.get("/api/v1/workflows")
+async def list_workflows(request: Request, _auth: None = Depends(_require_api_key)) -> list[dict]:
+    _limiter.check(_rate_limit_key(request, "r"), RATE_READ, request)
+    return load_workflows_from_disk()
+
+
+@app.get("/api/workflows/{workflow_id}")
+@app.get("/api/v1/workflows/{workflow_id}")
+async def get_workflow(
+    request: Request, workflow_id: str, _auth: None = Depends(_require_api_key)
+) -> dict:
+    _limiter.check(_rate_limit_key(request, "r"), RATE_READ, request)
+    workflows = load_workflows_from_disk()
+    for w in workflows:
+        if w["id"] == workflow_id:
+            return w
+    raise HTTPException(status_code=404, detail="Workflow not found")
+
+
+@app.post("/api/workflows")
+@app.post("/api/v1/workflows")
+async def save_workflow(
+    request: Request, workflow: Workflow, _auth: None = Depends(_require_api_key)
+) -> dict:
+    _limiter.check(_rate_limit_key(request, "w"), RATE_WRITE, request)
+    workflows = load_workflows_from_disk()
+    workflow_dict = workflow.model_dump(mode="json")
+    workflow_dict["updated_at"] = datetime.now(UTC).isoformat()
+
+    updated = False
+    for i, w in enumerate(workflows):
+        if w["id"] == workflow.id:
+            workflow_dict["created_at"] = w.get("created_at") or workflow_dict["updated_at"]
+            workflows[i] = workflow_dict
+            updated = True
+            break
+
+    if not updated:
+        workflow_dict["created_at"] = workflow_dict["updated_at"]
+        workflows.append(workflow_dict)
+
+    save_workflows_to_disk(workflows)
+    return {"status": "saved", "workflow": workflow_dict}
+
+
+@app.delete("/api/workflows/{workflow_id}")
+@app.delete("/api/v1/workflows/{workflow_id}")
+async def delete_workflow(
+    request: Request, workflow_id: str, _auth: None = Depends(_require_api_key)
+) -> dict:
+    _limiter.check(_rate_limit_key(request, "w"), RATE_WRITE, request)
+    workflows = load_workflows_from_disk()
+    new_workflows = [w for w in workflows if w["id"] != workflow_id]
+    if len(new_workflows) == len(workflows):
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    save_workflows_to_disk(new_workflows)
+    return {"status": "deleted"}
+
+
+@app.post("/api/workflows/{workflow_id}/run")
+@app.post("/api/v1/workflows/{workflow_id}/run")
+async def run_workflow_simulation(
+    request: Request, workflow_id: str, _auth: None = Depends(_require_api_key)
+) -> dict:
+    _limiter.check(_rate_limit_key(request, "w"), RATE_WRITE, request)
+    workflows = load_workflows_from_disk()
+    workflow = None
+    for w in workflows:
+        if w["id"] == workflow_id:
+            workflow = w
+            break
+
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    nodes = workflow.get("nodes", [])
+    edges = workflow.get("edges", [])
+
+    # Simple topological sorting helper / step generator
+    steps = []
+    executed_nodes = set()
+
+    # We will simulate standard step-by-step executions
+    # Map nodes by id for quick lookup
+    node_map = {n["id"]: n for n in nodes}
+
+    # Let's find start nodes (nodes with no incoming edges)
+    incoming_counts = {n["id"]: 0 for n in nodes}
+    outgoing_edges: dict[str, list[Any]] = {n["id"]: [] for n in nodes}
+    for e in edges:
+        target = e.get("target")
+        source = e.get("source")
+        if target in incoming_counts:
+            incoming_counts[target] += 1
+        if source in outgoing_edges:
+            outgoing_edges[source].append(e)
+
+    # Queue for nodes to execute
+    queue = [nid for nid, count in incoming_counts.items() if count == 0]
+    if not queue and nodes:
+        # fallback if circular reference or no clear start
+        queue = [nodes[0]["id"]]
+
+    step_index = 1
+    while queue:
+        current_id = queue.pop(0)
+        if current_id in executed_nodes:
+            continue
+        executed_nodes.add(current_id)
+        node = node_map.get(current_id)
+        if not node:
+            continue
+
+        node_type = node.get("type", "unknown")
+        node_name = node.get("data", {}).get("name", f"Node {current_id}")
+
+        # Determine simulated outputs & logs based on type
+        outputs: dict[str, Any] = {}
+        errors = []
+        log_msgs = []
+        status = "success"
+
+        if node_type == "agent":
+            framework = node.get("data", {}).get("framework", "custom")
+            agent_name = node.get("data", {}).get("agentName", "Agent")
+            log_msgs = [
+                f"Initializing {framework} Agent: '{agent_name}'...",
+                "Running Planner reasoning cycle...",
+                "Agent task completed successfully.",
+            ]
+            outputs = {"agent_status": "idle", "last_message": "Task processed successfully."}
+        elif node_type == "llm":
+            model = node.get("data", {}).get("model", "gpt-4o")
+            log_msgs = [
+                f"Preparing prompt context for Model: {model}...",
+                f"Calling LLM API ({model})...",
+                "Received completion: 240 prompt tokens, 120 completion tokens.",
+            ]
+            outputs = {"completion": "Simulated LLM response details", "tokens_used": 360}
+        elif node_type == "memory":
+            mode = node.get("data", {}).get("mode", "read")
+            key = node.get("data", {}).get("memoryKey", "default")
+            storage = node.get("data", {}).get("storageType", "episodic")
+            log_msgs = [
+                f"Connecting to {storage} memory store...",
+                f"Performing memory {mode} for key: '{key}'...",
+                "Memory operation completed successfully.",
+            ]
+            outputs = {
+                "retrieved_context": "Found 3 matching items in memory."
+                if mode == "read"
+                else "Wrote context."
+            }
+        elif node_type == "http":
+            url = node.get("data", {}).get("url", "https://api.example.com")
+            method = node.get("data", {}).get("method", "GET")
+            log_msgs = [
+                f"Dispatching HTTP {method} request to {url}...",
+                "Waiting for server response...",
+                "Response HTTP 200 OK received.",
+            ]
+            outputs = {"response_body": {"status": "ok", "items": []}, "status_code": 200}
+        elif node_type == "file":
+            path = node.get("data", {}).get("filePath", "/workspace/data.json")
+            action = node.get("data", {}).get("action", "read")
+            log_msgs = [
+                f"Opening file pointer at: {path}...",
+                f"Performing action '{action}' on filesystem...",
+                "Operation success.",
+            ]
+            outputs = {"file_size_bytes": 1024, "status": "completed"}
+            # Let's add a warning if deleting or accessing sensitive files
+            if action == "delete" or "/etc" in path or "/" == path:
+                errors.append(f"High risk filesystem operation detected at: {path}")
+        elif node_type == "scheduler":
+            cron = node.get("data", {}).get("cron", "* * * * *")
+            log_msgs = [
+                f"Evaluating cron schedule pattern: '{cron}'...",
+                "Next execution interval computed successfully.",
+            ]
+            outputs = {"next_run": "2026-06-22T14:00:00Z"}
+        elif node_type == "conditional":
+            prop = node.get("data", {}).get("property", "score")
+            operator = node.get("data", {}).get("operator", "eq")
+            val = node.get("data", {}).get("value", "true")
+            log_msgs = [
+                f"Evaluating branch condition: '{prop}' {operator} '{val}'...",
+                "Condition resolved to TRUE.",
+            ]
+            outputs = {"branch_taken": "true"}
+        elif node_type == "custom-tool":
+            tool = node.get("data", {}).get("toolName", "custom_script")
+            log_msgs = [
+                f"Resolving custom tool binding: '{tool}'...",
+                "Running sandbox simulation...",
+                "Tool finished with exit code 0.",
+            ]
+            outputs = {"result": "success"}
+        else:
+            log_msgs = ["Executing generic workflow step..."]
+
+        # Introduce a random failure scenario or warning for demonstrating errors
+        if current_id == "node-failed-test":
+            status = "failure"
+            errors.append("Simulation execution failed: Connection Timeout")
+            log_msgs.append("CRITICAL: Connection timed out after 5000ms.")
+
+        steps.append(
+            {
+                "step_index": step_index,
+                "node_id": current_id,
+                "node_name": node_name,
+                "node_type": node_type,
+                "status": status,
+                "logs": log_msgs,
+                "outputs": outputs,
+                "errors": errors,
+                "duration_ms": 150 + (step_index * 45),
+            }
+        )
+        step_index += 1
+
+        # Add next nodes to queue
+        for edge in outgoing_edges[current_id]:
+            target = edge.get("target")
+            if target not in executed_nodes:
+                queue.append(target)
+
+    # Return overall simulation summary and step traces
+    return {
+        "workflow_id": workflow_id,
+        "name": workflow.get("name"),
+        "status": "failure" if any(s["status"] == "failure" for s in steps) else "success",
+        "steps": steps,
+        "total_duration_ms": sum(s["duration_ms"] for s in steps),
+        "executed_nodes_count": len(executed_nodes),
+    }
 
 
 def _sanitize_event(event_dict: dict[str, Any]) -> dict[str, Any]:

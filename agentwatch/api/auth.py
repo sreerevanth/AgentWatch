@@ -39,10 +39,8 @@ from fastapi import Depends, Header, HTTPException, status
 
 from agentwatch.governance.rbac import RBACEngine, Role, SAMLClaims, User, verify_token
 
-# Secret used to verify SAML session tokens. Unset → enforcement disabled.
-_SAML_SECRET: bytes | None = (
-    os.getenv("AGENTWATCH_SAML_SECRET").encode() if os.getenv("AGENTWATCH_SAML_SECRET") else None
-)
+_SAML_SECRET_ENV = os.getenv("AGENTWATCH_SAML_SECRET")
+_SAML_SECRET: bytes | None = _SAML_SECRET_ENV.encode() if _SAML_SECRET_ENV else None
 
 _ENV = os.getenv("AGENTWATCH_ENV") or os.getenv("ENVIRONMENT") or "development"
 _IS_PROD = _ENV.lower() == "production"

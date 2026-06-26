@@ -1736,10 +1736,10 @@ def _parse_older_than_to_hours(val: str) -> int:
     elif val.endswith("h"):
         num = val[:-1]
         try:
-            hours = float(num)
-            if hours <= 0:
+            hours_f = float(num)
+            if hours_f <= 0:
                 raise ValueError()
-            hours_i = math.ceil(hours)
+            hours_i = math.ceil(hours_f)
             if hours_i < 1:
                 raise ValueError()
             return hours_i
