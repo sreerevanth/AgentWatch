@@ -31,13 +31,14 @@ app = typer.Typer(
     add_completion=True,
     rich_markup_mode="rich",
 )
+session_app = typer.Typer(
+    name="session", help="Manage and inspect agent sessions", no_args_is_help=True
+)
+app.add_typer(session_app)
 app.add_typer(mcp_app, name="mcp")
 
 console = Console()
 
-session_app = typer.Typer(
-    name="session", help="Manage and inspect agent sessions", no_args_is_help=True
-)
 server_app = typer.Typer(
     name="server", help="Manage the AgentWatch API server", no_args_is_help=True
 )
@@ -48,7 +49,6 @@ safety_app = typer.Typer(
     no_args_is_help=True,
 )
 
-app.add_typer(session_app)
 app.add_typer(server_app)
 app.add_typer(safety_app)
 
@@ -948,7 +948,9 @@ def top(
 @server_app.command(name="status")
 def status(
     api_url: str = typer.Option("http://localhost:8000", "--api"),
-    refresh_rate: float = typer.Option(1.0, "--refresh", help="Refresh rate in seconds"),
+    refresh_rate: float = typer.Option(
+        1.0, "--refresh", min=0.1, help="Refresh rate in seconds (must be >= 0.1)"
+    ),
     api_key: str | None = API_KEY_OPTION,
 ) -> None:
     """[bold]Show[/bold] a real-time live dashboard of AgentWatch runtime status."""
@@ -1537,7 +1539,9 @@ def _print_live_event(event) -> None:
         if event.safety:
             rc = _risk_color(event.safety.risk_level.value)
             risk_str = f" [{rc}][{event.safety.risk_level.value}][/{rc}]"
-        status_str = " [red][BLOCKED][/red]" if event.is_blocked else ""
+        status_str = ""
+        if event.is_blocked:
+            status_str = " [red][BLOCKED][/red]"
         console.print(f"[dim]{ts}[/dim] {icon} [bold]{name}[/bold]{risk_str}{status_str}")
         if cmd:
             console.print(f"         [dim]{cmd}[/dim]")
@@ -1676,7 +1680,6 @@ def session_rollback(
     """[bold]Rollback[/bold] a session to a specific step."""
 
     async def _run() -> None:
-
         from agentwatch.rollback.engine import RollbackEngine, RollbackStatus
 
         engine = RollbackEngine()

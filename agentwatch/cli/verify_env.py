@@ -1,3 +1,10 @@
+"""Environment Verification and Diagnostic Utilities for AgentWatch.
+
+This module provides structural system checks, checks for required core python
+dependencies, and verifies system environment variable configurations with
+animated validation progress feedback.
+"""
+
 from __future__ import annotations
 
 import os
@@ -16,6 +23,13 @@ console = Console()
 
 
 def verify_environment() -> None:
+    """Run full system diagnostics and check the runtime environment status.
+
+    Executes a multi-stage sequential validation tracking sequence including:
+    1. Python execution runtime compatibility verification (>= 3.12).
+    2. Dynamic runtime installation checks for third-party modules.
+    3. Global configuration mask screening for required/optional environment strings.
+    """
     console.print()
 
     # Awesome Progress Bar Sequence
@@ -59,11 +73,11 @@ def verify_environment() -> None:
     py_ver_str = f"{py_ver.major}.{py_ver.minor}.{py_ver.micro}"
     if py_ver.major == 3 and py_ver.minor >= 12:
         console.print(
-            f"  [green]✔️ [/green] [bold]Python Runtime:[/bold] {py_ver_str} [dim](compatible)[/dim]"
+            f"  [green][PASS][/green] [bold]Python Runtime:[/bold] {py_ver_str} [dim](compatible)[/dim]"
         )
     else:
         console.print(
-            f"  [red]❌ [/red] [bold]Python Runtime:[/bold] {py_ver_str} [red](requires >= 3.12)[/red]"
+            f"  [red][FAIL][/red] [bold]Python Runtime:[/bold] {py_ver_str} [red](requires >= 3.12)[/red]"
         )
 
     console.print()
@@ -87,9 +101,9 @@ def verify_environment() -> None:
     for pkg, name in deps.items():
         try:
             __import__(pkg)
-            rows.append([name, "[green]✔️ Installed[/green]"])
+            rows.append([name, "[green][PASS] Installed[/green]"])
         except ImportError:
-            rows.append([name, "[red]❌ Missing[/red]"])
+            rows.append([name, "[red][FAIL] Missing[/red]"])
 
     animate_table_rows(table, rows, delay=0.08)
     console.print()
@@ -118,7 +132,7 @@ def verify_environment() -> None:
                 [
                     var,
                     "[dim]Required[/dim]" if required else "[dim]Optional[/dim]",
-                    f"[green]✔️ {display_val}[/green]",
+                    f"[green][PASS] {display_val}[/green]",
                 ]
             )
         else:
@@ -129,6 +143,9 @@ def verify_environment() -> None:
     console.print()
 
     from agentwatch.cli.animator import matrix_type_print
+
+    console.print(var_table)
+    console.print("\n[bold green]Diagnostics complete[/bold green]\n")
 
     matrix_type_print("  ALL SYSTEMS GO.  ", color="1;92m", delay=0.05)
     console.print()

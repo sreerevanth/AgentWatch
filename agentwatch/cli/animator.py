@@ -1,6 +1,6 @@
-import os
+from __future__ import annotations
+
 import random
-import subprocess  # nosec
 import sys
 import time
 from typing import Any
@@ -16,29 +16,8 @@ console = Console()
 CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789@#$%&*!?"
 
 
-def speak_welcome() -> None:
-    """Uses Windows speech synthesis in the background to say welcome."""
-    try:
-        user = os.getlogin()
-    except Exception:
-        user = "Commander"
-
-    if sys.platform == "win32":
-        cmd = f"Add-Type -AssemblyName System.speech; $synth = New-Object System.Speech.Synthesis.SpeechSynthesizer; $synth.Rate = 1; $synth.Speak('Welcome {user}, to Agent Watch.')"
-        # Run in background so it talks while animating
-        # Prevent window flashing which steals focus
-        subprocess.Popen(  # nosec # noqa: S603, S607
-            ["powershell", "-WindowStyle", "Hidden", "-Command", cmd],  # noqa: S607
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-            creationflags=subprocess.CREATE_NO_WINDOW,
-        )
-
-
 def cinematic_logo_reveal(ascii_art: list[str]) -> None:
     """A highly animated movie-style reveal for the ASCII logo."""
-    # Start talking!
-    speak_welcome()
 
     # Make space for the logo
     sys.stdout.write("\n" * len(ascii_art))

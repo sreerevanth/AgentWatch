@@ -8,7 +8,7 @@ from agentwatch.cli.main import app
 runner = CliRunner()
 
 
-@patch('asyncio.sleep', side_effect=KeyboardInterrupt)
+@patch("asyncio.sleep", side_effect=KeyboardInterrupt)
 def test_status_command_success(mock_sleep):
     mock_resp = MagicMock()
     mock_resp.raise_for_status.return_value = None
@@ -40,7 +40,7 @@ def test_status_command_success(mock_sleep):
     assert "Total Tokens:" in result.stdout
 
 
-@patch('asyncio.sleep', side_effect=KeyboardInterrupt)
+@patch("asyncio.sleep", side_effect=KeyboardInterrupt)
 def test_status_command_connection_error(mock_sleep):
     mock_client = AsyncMock()
     mock_client.get.side_effect = httpx.ConnectError("Connection refused")
@@ -57,7 +57,7 @@ def test_status_command_connection_error(mock_sleep):
     assert "Connection refused" in result.stdout
 
 
-@patch('asyncio.sleep', side_effect=KeyboardInterrupt)
+@patch("asyncio.sleep", side_effect=KeyboardInterrupt)
 def test_status_command_auth_error(mock_sleep):
     mock_resp = MagicMock()
     mock_resp.status_code = 401
@@ -80,7 +80,7 @@ def test_status_command_auth_error(mock_sleep):
     assert "Unauthorized" in result.stdout
 
 
-@patch('asyncio.sleep', side_effect=KeyboardInterrupt)
+@patch("asyncio.sleep", side_effect=KeyboardInterrupt)
 def test_status_command_other_http_error(mock_sleep):
     mock_resp = MagicMock()
     mock_resp.status_code = 500
@@ -101,3 +101,8 @@ def test_status_command_other_http_error(mock_sleep):
 
     assert result.exit_code == 0
     assert "Server Error" in result.stdout
+
+
+def test_status_command_invalid_refresh_rate():
+    result = runner.invoke(app, ["server", "status", "--refresh", "0"])
+    assert result.exit_code != 0
