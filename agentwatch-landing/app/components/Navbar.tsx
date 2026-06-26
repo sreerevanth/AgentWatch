@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import gsap from "gsap";
 
 const LINKS = [
@@ -13,6 +14,7 @@ const LINKS = [
 ];
 
 export default function Navbar() {
+  const pathname = usePathname();
   const navRef = useRef<HTMLElement>(null);
   const [scrolled, setScrolled] = useState(false);
   const [active, setActive] = useState<string | null>(null);
@@ -154,9 +156,8 @@ export default function Navbar() {
               );
             }
             if (item.page) {
-              // Internal page link (e.g. /about) — let Next handle normal nav.
-              const isActive =
-                typeof window !== "undefined" && window.location.pathname === item.href;
+              // Internal page link (e.g. /about) — use usePathname
+              const isActive = pathname === item.href;
               return (
                 <a
                   key={item.label}
