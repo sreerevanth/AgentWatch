@@ -3,6 +3,10 @@
 import { useEffect, useRef } from "react";
 import gsap from "gsap";
 import ScrollTrigger from "gsap/ScrollTrigger";
+import Features from "./components/Features";
+import HowItWorks from "./components/HowItWorks";
+import AboutCreator from "./components/AboutCreator";
+import Contributors from "./components/Contributors";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -61,7 +65,8 @@ export default function Home() {
           <a href="#docs" className="hover:text-white transition-colors">Documentation</a>
         </div>
         <div className="flex items-center gap-4 stagger-in">
-          <a href="https://github.com/sreerevanth/agentwatch" target="_blank" rel="noreferrer" className="text-sm font-medium hover:text-white transition-colors">GitHub</a>
+          <a href="https://discord.gg/yourdiscord" target="_blank" rel="noreferrer" className="text-sm font-medium hover:text-[#00f0ff] transition-colors">Discord</a>
+          <a href="https://github.com/sreerevanth/agentwatch" target="_blank" rel="noreferrer" className="text-sm font-medium hover:text-[#00f0ff] transition-colors">GitHub</a>
           <button className="px-5 py-2 rounded-full bg-white text-black font-semibold text-sm hover:scale-105 transition-transform">
             Get Started
           </button>
@@ -176,6 +181,12 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      {/* Render requested sections */}
+      <Features />
+      <HowItWorks />
+      <AboutCreator />
+      <Contributors />
 
     </main>
   );
