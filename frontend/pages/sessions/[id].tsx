@@ -1,30 +1,15 @@
 import { useState } from 'react'
 import { useRouter } from 'next/router'
-import useSWR from 'swr'
 import { AlertTriangle, ArrowLeft, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
 import { format } from 'date-fns'
 
-import { FailureAnalysis, ReplayStep, api } from '../../lib/api'
+import { FailureAnalysis, ReplayStep } from '../../lib/api'
 import { Modal } from '../../components/Modal'
-
-// Resolved at build time from the NEXT_PUBLIC_API_HOST Docker build arg.
-// In production the browser calls the API origin directly (no proxy hop).
-// In local dev falls back to the Next.js proxy route at /api/v1.
-const API_BASE = process.env.NEXT_PUBLIC_API_HOST
-  ? `https://${process.env.NEXT_PUBLIC_API_HOST}/api/v1`
-  : '/api/v1'
+import { useSession, useSessionReplay, useSessionConfidence, useSessionCheckpoints, useRollback } from '../../lib/api/hooks/useSessions'
 
 function safeFormat(ts: string | null | undefined, fmt: string): string {
   if (!ts) return '—'
   try { return format(new Date(ts), fmt) } catch { return '—' }
-}
-
-const fetcher = async (url: string) => {
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`)
-  }
-  return response.json()
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -94,17 +79,18 @@ export default function SessionPage() {
   const { id } = router.query as { id?: string }
   const [rollbackStep, setRollbackStep] = useState('')
   const [isRollbackModalOpen, setIsRollbackModalOpen] = useState(false)
-  const { data: session } = useSWR(id ? `${API_BASE}/sessions/${id}` : null, fetcher)
-  const { data: replayData } = useSWR(id ? `${API_BASE}/sessions/${id}/replay` : null, fetcher)
-  const { data: confidenceData } = useSWR(id ? `${API_BASE}/sessions/${id}/confidence` : null, fetcher)
-  const { data: checkpointsData } = useSWR(id ? `${API_BASE}/sessions/${id}/checkpoints` : null, fetcher)
+  const { session } = useSession(id)
+  const { replay: replayData } = useSessionReplay(id)
+  const { confidence: confidenceData } = useSessionConfidence(id)
+  const { checkpoints: checkpointsData } = useSessionCheckpoints(id)
+  const { rollback } = useRollback()
 
   if (!id) return null
 
   const handleRollback = async () => {
     if (!rollbackStep) return
     setIsRollbackModalOpen(false)
-    await api.rollback(id, { to_step: Number(rollbackStep) })
+    await rollback({ sessionId: id, to_step: Number(rollbackStep) })
     window.alert(`Rollback to step ${rollbackStep} triggered.`)
   }
 
@@ -128,7 +114,7 @@ export default function SessionPage() {
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4"><div className="text-xs uppercase tracking-[0.2em] text-zinc-500">Events</div><div className="mt-3 text-xl text-white">{session.total_events}</div></div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4"><div className="text-xs uppercase tracking-[0.2em] text-zinc-500">Tokens</div><div className="mt-3 text-xl text-white">{session.total_tokens.toLocaleString()}</div></div>
             <div className="rounded-2xl border border-white/10 bg-white/5 p-4"><div className="text-xs uppercase tracking-[0.2em] text-zinc-500">Cost</div><div className="mt-3 text-xl text-white">${session.estimated_cost_usd.toFixed(4)}</div></div>
-            <div className="rounded-2xl border border-white/10 bg-white/5 p-4"><div className="text-xs uppercase tracking-[0.2em] text-zinc-500">Confidence</div><div className="mt-3 text-xl text-white">{confidenceData ? `${Math.round(confidenceData.overall_score * 100)}%` : '—'}</div></div>
+            <div className="rounded-2xl border border-white/10 bg-white/5 p-4"><div className="text-xs uppercase tracking-[0.2em] text-zinc-500">Confidence</div><div className="mt-3 text-xl text-white">{confidenceData ? `${Math.round((confidenceData as any).overall_score * 100)}%` : '—'}</div></div>
           </section>
         ) : null}
 
@@ -144,7 +130,7 @@ export default function SessionPage() {
           </div>
         </section>
 
-        {(checkpointsData?.checkpoints ?? []).length > 0 ? (
+        {(checkpointsData ?? []).length > 0 ? (
           <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
             <div className="mb-4 flex items-center gap-2 text-violet-300">
               <RotateCcw size={16} />
@@ -153,7 +139,7 @@ export default function SessionPage() {
             <div className="flex flex-wrap items-center gap-3">
               <select value={rollbackStep} onChange={(event) => setRollbackStep(event.target.value)} className="rounded-xl border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-white">
                 <option value="">Select checkpoint</option>
-                {checkpointsData.checkpoints.map((checkpoint: { checkpoint_id: string; step_number: number; checkpoint_type: string }) => (
+                {checkpointsData.map((checkpoint: { checkpoint_id: string; step_number: number; checkpoint_type: string }) => (
                   <option key={checkpoint.checkpoint_id} value={checkpoint.step_number}>
                     Step {checkpoint.step_number} — {checkpoint.checkpoint_type}
                   </option>
