@@ -79,6 +79,8 @@ export default function SessionPage() {
   const { id } = router.query as { id?: string }
   const [rollbackStep, setRollbackStep] = useState('')
   const [isRollbackModalOpen, setIsRollbackModalOpen] = useState(false)
+  const [isRollingBack, setIsRollingBack] = useState(false)
+  const [rollbackError, setRollbackError] = useState<string | null>(null)
   const { session } = useSession(id)
   const { replay: replayData } = useSessionReplay(id)
   const { confidence: confidenceData } = useSessionConfidence(id)
@@ -89,9 +91,17 @@ export default function SessionPage() {
 
   const handleRollback = async () => {
     if (!rollbackStep) return
-    setIsRollbackModalOpen(false)
-    await rollback({ sessionId: id, to_step: Number(rollbackStep) })
-    window.alert(`Rollback to step ${rollbackStep} triggered.`)
+    setIsRollingBack(true)
+    setRollbackError(null)
+    try {
+      await rollback({ sessionId: id, to_step: Number(rollbackStep) })
+      setIsRollbackModalOpen(false)
+      window.alert(`Rollback to step ${rollbackStep} triggered.`)
+    } catch (err) {
+      setRollbackError(err instanceof Error ? err.message : 'Rollback failed. Please try again.')
+    } finally {
+      setIsRollingBack(false)
+    }
   }
 
   return (
@@ -157,18 +167,23 @@ export default function SessionPage() {
             >
               <div className="space-y-4">
                 <p>Are you sure you want to rollback to step {rollbackStep}? This will revert any changes made after this point.</p>
+                {rollbackError ? (
+                  <div className="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-sm text-red-300">{rollbackError}</div>
+                ) : null}
                 <div className="flex justify-end gap-3">
                   <button
                     onClick={() => setIsRollbackModalOpen(false)}
-                    className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-300 transition hover:bg-white/10 hover:text-white"
+                    disabled={isRollingBack}
+                    className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
                   >
                     Cancel
                   </button>
                   <button
                     onClick={handleRollback}
-                    className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500"
+                    disabled={isRollingBack}
+                    className="rounded-lg bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50"
                   >
-                    Confirm Rollback
+                    {isRollingBack ? 'Rolling back…' : 'Confirm Rollback'}
                   </button>
                 </div>
               </div>

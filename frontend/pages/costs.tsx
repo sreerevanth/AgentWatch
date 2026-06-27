@@ -21,13 +21,9 @@ interface CostSummary {
 }
 
 export default function CostsPage() {
-  const { costSummary } = useCostSummary();
+  const { costSummary, isCostLoading, costError } = useCostSummary();
   const data = costSummary as CostSummary;
-  const summary = data ?? {
-    total_usd: 0,
-    sessions_over_budget: 0,
-    tracked_sessions: 0,
-  };
+  const summary = data ?? null;
 
   return (
     <div
@@ -51,6 +47,12 @@ export default function CostsPage() {
         <h1 style={{ margin: 0, fontSize: 24 }}>Cost Intelligence</h1>
       </header>
 
+      {costError && (
+        <div style={{ padding: 16, background: '#1e0a0a', border: '1px solid #ef444440', borderRadius: 10, marginBottom: 24, color: '#fca5a5' }}>
+          Failed to load cost data. Check backend connectivity and try again.
+        </div>
+      )}
+
       <div
         style={{
           display: "grid",
@@ -61,26 +63,26 @@ export default function CostsPage() {
       >
         <Stat
           label="Total spend (USD)"
-          value={`$${summary.total_usd.toFixed(2)}`}
+          value={isCostLoading ? "—" : summary ? `$${summary.total_usd.toFixed(2)}` : "—"}
           icon={<DollarSign size={18} />}
         />
         <Stat
           label="Tracked sessions"
-          value={summary.tracked_sessions}
+          value={isCostLoading ? "—" : summary?.tracked_sessions ?? "—"}
           icon={<TrendingUp size={18} />}
         />
         <Stat
           label="Over budget"
-          value={summary.sessions_over_budget}
+          value={isCostLoading ? "—" : summary?.sessions_over_budget ?? "—"}
           icon={
             <AlertCircle
               size={18}
-              color={summary.sessions_over_budget ? "#ef4444" : "#9ca3af"}
+              color={summary?.sessions_over_budget ? "#ef4444" : "#9ca3af"}
             />
           }
-          tint={summary.sessions_over_budget > 0 ? "#7f1d1d" : undefined}
+          tint={summary && summary.sessions_over_budget > 0 ? "#7f1d1d" : undefined}
         />
-        {summary.roi && (
+        {summary?.roi && (
           <Stat
             label="ROI ratio"
             value={`${summary.roi.roi_ratio.toFixed(1)}×`}
@@ -89,7 +91,7 @@ export default function CostsPage() {
         )}
       </div>
 
-      {summary.per_model && Object.keys(summary.per_model).length > 0 && (
+      {summary?.per_model && Object.keys(summary.per_model).length > 0 && (
         <section style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: 16, marginBottom: 12 }}>Spend by model</h2>
           <div
@@ -114,7 +116,7 @@ export default function CostsPage() {
         </section>
       )}
 
-      {summary.anomalies && summary.anomalies.length > 0 && (
+      {summary?.anomalies && summary.anomalies.length > 0 && (
         <section>
           <h2 style={{ fontSize: 16, marginBottom: 12 }}>Cost anomalies</h2>
           <ul style={{ listStyle: "none", padding: 0 }}>

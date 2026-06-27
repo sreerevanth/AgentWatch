@@ -9,9 +9,9 @@ const SEVERITY_COLORS: Record<string, string> = {
 }
 
 export default function SecurityPage() {
-  const { owaspScan, isOwaspLoading: isLoading } = useOwaspScan()
+  const { owaspScan, isOwaspLoading: isLoading, owaspError } = useOwaspScan()
   const findings = owaspScan?.findings ?? []
-  const score = owaspScan?.score ?? 100
+  const score = owaspScan?.score ?? 0
 
   const byVector = findings.reduce<Record<string, number>>((acc, f) => {
     acc[f.vector] = (acc[f.vector] ?? 0) + 1
@@ -25,11 +25,19 @@ export default function SecurityPage() {
         <h1 style={{ margin: 0, fontSize: 24 }}>OWASP Agentic Top 10</h1>
       </header>
 
-      <div style={{ padding: 20, background: '#0f172a', borderRadius: 12, marginBottom: 24 }}>
-        <div style={{ fontSize: 12, color: '#9ca3af' }}>Security score</div>
-        <div style={{ fontSize: 48, fontWeight: 800, color: score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444' }}>{score}</div>
-        <div style={{ fontSize: 12, color: '#9ca3af' }}>{findings.length} finding{findings.length === 1 ? '' : 's'}</div>
-      </div>
+      {owaspError ? (
+        <div style={{ padding: 20, background: '#1e0a0a', border: '1px solid #ef444440', borderRadius: 12, marginBottom: 24, color: '#fca5a5' }}>
+          Failed to load OWASP scan results. Check backend connectivity and try again.
+        </div>
+      ) : (
+        <div style={{ padding: 20, background: '#0f172a', borderRadius: 12, marginBottom: 24 }}>
+          <div style={{ fontSize: 12, color: '#9ca3af' }}>Security score</div>
+          <div style={{ fontSize: 48, fontWeight: 800, color: isLoading ? '#9ca3af' : score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444' }}>
+            {isLoading ? '—' : score}
+          </div>
+          <div style={{ fontSize: 12, color: '#9ca3af' }}>{isLoading ? 'Loading…' : `${findings.length} finding${findings.length === 1 ? '' : 's'}`}</div>
+        </div>
+      )}
 
       {!isLoading && Object.keys(byVector).length > 0 && (
         <section style={{ marginBottom: 24 }}>
@@ -48,7 +56,7 @@ export default function SecurityPage() {
       <section>
         <h2 style={{ fontSize: 16, marginBottom: 12 }}>All findings</h2>
         {isLoading && <p style={{ color: '#9ca3af' }}>Scanning…</p>}
-        {!isLoading && findings.length === 0 && (
+        {!isLoading && !owaspError && findings.length === 0 && (
           <p style={{ color: '#22c55e' }}>No findings. Sessions look clean.</p>
         )}
         <ul style={{ listStyle: 'none', padding: 0 }}>

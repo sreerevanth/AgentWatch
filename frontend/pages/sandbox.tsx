@@ -21,12 +21,13 @@ export default function SandboxPage() {
       const j = await simulateSandbox({ command, environment: { tool } })
       setResult(j)
     } catch {
+      const blocked = /rm\s+-rf|curl.*https?:\/\/(?!localhost)/.test(command)
       setResult({
         command,
-        blocked: /rm\s+-rf|curl.*https?:\/\/(?!localhost)/.test(command),
+        blocked,
         risk_score: /rm\s+-rf/.test(command) ? 95 : 10,
         blast_radius_score: 0,
-        policy_action: 'allow',
+        policy_action: blocked ? 'block' : 'allow',
         exfil_findings: [],
         injection_findings: [],
         explanation: 'Backend offline — using client-side heuristic.',
