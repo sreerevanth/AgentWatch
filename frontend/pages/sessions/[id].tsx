@@ -155,14 +155,14 @@ export default function SessionPage() {
                   </option>
                 ))}
               </select>
-              <button type="button" disabled={!rollbackStep} onClick={() => setIsRollbackModalOpen(true)} className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50">
+              <button type="button" disabled={!rollbackStep} onClick={() => { setRollbackError(null); setIsRollbackModalOpen(true) }} className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-violet-500 disabled:opacity-50">
                 Trigger rollback
               </button>
             </div>
 
-            <Modal 
-              isOpen={isRollbackModalOpen} 
-              onClose={() => setIsRollbackModalOpen(false)} 
+            <Modal
+              isOpen={isRollbackModalOpen}
+              onClose={() => { setRollbackError(null); setIsRollbackModalOpen(false) }}
               title="Confirm Rollback"
             >
               <div className="space-y-4">
@@ -172,7 +172,7 @@ export default function SessionPage() {
                 ) : null}
                 <div className="flex justify-end gap-3">
                   <button
-                    onClick={() => setIsRollbackModalOpen(false)}
+                    onClick={() => { setRollbackError(null); setIsRollbackModalOpen(false) }}
                     disabled={isRollingBack}
                     className="rounded-lg px-4 py-2 text-sm font-medium text-zinc-300 transition hover:bg-white/10 hover:text-white disabled:opacity-50"
                   >

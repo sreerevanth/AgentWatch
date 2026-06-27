@@ -11,7 +11,11 @@ const SEVERITY_COLORS: Record<string, string> = {
 export default function SecurityPage() {
   const { owaspScan, isOwaspLoading: isLoading, owaspError } = useOwaspScan()
   const findings = owaspScan?.findings ?? []
-  const score = owaspScan?.score ?? 0
+  const score = owaspScan?.score ?? null
+  const scoreKnown = !isLoading && !owaspError && score !== null
+  const shieldColor = isLoading || owaspError || score === null
+    ? '#9ca3af'
+    : score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444'
 
   const byVector = findings.reduce<Record<string, number>>((acc, f) => {
     acc[f.vector] = (acc[f.vector] ?? 0) + 1
@@ -21,7 +25,7 @@ export default function SecurityPage() {
   return (
     <div style={{ padding: 24, fontFamily: 'ui-sans-serif, system-ui', background: '#0b1020', color: '#e5e7eb', minHeight: '100vh' }}>
       <header style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-        <Shield size={28} color={score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444'} />
+        <Shield size={28} color={shieldColor} />
         <h1 style={{ margin: 0, fontSize: 24 }}>OWASP Agentic Top 10</h1>
       </header>
 
@@ -32,10 +36,10 @@ export default function SecurityPage() {
       ) : (
         <div style={{ padding: 20, background: '#0f172a', borderRadius: 12, marginBottom: 24 }}>
           <div style={{ fontSize: 12, color: '#9ca3af' }}>Security score</div>
-          <div style={{ fontSize: 48, fontWeight: 800, color: isLoading ? '#9ca3af' : score >= 80 ? '#22c55e' : score >= 60 ? '#f59e0b' : '#ef4444' }}>
-            {isLoading ? '—' : score}
+          <div style={{ fontSize: 48, fontWeight: 800, color: shieldColor }}>
+            {isLoading ? '—' : scoreKnown ? score : '—'}
           </div>
-          <div style={{ fontSize: 12, color: '#9ca3af' }}>{isLoading ? 'Loading…' : `${findings.length} finding${findings.length === 1 ? '' : 's'}`}</div>
+          <div style={{ fontSize: 12, color: '#9ca3af' }}>{isLoading ? 'Loading…' : scoreKnown ? `${findings.length} finding${findings.length === 1 ? '' : 's'}` : 'No scan data'}</div>
         </div>
       )}
 
