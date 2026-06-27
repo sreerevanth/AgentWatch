@@ -1,23 +1,5 @@
-import useSWR from 'swr'
 import { Shield, ShieldAlert } from 'lucide-react'
-
-const API_BASE = process.env.NEXT_PUBLIC_API_HOST
-  ? `https://${process.env.NEXT_PUBLIC_API_HOST}/api/v1`
-  : (process.env.NEXT_PUBLIC_API_URL ?? '/api/v1')
-
-const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : null))
-
-interface OwaspFinding {
-  vector: string
-  severity: string
-  detail: string
-  event_id: string
-}
-
-interface OwaspScan {
-  score: number
-  findings: OwaspFinding[]
-}
+import { useOwaspScan } from '../lib/api/hooks/useSecurity'
 
 const SEVERITY_COLORS: Record<string, string> = {
   low: '#10b981',
@@ -27,9 +9,9 @@ const SEVERITY_COLORS: Record<string, string> = {
 }
 
 export default function SecurityPage() {
-  const { data, isLoading } = useSWR<OwaspScan>(`${API_BASE}/security/owasp`, fetcher, { refreshInterval: 15_000 })
-  const findings = data?.findings ?? []
-  const score = data?.score ?? 100
+  const { owaspScan, isOwaspLoading: isLoading } = useOwaspScan()
+  const findings = owaspScan?.findings ?? []
+  const score = owaspScan?.score ?? 100
 
   const byVector = findings.reduce<Record<string, number>>((acc, f) => {
     acc[f.vector] = (acc[f.vector] ?? 0) + 1
