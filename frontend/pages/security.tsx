@@ -47,7 +47,7 @@ export default function SecurityPage() {
         <section style={{ marginBottom: 24 }}>
           <h2 style={{ fontSize: 16, marginBottom: 12 }}>Findings by vector</h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
-            {Object.entries(byVector).map(([v, count]) => (
+            {(Object.entries(byVector) as [string, number][]).map(([v, count]) => (
               <div key={v} style={{ padding: 12, background: '#0f172a', borderRadius: 8 }}>
                 <div style={{ fontSize: 12, color: '#9ca3af' }}>{v}</div>
                 <div style={{ fontSize: 22, fontWeight: 700 }}>{count}</div>
