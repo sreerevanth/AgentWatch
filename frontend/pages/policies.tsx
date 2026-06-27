@@ -1,9 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Save, Trash2, Shield } from 'lucide-react'
-
-const API_BASE = process.env.NEXT_PUBLIC_API_HOST
-  ? `https://${process.env.NEXT_PUBLIC_API_HOST}/api/v1`
-  : (process.env.NEXT_PUBLIC_API_URL ?? '/api/v1')
+import { usePoliciesCurrent, useUpdatePolicy, usePreviewPolicy } from '../lib/api/hooks/usePolicies'
 
 const DEFAULT_YAML = `rules:
   - if: tool == "bash" and command contains "rm"
@@ -16,45 +13,33 @@ export default function PoliciesPage() {
   const [text, setText] = useState<string>('')
   const [status, setStatus] = useState<string>('')
   const [decisionPreview, setDecisionPreview] = useState<string>('')
+  const { policy } = usePoliciesCurrent()
+  const { updatePolicy } = useUpdatePolicy()
+  const { previewPolicy } = usePreviewPolicy()
 
   useEffect(() => {
-    fetch(`${API_BASE}/policies/current`)
-      .then((r) => (r.ok ? r.text() : DEFAULT_YAML))
-      .then((t) => setText(t))
-      .catch(() => setText(DEFAULT_YAML))
-  }, [])
+    if (policy) {
+      setText(typeof policy === 'string' ? policy : JSON.stringify(policy, null, 2))
+    } else {
+      setText(DEFAULT_YAML)
+    }
+  }, [policy])
 
   const save = async () => {
     setStatus('Saving…')
     try {
-      const res = await fetch(`${API_BASE}/policies/current`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'text/yaml' },
-        body: text,
-      })
-      setStatus(res.ok ? 'Saved' : `Error: ${res.status}`)
-    } catch (e) {
+      await updatePolicy({ rules: [text] } as any)
+      setStatus('Saved')
+    } catch {
       setStatus('Saved locally (API unreachable)')
     }
   }
 
   const previewDecision = async () => {
     try {
-      const res = await fetch(`${API_BASE}/policies/preview`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          rules: text,
-          tool: 'bash',
-          command: 'rm -rf /tmp/test',
-        }),
-      })
-      if (res.ok) {
-        const j = await res.json()
-        setDecisionPreview(`Action: ${j.action} (matched rule: ${j.matched_rule?.label ?? j.matched_rule?.condition ?? '—'})`)
-      } else {
-        setDecisionPreview('Backend preview endpoint not available')
-      }
+      const j = await previewPolicy({ command: 'rm -rf /tmp/test', policy: { rules: [text] } as any })
+      const result = j as any
+      setDecisionPreview(`Action: ${result.action} (matched rule: ${result.matched_rule?.label ?? result.matched_rule?.condition ?? '—'})`)
     } catch {
       setDecisionPreview('Backend preview endpoint not available')
     }
