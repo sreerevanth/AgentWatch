@@ -1,7 +1,7 @@
-import { createApiClient } from 'react-query-ease'
+import { createApiClient } from "react-query-ease";
 
-const BASE = process.env.NEXT_PUBLIC_API_HOST
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_HOST
   ? `https://${process.env.NEXT_PUBLIC_API_HOST}/api/v1`
-  : (process.env.NEXT_PUBLIC_API_URL ?? '/api/v1')
+  : (process.env.NEXT_PUBLIC_API_URL ?? "/api/v1");
 
-export const api = createApiClient({ baseURL: BASE })
+export const api = createApiClient({ baseURL: API_BASE_URL });
