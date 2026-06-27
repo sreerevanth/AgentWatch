@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from agentwatch.protocol.badge import check
 from agentwatch.protocol.benchmark import AnonymizedBenchmark
 from agentwatch.protocol.mcp_server import AgentWatchMCPServer
@@ -175,3 +177,19 @@ def test_mcp_server_unknown_tool():
     response = srv.dispatch("nonexistent")
     assert not response.ok
     assert "unknown tool" in (response.error or "")
+
+
+@pytest.mark.asyncio
+async def test_mcp_server_build_fastmcp():
+    pytest.importorskip("mcp")
+    srv = AgentWatchMCPServer()
+    fastmcp = srv.build_fastmcp()
+
+    tools = await fastmcp.list_tools()
+    tool_names = {t.name for t in tools}
+    assert "get_confidence_report" in tool_names
+    assert "memory_query" in tool_names
+    assert "get_session_replay" in tool_names
+    assert "list_active_sessions" in tool_names
+    assert "get_safety_events" in tool_names
+    assert "get_cost_report" in tool_names

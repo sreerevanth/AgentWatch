@@ -122,12 +122,13 @@ cat agentwatch_masterlist.md   # the original spec
 - ➕ `agentwatch/memory/identity.py`
 - ➕ `agentwatch/memory/resolver.py`
 - ➕ `agentwatch/memory/decay.py`
+- ➕ `agentwatch/memory/temporal_decay.py`
 - ➕ `agentwatch/memory/health.py`
 - ➕ `agentwatch/memory/nlquery.py`
 - ➕ `agentwatch/memory/governance.py`
 - ➕ `agentwatch/memory/visualization.py`
 - ➕ `tests/test_memory.py`
-- (NOT modified: `agentwatch/memory/engine.py` — episodic store already existed)
+- ✏️ `agentwatch/memory/engine.py` — wired the forgetting curve into retrieval scoring + `prune_decayed()` cleanup (MEM-005)
 
 ### Phase 5 — Safety Engine
 - ➕ `agentwatch/core/risk.py`

@@ -126,9 +126,9 @@ class PermissionEnforcer:
         if not isinstance(cmd, list) or not cmd:
             raise ValueError("cmd must be a non-empty list of strings")
         self._check("subprocess_exec", f"exec:{cmd[0]}")
-        import subprocess
+        import subprocess  # nosec B404 — subprocess is gated behind an allow-list check above
 
-        return subprocess.run(cmd, shell=False, **kwargs)  # noqa: S603
+        return subprocess.run(cmd, shell=False, **kwargs)  # noqa: S603  # nosec B603 — shell=False, cmd validated as list above
 
     def restricted_import(self, name: str, *args: Any, **kwargs: Any) -> Any:
         """Import gate based on the allow-list for this plugin's permissions.

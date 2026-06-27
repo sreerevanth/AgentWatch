@@ -24,6 +24,11 @@ _PII_PATTERNS: list[tuple[re.Pattern[str], str]] = [
 ]
 
 
+def pii_patterns() -> list[tuple[re.Pattern[str], str]]:
+    """Public accessor for the compiled (pattern, label) PII detectors."""
+    return list(_PII_PATTERNS)
+
+
 @dataclass
 class PIIFinding:
     label: str
@@ -100,5 +105,6 @@ __all__ = [
     "ErasureReceipt",
     "GDPREngine",
     "detect_pii",
+    "pii_patterns",
     "redact",
 ]

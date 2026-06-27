@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from agentwatch.core.schema import AgentEvent, EventType, TokenUsage
 from agentwatch.cost.anomaly import CostAnomalyDetector
 from agentwatch.cost.comparator import estimate, estimate_for_text
@@ -98,6 +100,41 @@ def test_router_failover_on_errors():
         r.observe("primary", error=True)
     r.observe("backup", confidence=0.9)
     assert r.choose().chosen == "backup"
+
+
+def test_router_per_model_timeout():
+    r = ModelRouter(
+        ["primary", "backup"],
+        latency_ceiling_ms=6000.0,
+        route_timeouts={"primary": 2000.0},
+    )
+    r.observe("primary", latency_ms=2100.0, confidence=0.9)
+    r.observe("backup", latency_ms=500.0, confidence=0.9)
+    decision = r.choose()
+    assert decision.chosen == "backup"
+    assert "primary" in decision.bypassed
+
+
+def test_router_global_fallback():
+    r = ModelRouter(["primary", "backup"], latency_ceiling_ms=3000.0)
+    r.observe("primary", latency_ms=2500.0, confidence=0.9)
+    r.observe("backup", latency_ms=2500.0, confidence=0.9)
+    decision = r.choose()
+    assert decision.chosen == "primary"
+
+
+def test_router_mixed_timeouts():
+    r = ModelRouter(
+        ["primary", "backup", "slow"],
+        latency_ceiling_ms=5000.0,
+        route_timeouts={"primary": 1000.0},
+    )
+    r.observe("primary", latency_ms=1500.0, confidence=0.9)
+    r.observe("backup", latency_ms=3000.0, confidence=0.9)
+    r.observe("slow", latency_ms=4000.0, confidence=0.9)
+    decision = r.choose()
+    assert decision.chosen == "backup"
+    assert "primary" in decision.bypassed
 
 
 # ─────────────────────────────────────────────
@@ -197,11 +234,45 @@ def test_budget_governance_requires_human_above_auto_approve():
     assert dec.action == BudgetAction.REQUIRE_HUMAN
 
 
+def test_tracker_decimal_precision_accumulation():
+    tracker = CostTracker(default_token_budget=10000, default_usd_budget=1.0)
+    tracker.configure_session("prec-session", token_budget=10000, usd_budget=0.3)
+    
+    # 0.1 + 0.1 + 0.1 in float accumulates precision error: 0.30000000000000004
+    # Using Decimal, this stays exactly 0.3 and does not exceed the 0.3 budget.
+    for _ in range(3):
+        ev = AgentEvent(
+            session_id="prec-session",
+            agent_id="A",
+            event_type=EventType.TOOL_CALL,
+            token_usage=TokenUsage(total_tokens=100, estimated_cost_usd=0.1),
+        )
+        budget = tracker.ingest_event(ev)
+    
+    # usd_used is converted back to float in to_dict() or we can check usd_used directly
+    assert budget.to_dict()["usd_used"] == 0.3
+    assert not budget.exceeded
+
+
+def test_budget_governance_decimal_precision():
+    g = BudgetGovernance()
+    g.configure_team("team-prec", monthly_cap_usd=0.3, auto_approve_ceiling_usd=0.5)
+    g.configure_agent("agent-prec", "team-prec", daily_cap_usd=0.3)
+    
+    # Three events costing 0.1 should fit exactly in the 0.3 budget.
+    for _ in range(3):
+        dec = g.request("agent-prec", action_cost_usd=0.1)
+        assert dec.action == BudgetAction.APPROVE
+    
+    # A fourth event should exceed the budget and be blocked.
+    dec = g.request("agent-prec", action_cost_usd=0.1)
+    assert dec.action == BudgetAction.BLOCK
+
+
 # ─────────────────────────────────────────────
 # CST-008 — Stale session eviction (Issue #137)
 # ─────────────────────────────────────────────
 
-import time
 
 
 def test_tracker_expired_session_evicted():

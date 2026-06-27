@@ -93,10 +93,10 @@ class ToolAuditLog:
             if tr is None:
                 return None
             tool_id = tr.tool_id or ""
-            entry = self._pending.pop(tool_id, None)
-            if entry is None:
+            matched = self._pending.pop(tool_id) if tool_id in self._pending else None
+            if matched is None:
                 # Unmatched — create a standalone record
-                entry = AuditEntry(
+                matched = AuditEntry(
                     timestamp=datetime.now(UTC).isoformat(),
                     session_id=event.session_id,
                     tool_id=tool_id,
@@ -104,7 +104,8 @@ class ToolAuditLog:
                     arguments={},
                     raw_command=None,
                 )
-                self._entries.append(entry)
+                self._entries.append(matched)
+            entry = matched
             entry.response = tr.output
             entry.error = tr.error
             entry.duration_ms = tr.execution_time_ms
