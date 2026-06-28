@@ -10,12 +10,13 @@
  */
 export default function EdgeTraces() {
   return (
-    <div
-      aria-hidden="true"
-      className="fixed inset-0 pointer-events-none z-0"
-      style={{ overflow: "hidden" }}
-    >
-      {/* Top-left corner trace */}
+    <div className="hidden md:block">
+      <div
+        aria-hidden="true"
+        className="fixed inset-0 pointer-events-none z-0"
+        style={{ overflow: "hidden" }}
+      >
+        {/* Top-left corner trace */}
       <svg
         className="absolute top-0 left-0"
         width="380"
@@ -101,6 +102,7 @@ export default function EdgeTraces() {
         />
         <circle cx="240" cy="80" r="1.5" fill="rgba(232,255,71,0.22)" />
       </svg>
+      </div>
     </div>
   );
 }
