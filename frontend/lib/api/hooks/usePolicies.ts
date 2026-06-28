@@ -25,13 +25,20 @@ interface PolicyPreviewPayload {
   yaml: string
 }
 
+/** Raw response from /policies/current — either a structured Policy or a YAML string. */
+type PolicyResponse = Policy | string
+
+const policyToYaml = (data: PolicyResponse): string =>
+  typeof data === 'string' ? data : `rules: []\n# id: ${data.id}\n# name: ${data.name}\n`
+
 export const usePoliciesCurrent = () => {
-  const query = api.useQuery<Policy>({
+  const query = api.useQuery<PolicyResponse>({
     url: '/policies/current',
     key: ['policies', 'current'],
   })
   return {
     policy: query.data,
+    policyYaml: query.data != null ? policyToYaml(query.data) : undefined,
     isPolicyLoading: query.isLoading,
     policyError: query.error,
     ...query,

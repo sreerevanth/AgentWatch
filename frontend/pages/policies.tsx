@@ -13,17 +13,19 @@ export default function PoliciesPage() {
   const [text, setText] = useState<string>('')
   const [status, setStatus] = useState<string>('')
   const [decisionPreview, setDecisionPreview] = useState<string>('')
-  const { policy } = usePoliciesCurrent()
+  const [initialized, setInitialized] = useState(false)
+  const { policyYaml } = usePoliciesCurrent()
   const { updatePolicy } = useUpdatePolicy()
   const { previewPolicy } = usePreviewPolicy()
 
   useEffect(() => {
-    if (policy) {
-      setText(typeof policy === 'string' ? policy : JSON.stringify(policy, null, 2))
-    } else {
+    if (!initialized && policyYaml !== undefined) {
+      setText(policyYaml)
+      setInitialized(true)
+    } else if (!initialized && policyYaml === undefined) {
       setText(DEFAULT_YAML)
     }
-  }, [policy])
+  }, [policyYaml, initialized])
 
   const save = async () => {
     setStatus('Saving…')
@@ -31,7 +33,7 @@ export default function PoliciesPage() {
       await updatePolicy({ yaml: text })
       setStatus('Saved')
     } catch {
-      setStatus('Saved locally (API unreachable)')
+      setStatus('Save failed — changes kept in editor only')
     }
   }
 
