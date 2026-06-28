@@ -172,39 +172,87 @@ export default function ContributorsPage() {
     if (prefersReduced) return;
 
     const ctx = gsap.context(() => {
-      gsap.from(".hero-content > *", {
-        y: 30,
-        opacity: 0,
-        duration: 0.9,
-        stagger: 0.15,
-        ease: "power3.out",
+      // Epic Hero Entrance
+      gsap.fromTo(".hero-content > *", 
+        { y: 60, opacity: 0, scale: 0.9, rotationX: -30 },
+        { y: 0, opacity: 1, scale: 1, rotationX: 0, duration: 1.5, stagger: 0.2, ease: "expo.out", transformOrigin: "center bottom" }
+      );
+
+      // Background Aura Pulse
+      gsap.to(".bg-aura", {
+        scale: 1.2,
+        opacity: 0.15,
+        duration: 4,
+        repeat: -1,
+        yoyo: true,
+        ease: "sine.inOut"
       });
 
-      gsap.from(".contributor-card", {
-        y: 40,
-        opacity: 0,
-        duration: 0.8,
-        stagger: 0.2,
-        ease: "power3.out",
-        scrollTrigger: {
-          trigger: ".contributors-grid",
-          start: "top 80%",
-          once: true,
-        },
+      // Cards Entrance and continuous float
+      const cards = gsap.utils.toArray(".contributor-card");
+      cards.forEach((card: any, i) => {
+        gsap.fromTo(card, 
+          { y: 100, opacity: 0, scale: 0.8, rotationY: 15 },
+          { 
+            y: 0, opacity: 1, scale: 1, rotationY: 0, 
+            duration: 1.2, delay: i * 0.15, ease: "power4.out",
+            scrollTrigger: {
+              trigger: card,
+              start: "top 85%",
+            }
+          }
+        );
+
+        // Continuous floating
+        gsap.to(card, {
+          y: "-=10",
+          duration: 2 + Math.random(),
+          repeat: -1,
+          yoyo: true,
+          ease: "sine.inOut",
+          delay: Math.random() * 2
+        });
       });
     }, pageRef);
 
-    return () => ctx.revert();
+    // 3D Tilt and Spotlight Effect
+    const onPointerMove = (e: PointerEvent) => {
+      pageRef.current?.querySelectorAll<HTMLElement>(".contributor-card").forEach((card) => {
+        const rect = card.getBoundingClientRect();
+        const x = e.clientX - rect.left;
+        const y = e.clientY - rect.top;
+        
+        // Spotlight
+        card.style.setProperty("--mx", `${x}px`);
+        card.style.setProperty("--my", `${y}px`);
+
+        // 3D Tilt (only if hovering over this specific card)
+        if (x > 0 && x < rect.width && y > 0 && y < rect.height) {
+          const rotateX = ((y / rect.height) - 0.5) * -15;
+          const rotateY = ((x / rect.width) - 0.5) * 15;
+          gsap.to(card, { rotationX: rotateX, rotationY: rotateY, duration: 0.5, ease: "power2.out", transformPerspective: 1000 });
+        } else {
+          gsap.to(card, { rotationX: 0, rotationY: 0, duration: 0.5, ease: "power2.out" });
+        }
+      });
+    };
+
+    pageRef.current?.addEventListener("pointermove", onPointerMove, { passive: true });
+
+    return () => {
+      ctx.revert();
+      pageRef.current?.removeEventListener("pointermove", onPointerMove);
+    };
   }, []);
 
   return (
-    <main ref={pageRef} className="relative min-h-screen pt-32 pb-24 px-6 overflow-hidden">
+    <main ref={pageRef} className="relative min-h-screen pt-32 pb-24 px-6 overflow-hidden perspective-1000">
       {/* Background elements */}
-      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-[#e8ff47] rounded-full blur-[150px] opacity-[0.05] pointer-events-none z-0" />
+      <div className="bg-aura absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-[#e8ff47] rounded-full blur-[150px] opacity-[0.05] pointer-events-none z-0" />
       <div className="absolute inset-0 bg-[url('/noise.png')] opacity-20 pointer-events-none mix-blend-overlay z-0" />
 
       <div className="max-w-[1000px] mx-auto relative z-10">
-        <section className="mb-20 text-center hero-content">
+        <section className="mb-20 text-center hero-content" style={{ perspective: 1000 }}>
           <h1
             className="font-bold leading-[1.08] mb-5"
             style={{
@@ -215,6 +263,7 @@ export default function ContributorsPage() {
               WebkitTextFillColor: "transparent",
               backgroundClip: "text",
               textWrap: "balance",
+              filter: "drop-shadow(0 0 30px rgba(232, 255, 71, 0.4))"
             }}
           >
             Hall of Fame
@@ -227,34 +276,44 @@ export default function ContributorsPage() {
           </p>
         </section>
 
-        <div className="contributors-grid grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="contributors-grid grid grid-cols-1 md:grid-cols-2 gap-8" style={{ perspective: 1000 }}>
           {CONTRIBUTORS.map((c, i) => (
             <div
               key={c.username}
-              className="contributor-card dark-glass rounded-2xl p-6 sm:p-8 flex flex-col h-full border border-white/5 relative group"
+              className="contributor-card dark-glass rounded-2xl p-6 sm:p-8 flex flex-col h-full border border-white/5 relative group cursor-crosshair transform-style-3d"
+              style={{
+                background: "linear-gradient(145deg, rgba(10,10,10,0.9) 0%, rgba(5,5,5,0.95) 100%)",
+                boxShadow: "0 0 0 1px rgba(255,255,255,0.05), 0 20px 40px rgba(0,0,0,0.5)"
+              }}
             >
-              {/* Highlight gradient on hover */}
-              <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-[#00f0ff]/10 to-[#e8ff47]/10 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none" />
+              {/* Animated Border Gradient on Hover */}
+              <div className="absolute -inset-[2px] rounded-2xl bg-gradient-to-r from-[#00f0ff] via-[#e8ff47] to-[#00f0ff] opacity-0 group-hover:opacity-100 transition-opacity duration-500 blur-sm pointer-events-none" style={{ zIndex: -1, backgroundSize: "200% 200%", animation: "gradientMove 3s linear infinite" }} />
+              
+              {/* Spotlight Follower */}
+              <div 
+                className="absolute inset-0 rounded-2xl opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none z-0" 
+                style={{
+                  background: `radial-gradient(600px circle at var(--mx) var(--my), rgba(232, 255, 71, 0.08), transparent 40%)`
+                }}
+              />
 
-              <div className="flex items-center gap-4 mb-6 relative z-10">
-                <div className="relative w-16 h-16 rounded-full p-[2px] bg-gradient-to-br from-[#00f0ff] to-[#e8ff47]">
-                  <Image
+              <div className="flex items-center gap-4 mb-6 relative z-10 translate-z-10">
+                <div className="relative w-16 h-16 rounded-full p-[2px] bg-gradient-to-br from-[#00f0ff] to-[#e8ff47] group-hover:shadow-[0_0_20px_#00f0ff] transition-shadow duration-500">
+                  <img
                     src={c.avatarUrl}
                     alt={c.username}
-                    fill
-                    className="rounded-full object-cover border-2 border-[#050505]"
-                    unoptimized
+                    className="w-full h-full rounded-full object-cover border-2 border-[#050505]"
                   />
                 </div>
                 <div>
                   <h3
-                    className="font-bold text-xl text-white mb-1"
-                    style={{ fontFamily: "var(--font-syne)" }}
+                    className="font-bold text-xl text-white mb-1 group-hover:text-[#e8ff47] transition-colors"
+                    style={{ fontFamily: "var(--font-syne)", textShadow: "0 2px 10px rgba(0,0,0,0.5)" }}
                   >
                     @{c.username}
                   </h3>
                   <div
-                    className="text-xs uppercase tracking-widest text-[#e8ff47]"
+                    className="text-xs uppercase tracking-widest text-[#00f0ff]"
                     style={{ fontFamily: "var(--font-jetbrains)" }}
                   >
                     {c.role}
@@ -262,33 +321,33 @@ export default function ContributorsPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-3 gap-2 mb-6 relative z-10">
-                <div className="bg-black/40 rounded-lg p-3 text-center border border-white/5">
-                  <div className="text-xl font-bold text-white mb-1">{c.stats.commits}</div>
-                  <div className="text-[10px] uppercase text-[#888] tracking-wider">Commits</div>
+              <div className="grid grid-cols-3 gap-3 mb-6 relative z-10 translate-z-10">
+                <div className="bg-[#050505]/80 rounded-xl p-3 text-center border border-white/5 group-hover:border-[#e8ff47]/30 transition-colors">
+                  <div className="text-2xl font-bold text-white mb-1">{c.stats.commits}</div>
+                  <div className="text-[9px] uppercase text-[#888] tracking-widest">Commits</div>
                 </div>
-                <div className="bg-black/40 rounded-lg p-3 text-center border border-white/5">
-                  <div className="text-xl font-bold text-white mb-1">{c.stats.prs}</div>
-                  <div className="text-[10px] uppercase text-[#888] tracking-wider">PRs</div>
+                <div className="bg-[#050505]/80 rounded-xl p-3 text-center border border-white/5 group-hover:border-[#00f0ff]/30 transition-colors">
+                  <div className="text-2xl font-bold text-white mb-1">{c.stats.prs}</div>
+                  <div className="text-[9px] uppercase text-[#888] tracking-widest">PRs</div>
                 </div>
-                <div className="bg-black/40 rounded-lg p-3 text-center border border-white/5">
-                  <div className="text-xl font-bold text-white mb-1">{c.stats.issues}</div>
-                  <div className="text-[10px] uppercase text-[#888] tracking-wider">Issues</div>
+                <div className="bg-[#050505]/80 rounded-xl p-3 text-center border border-white/5 group-hover:border-white/20 transition-colors">
+                  <div className="text-2xl font-bold text-white mb-1">{c.stats.issues}</div>
+                  <div className="text-[9px] uppercase text-[#888] tracking-widest">Issues</div>
                 </div>
               </div>
 
-              <div className="flex-1 relative z-10">
-                <p className="text-sm text-[#e5e2e1] mb-4 leading-relaxed">
-                  <span className="font-semibold text-[#00f0ff]">Special Contribution: </span>
+              <div className="flex-1 relative z-10 translate-z-10">
+                <p className="text-sm text-[#e5e2e1] mb-5 leading-relaxed bg-black/20 p-4 rounded-lg border border-white/5 group-hover:bg-[#e8ff47]/5 transition-colors">
+                  <span className="font-bold text-[#e8ff47] block mb-1">Impact //</span>
                   {c.specialContribution}
                 </p>
 
-                <div className="space-y-2 mt-4">
-                  <p className="text-xs font-semibold text-[#888] uppercase tracking-wider mb-3">Notable Work</p>
+                <div className="space-y-3 mt-4">
+                  <p className="text-[10px] font-bold text-[#888] uppercase tracking-[0.2em] mb-3">Notable Merges</p>
                   {c.highlights.map((h, index) => (
-                    <div key={index} className="flex items-start gap-2 text-sm text-[#a8a8a8]">
-                      <svg className="w-4 h-4 text-[#e8ff47] flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    <div key={index} className="flex items-start gap-3 text-sm text-[#a8a8a8] group-hover:text-[#c0c0c0] transition-colors">
+                      <svg className="w-4 h-4 text-[#00f0ff] flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
                       </svg>
                       <span className="leading-snug">{h}</span>
                     </div>
@@ -300,7 +359,7 @@ export default function ContributorsPage() {
                 href={`https://github.com/${c.username}`}
                 target="_blank"
                 rel="noreferrer"
-                className="mt-6 w-full text-center py-2.5 rounded-lg border border-white/10 hover:border-[#00f0ff]/50 hover:text-[#00f0ff] transition-colors text-xs font-medium uppercase tracking-widest relative z-10"
+                className="mt-6 w-full text-center py-3 rounded-lg bg-[#050505] border border-white/10 hover:border-[#e8ff47] hover:bg-[#e8ff47]/10 hover:text-[#e8ff47] transition-all text-xs font-bold uppercase tracking-widest relative z-10 translate-z-10 shadow-lg"
                 style={{ fontFamily: "var(--font-jetbrains)" }}
               >
                 View Profile
@@ -309,6 +368,15 @@ export default function ContributorsPage() {
           ))}
         </div>
       </div>
+      <style dangerouslySetInnerHTML={{__html: `
+        .transform-style-3d { transform-style: preserve-3d; }
+        .translate-z-10 { transform: translateZ(20px); }
+        @keyframes gradientMove {
+          0% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+          100% { background-position: 0% 50%; }
+        }
+      `}} />
     </main>
   );
 }

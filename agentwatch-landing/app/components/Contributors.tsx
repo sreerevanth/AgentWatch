@@ -47,15 +47,29 @@ export default function Contributors() {
         ))}
       </div>
       
-      <div className="flex justify-center mt-8">
+      <div className="flex justify-center mt-12 relative group inline-block">
+        {/* Infinite pulsing aura behind the button */}
+        <div className="absolute inset-0 bg-gradient-to-r from-[#00f0ff] via-[#e8ff47] to-[#00f0ff] rounded-full blur-[20px] opacity-30 group-hover:opacity-70 group-hover:blur-[30px] transition-all duration-700 animate-pulse" style={{ zIndex: -1 }} />
+        
         <a
           href="/contributors"
-          className="btn-magnetic px-8 py-3 rounded-full bg-[#111] border border-[#e8ff47]/30 text-[#e8ff47] font-semibold text-sm hover:bg-[#e8ff47]/10 transition-colors uppercase tracking-widest inline-block"
+          className="btn-magnetic relative px-10 py-4 rounded-full bg-black/50 backdrop-blur-md border border-[#e8ff47]/50 text-[#e8ff47] font-bold text-sm hover:bg-[#e8ff47] hover:text-black transition-all duration-300 uppercase tracking-widest inline-flex items-center gap-3 overflow-hidden shadow-[0_0_30px_rgba(232,255,71,0.2)] hover:shadow-[0_0_50px_rgba(232,255,71,0.8)]"
           style={{ fontFamily: "var(--font-jetbrains)" }}
         >
-          View Hall of Fame
+          {/* Shine sweeping effect */}
+          <div className="absolute inset-0 -translate-x-full bg-gradient-to-r from-transparent via-white/40 to-transparent group-hover:animate-[shimmer_1.5s_infinite]" />
+          
+          <span className="relative z-10">View Hall of Fame</span>
+          <svg className="w-5 h-5 relative z-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+          </svg>
         </a>
       </div>
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes shimmer {
+          100% { transform: translateX(100%); }
+        }
+      `}} />
     </section>
   );
 }
