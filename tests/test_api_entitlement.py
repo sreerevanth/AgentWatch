@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib
 from datetime import UTC, datetime, timedelta
 
 import jwt
@@ -10,6 +9,8 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from fastapi import HTTPException
+
+from agentwatch.api import entitlement
 
 
 @pytest.fixture(scope="module")
@@ -42,32 +43,22 @@ def _token(private_pem: str, **claims) -> str:
     return jwt.encode(payload, private_pem, algorithm="RS256")
 
 
-def _reload(monkeypatch, public_key: str | None, *, env: str | None = None):
-    if public_key is None:
-        monkeypatch.delenv("AGENTWATCH_LICENSE_PUBLIC_KEY", raising=False)
-        monkeypatch.delenv("AGENTWATCH_LICENSE_PUBLIC_KEY_FILE", raising=False)
-    else:
-        monkeypatch.setenv("AGENTWATCH_LICENSE_PUBLIC_KEY", public_key)
-    if env is None:
-        monkeypatch.delenv("AGENTWATCH_ENV", raising=False)
-        monkeypatch.delenv("ENVIRONMENT", raising=False)
-    else:
-        monkeypatch.setenv("AGENTWATCH_ENV", env)
-    import agentwatch.api.entitlement as ent
-
-    importlib.reload(ent)
-    return ent
+def _configure(monkeypatch, public_key: str | None, *, prod: bool = False):
+    """Set the enforcement state via monkeypatch so it is restored per test."""
+    monkeypatch.setattr(entitlement, "_LICENSE_PUBLIC_KEY", public_key)
+    monkeypatch.setattr(entitlement, "_IS_PROD", prod)
+    return entitlement
 
 
 def test_disabled_without_key(monkeypatch):
-    ent = _reload(monkeypatch, None)
+    ent = _configure(monkeypatch, None)
     assert ent.entitlement_enforcement_enabled() is False
     assert ent.authenticate_entitlement(x_entitlement_token=None) is None
     assert ent.require_entitlement("compliance")(entitlement=None) is None
 
 
 def test_production_without_key_fails_closed(monkeypatch):
-    ent = _reload(monkeypatch, None, env="production")
+    ent = _configure(monkeypatch, None, prod=True)
     with pytest.raises(HTTPException) as exc:
         ent.require_entitlement("compliance")(entitlement=None)
     assert exc.value.status_code == 500
@@ -75,14 +66,14 @@ def test_production_without_key_fails_closed(monkeypatch):
 
 def test_valid_token_grants_feature(monkeypatch, keypair):
     private_pem, public_pem = keypair
-    ent = _reload(monkeypatch, public_pem)
-    entitlement = ent.authenticate_entitlement(x_entitlement_token=_token(private_pem))
-    assert ent.require_entitlement("compliance")(entitlement=entitlement) is entitlement
+    ent = _configure(monkeypatch, public_pem)
+    granted = ent.authenticate_entitlement(x_entitlement_token=_token(private_pem))
+    assert ent.require_entitlement("compliance")(entitlement=granted) is granted
 
 
 def test_missing_token_rejected(monkeypatch, keypair):
     _, public_pem = keypair
-    ent = _reload(monkeypatch, public_pem)
+    ent = _configure(monkeypatch, public_pem)
     with pytest.raises(HTTPException) as exc:
         ent.authenticate_entitlement(x_entitlement_token=None)
     assert exc.value.status_code == 402
@@ -90,7 +81,7 @@ def test_missing_token_rejected(monkeypatch, keypair):
 
 def test_invalid_token_rejected(monkeypatch, keypair):
     _, public_pem = keypair
-    ent = _reload(monkeypatch, public_pem)
+    ent = _configure(monkeypatch, public_pem)
     with pytest.raises(HTTPException) as exc:
         ent.authenticate_entitlement(x_entitlement_token="bad.token.value")  # noqa: S106
     assert exc.value.status_code == 402
@@ -98,18 +89,18 @@ def test_invalid_token_rejected(monkeypatch, keypair):
 
 def test_feature_not_granted_rejected(monkeypatch, keypair):
     private_pem, public_pem = keypair
-    ent = _reload(monkeypatch, public_pem)
-    entitlement = ent.authenticate_entitlement(
+    ent = _configure(monkeypatch, public_pem)
+    granted = ent.authenticate_entitlement(
         x_entitlement_token=_token(private_pem, features=["sso"])
     )
     with pytest.raises(HTTPException) as exc:
-        ent.require_entitlement("compliance")(entitlement=entitlement)
+        ent.require_entitlement("compliance")(entitlement=granted)
     assert exc.value.status_code == 402
 
 
 def test_machine_bound_token_checked_against_header(monkeypatch, keypair):
     private_pem, public_pem = keypair
-    ent = _reload(monkeypatch, public_pem)
+    ent = _configure(monkeypatch, public_pem)
     bound = _token(private_pem, machine_id="client-fp")
     assert ent.authenticate_entitlement(x_entitlement_token=bound, x_machine_id="client-fp")
     with pytest.raises(HTTPException) as exc:
@@ -121,11 +112,10 @@ def test_eu_ai_act_report_gated(monkeypatch, keypair):
     private_pem, public_pem = keypair
     from fastapi.testclient import TestClient
 
-    import agentwatch.api.entitlement as ent
     from agentwatch.api.server import app
 
     monkeypatch.setattr("agentwatch.api.server._API_KEY", None)
-    monkeypatch.setattr(ent, "_LICENSE_PUBLIC_KEY", public_pem)
+    monkeypatch.setattr(entitlement, "_LICENSE_PUBLIC_KEY", public_pem)
     client = TestClient(app)
 
     assert client.get("/api/v1/governance/eu-ai-act-report").status_code == 402
