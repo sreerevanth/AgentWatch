@@ -28,7 +28,7 @@ export default function PoliciesPage() {
   const save = async () => {
     setStatus('Saving…')
     try {
-      await updatePolicy({ rules: [text] } as any)
+      await updatePolicy({ yaml: text })
       setStatus('Saved')
     } catch {
       setStatus('Saved locally (API unreachable)')
@@ -37,9 +37,8 @@ export default function PoliciesPage() {
 
   const previewDecision = async () => {
     try {
-      const j = await previewPolicy({ command: 'rm -rf /tmp/test', policy: { rules: [text] } as any })
-      const result = j as any
-      setDecisionPreview(`Action: ${result.action} (matched rule: ${result.matched_rule?.label ?? result.matched_rule?.condition ?? '—'})`)
+      const result = await previewPolicy({ command: 'rm -rf /tmp/test', yaml: text })
+      setDecisionPreview(`would_block: ${result.would_block} | matched: ${result.matched_rules.join(', ') || '—'} | risk: ${result.risk_assessment}`)
     } catch {
       setDecisionPreview('Backend preview endpoint not available')
     }

@@ -14,6 +14,17 @@ interface PolicyPreview {
   risk_assessment: string
 }
 
+/** Payload for updating the policy via the YAML DSL editor. */
+interface PolicyYamlPayload {
+  yaml: string
+}
+
+/** Payload for previewing a policy decision without saving. */
+interface PolicyPreviewPayload {
+  command: string
+  yaml: string
+}
+
 export const usePoliciesCurrent = () => {
   const query = api.useQuery<Policy>({
     url: '/policies/current',
@@ -28,7 +39,7 @@ export const usePoliciesCurrent = () => {
 }
 
 export const useUpdatePolicy = () => {
-  const mutation = api.useMutation<Policy, Error, Partial<Policy>>({
+  const mutation = api.useMutation<Policy, Error, PolicyYamlPayload>({
     url: '/policies/current',
     method: 'PUT',
     keyToInvalidate: ['policies'],
@@ -41,7 +52,7 @@ export const useUpdatePolicy = () => {
 }
 
 export const usePreviewPolicy = () => {
-  const mutation = api.useMutation<PolicyPreview, Error, { command: string; policy: Partial<Policy> }>({
+  const mutation = api.useMutation<PolicyPreview, Error, PolicyPreviewPayload>({
     url: '/policies/preview',
     method: 'POST',
   })
