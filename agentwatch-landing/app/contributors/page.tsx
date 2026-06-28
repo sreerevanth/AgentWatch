@@ -246,10 +246,17 @@ export default function ContributorsPage() {
   }, []);
 
   return (
-    <main ref={pageRef} className="relative min-h-screen pt-32 pb-24 px-6 overflow-hidden perspective-1000">
-      {/* Background elements */}
-      <div className="bg-aura absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-[#e8ff47] rounded-full blur-[150px] opacity-[0.05] pointer-events-none z-0" />
-      <div className="absolute inset-0 bg-[url('/noise.png')] opacity-20 pointer-events-none mix-blend-overlay z-0" />
+    <main ref={pageRef} className="relative min-h-screen pt-32 pb-24 px-6 overflow-hidden perspective-1000 bg-[#050505] text-[#ededed] selection:bg-[#00f0ff]/30 selection:text-[#00f0ff]">
+      {/* Background Grid & Vignette */}
+      <div className="absolute inset-0 z-0 pointer-events-none" style={{
+        backgroundImage: "linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)",
+        backgroundSize: "64px 64px",
+        backgroundPosition: "center center",
+        maskImage: "radial-gradient(circle at center, black 20%, transparent 80%)",
+        WebkitMaskImage: "radial-gradient(circle at center, black 20%, transparent 80%)"
+      }} />
+      <div className="bg-aura absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-[#00f0ff] rounded-full blur-[150px] opacity-[0.07] pointer-events-none z-0" />
+      <div className="absolute inset-0 bg-[url('/noise.png')] opacity-[0.03] pointer-events-none mix-blend-overlay z-0" />
 
       <div className="max-w-[1000px] mx-auto relative z-10">
         <section className="mb-20 text-center hero-content" style={{ perspective: 1000 }}>
