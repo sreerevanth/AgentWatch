@@ -10,7 +10,7 @@ const LINKS = [
   { label: "About",        href: "/about",        page: true },
   { label: "Contributors", href: "/contributors", page: true },
   { label: "GitHub",       href: "https://github.com/sreerevanth/agentwatch", external: true },
-  { label: "Discord",      href: "https://discord.gg/ZbQ9m9HtnE", external: true },
+  { label: "Discord",      href: "https://discord.gg/UT9uaeY46e", external: true },
 ];
 
 export default function Navbar() {

@@ -353,7 +353,7 @@ export default function Hero() {
             Star on GitHub
           </a>
           <a
-            href="https://discord.gg/ZbQ9m9HtnE"
+            href="https://discord.gg/UT9uaeY46e"
             target="_blank"
             rel="noreferrer"
             className="btn-magnetic btn-discord-pulse flex items-center gap-2 px-6 py-3 rounded-lg bg-[#5865F2] hover:bg-[#4752c4] text-white transition-colors duration-200 text-sm font-medium"

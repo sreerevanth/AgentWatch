@@ -27,6 +27,18 @@ const CHAPTERS = [
     title: "Chapter 3: DAG Tracing & Rollback",
     subtitle: "For High-Level Devs",
     desc: "Every action is traced in a Directed Acyclic Graph. If an agent hallucinates deep in a workflow, AgentWatch automatically reverts the system state to the last safe node and corrects the prompt."
+  },
+  {
+    id: "chap-4",
+    title: "Chapter 4: Real-time Observability",
+    subtitle: "For the Control Center",
+    desc: "Monitor your fleet of AI agents in real-time. AgentWatch provides a unified dashboard that visualizes agent metrics, decision pathways, and risk flags across your entire infrastructure."
+  },
+  {
+    id: "chap-5",
+    title: "Chapter 5: Immutable Audit Logs",
+    subtitle: "For Enterprise & Security",
+    desc: "Every action, decision, and intercepted threat is immutably logged. Export SOC2-ready audit reports instantly, ensuring complete transparency and compliance for AI behavior."
   }
 ];
 
@@ -39,29 +51,35 @@ export default function HowItWorks() {
   useEffect(() => {
     // Initial Stagger Animation
     const ctx = gsap.context(() => {
-      gsap.from(".playlist-item", {
-        x: -40,
-        opacity: 0,
-        duration: 0.8,
-        stagger: 0.15,
-        ease: "power3.out",
-        scrollTrigger: {
-          trigger: containerRef.current,
-          start: "top 60%",
-          once: true
+      gsap.fromTo(".playlist-item", 
+        { x: -40, opacity: 0 },
+        {
+          x: 0,
+          opacity: 1,
+          duration: 0.8,
+          stagger: 0.15,
+          ease: "power3.out",
+          scrollTrigger: {
+            trigger: containerRef.current,
+            start: "top 60%",
+            once: true
+          }
         }
-      });
-      gsap.from(playerRef.current, {
-        scale: 0.95,
-        opacity: 0,
-        duration: 1,
-        ease: "power4.out",
-        scrollTrigger: {
-          trigger: containerRef.current,
-          start: "top 60%",
-          once: true
+      );
+      gsap.fromTo(playerRef.current, 
+        { scale: 0.95, opacity: 0 },
+        {
+          scale: 1,
+          opacity: 1,
+          duration: 1,
+          ease: "power4.out",
+          scrollTrigger: {
+            trigger: containerRef.current,
+            start: "top 60%",
+            once: true
+          }
         }
-      });
+      );
     }, containerRef);
     return () => ctx.revert();
   }, []);
@@ -173,6 +191,35 @@ export default function HowItWorks() {
         tl.to(".dag-n3", { backgroundColor: "rgba(0, 240, 255, 0.1)", borderColor: "rgba(0, 240, 255, 0.3)", x: 0, duration: 0 }, "<");
         tl.to(".dag-revert", { y: 10, duration: 0 }, "<");
       }
+      else if (activeChapter === 3) {
+        // CHAPTER 4: Observability
+        // Animate the line charts like they are drawing
+        tl.fromTo(".c4-line1", { strokeDasharray: "300", strokeDashoffset: "300" }, { strokeDashoffset: "0", duration: 1.5, ease: "power2.out" })
+          .fromTo(".c4-line2", { strokeDasharray: "300", strokeDashoffset: "300" }, { strokeDashoffset: "0", duration: 1.5, ease: "power2.out" }, "<")
+          .to(".c4-scanline", { top: "100%", duration: 2, ease: "linear", repeat: 1, yoyo: true }, "-=1.5");
+        
+        tl.to(".video-progress", { width: "100%", duration: tl.duration(), ease: "none" }, 0);
+        tl.to(".video-time", { innerHTML: "0:05", duration: tl.duration(), snap: { innerHTML: 1 }, ease: "none" }, 0);
+        
+        tl.to([".c4-line1", ".c4-line2", ".c4-scanline"], { opacity: 0, duration: 0.5 }, "+=2");
+        // Reset for loop
+        tl.to([".c4-line1", ".c4-line2", ".c4-scanline"], { opacity: 1, duration: 0 }, "+=0.1");
+      }
+      else if (activeChapter === 4) {
+        // CHAPTER 5: Compliance
+        tl.to(".c5-log", { opacity: 1, y: -10, stagger: 0.2, duration: 0.1, ease: "power1.out" })
+          .to(".c5-logs", { y: -20, duration: 1, ease: "power1.inOut" }, "<")
+          .to(".c5-pdf", { opacity: 1, scale: 1, rotation: 360, duration: 0.6, ease: "back.out(1.5)" }, "+=0.3")
+          .to(".c5-pdf", { y: -10, duration: 1, repeat: 1, yoyo: true, ease: "sine.inOut" });
+
+        tl.to(".video-progress", { width: "100%", duration: tl.duration(), ease: "none" }, 0);
+        tl.to(".video-time", { innerHTML: "0:06", duration: tl.duration(), snap: { innerHTML: 1 }, ease: "none" }, 0);
+        
+        tl.to([".c5-logs", ".c5-pdf", ".c5-log"], { opacity: 0, duration: 0.5 }, "+=2");
+        // Reset for loop
+        tl.to([".c5-logs", ".c5-log"], { y: 0, duration: 0 }, "<");
+        tl.to(".c5-pdf", { scale: 0, rotation: 0, duration: 0 }, "<");
+      }
 
       // Common reset
       tl.to(".play-overlay", { opacity: 1, duration: 0.5 }, "<");
@@ -200,31 +247,33 @@ export default function HowItWorks() {
       <div className="flex flex-col lg:flex-row gap-8 items-stretch">
         
         {/* PLAYLIST (Left Side) */}
-        <div className="lg:w-1/3 flex flex-col gap-4 relative z-20">
+        <div className="lg:w-1/3 flex flex-col gap-3 relative z-20 overflow-y-auto max-h-[600px] pr-2 custom-scrollbar">
           {CHAPTERS.map((chap, idx) => {
             const isActive = activeChapter === idx;
             return (
               <button
                 key={chap.id}
                 onClick={() => setActiveChapter(idx)}
-                className={`playlist-item text-left p-6 rounded-2xl border transition-all duration-300 relative overflow-hidden group ${
+                className={`playlist-item text-left p-5 rounded-2xl border transition-all duration-300 relative overflow-hidden group ${
                   isActive 
                     ? "bg-[#0a0a0a] border-[#e8ff47] shadow-[0_0_20px_rgba(232,255,71,0.15)] scale-[1.02]" 
                     : "bg-[#050505] border-white/5 hover:border-white/20 hover:bg-[#0a0a0a]"
                 }`}
               >
                 {isActive && (
-                  <div className="absolute inset-0 bg-gradient-to-r from-[#e8ff47]/10 to-transparent pointer-events-none" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-[#e8ff47]/10 to-transparent pointer-events-none z-0" />
                 )}
-                <div className={`text-[10px] font-mono font-bold uppercase tracking-widest mb-2 transition-colors ${isActive ? "text-[#00f0ff]" : "text-[#555]"}`}>
-                  {chap.subtitle}
+                <div className="relative z-10">
+                  <div className={`text-[10px] font-mono font-bold uppercase tracking-widest mb-1 transition-colors ${isActive ? "text-[#00f0ff]" : "text-[#888]"}`}>
+                    {chap.subtitle}
+                  </div>
+                  <h3 className={`text-lg font-bold mb-2 transition-colors ${isActive ? "text-white" : "text-[#e5e5e5] group-hover:text-white"}`}>
+                    {chap.title}
+                  </h3>
+                  <p className={`text-sm leading-relaxed transition-colors ${isActive ? "text-[#c0c0c0]" : "text-[#888]"}`}>
+                    {chap.desc}
+                  </p>
                 </div>
-                <h3 className={`text-xl font-bold mb-3 transition-colors ${isActive ? "text-white" : "text-[#888] group-hover:text-white"}`}>
-                  {chap.title}
-                </h3>
-                <p className={`text-sm leading-relaxed transition-colors ${isActive ? "text-[#a8a8a8]" : "text-[#555]"}`}>
-                  {chap.desc}
-                </p>
               </button>
             );
           })}
@@ -234,7 +283,7 @@ export default function HowItWorks() {
         <div className="lg:w-2/3">
           <div 
             ref={playerRef} 
-            className="relative w-full h-full min-h-[400px] md:min-h-[500px] rounded-3xl border border-white/10 bg-[#0a0a0a] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] group flex flex-col"
+            className="relative w-full h-full min-h-[400px] md:min-h-[600px] rounded-3xl border border-white/10 bg-[#0a0a0a] overflow-hidden shadow-[0_20px_50px_rgba(0,0,0,0.5)] group flex flex-col"
           >
             {/* Background Grid */}
             <div className="absolute inset-0 bg-[linear-gradient(rgba(232,255,71,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(232,255,71,0.02)_1px,transparent_1px)] bg-[size:32px_32px]" />
@@ -336,6 +385,50 @@ export default function HowItWorks() {
                 </div>
               )}
 
+              {/* CHAPTER 4 CONTENT: Observability Dashboard */}
+              {activeChapter === 3 && (
+                <div className="w-full flex flex-col p-4 relative z-10 font-mono items-center justify-center">
+                  <div className="c4-scanline absolute top-0 left-0 w-full h-2 bg-[#00f0ff]/30 blur-sm pointer-events-none" />
+                  <div className="text-[#00f0ff] mb-8 text-sm font-bold uppercase tracking-widest text-center">Live Metrics // Fleet Status</div>
+                  <div className="grid grid-cols-2 gap-6 w-full max-w-md mx-auto relative">
+                    <div className="bg-[#050505] border border-white/10 p-5 rounded-lg h-32 relative overflow-hidden flex flex-col justify-between">
+                       <div className="text-[#888] text-xs uppercase tracking-widest">Total Requests</div>
+                       <div className="text-3xl font-black text-white relative z-10">42,891</div>
+                       <svg className="absolute bottom-0 left-0 w-full h-16" preserveAspectRatio="none" viewBox="0 0 100 100">
+                         <path className="c4-line1" d="M0 100 L20 80 L40 90 L60 40 L80 60 L100 20" fill="none" stroke="#00f0ff" strokeWidth="4" />
+                       </svg>
+                    </div>
+                    <div className="bg-[#050505] border border-white/10 p-5 rounded-lg h-32 relative overflow-hidden flex flex-col justify-between">
+                       <div className="text-[#888] text-xs uppercase tracking-widest">Threats Blocked</div>
+                       <div className="text-3xl font-black text-red-500 relative z-10">1,402</div>
+                       <svg className="absolute bottom-0 left-0 w-full h-16" preserveAspectRatio="none" viewBox="0 0 100 100">
+                         <path className="c4-line2" d="M0 100 L20 90 L40 70 L60 80 L80 30 L100 10" fill="none" stroke="#ef4444" strokeWidth="4" />
+                       </svg>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* CHAPTER 5 CONTENT: Compliance */}
+              {activeChapter === 4 && (
+                <div className="w-full flex flex-col items-center justify-center font-mono relative z-10 h-full">
+                  <div className="w-full max-w-md bg-[#050505] border border-white/20 p-4 rounded-lg overflow-hidden h-48 relative shadow-[0_0_30px_rgba(0,0,0,1)]">
+                    <div className="text-[#555] text-[10px] mb-2 border-b border-white/5 pb-2">/var/log/agentwatch/audit.log</div>
+                    <div className="c5-logs text-[#00f0ff] text-xs flex flex-col gap-2 relative top-0">
+                      <div className="c5-log opacity-0">[10:04:21] WARN: Blocked unauthorized fs.readFile</div>
+                      <div className="c5-log opacity-0">[10:04:22] INFO: Agent session #4992 initiated</div>
+                      <div className="c5-log opacity-0">[10:04:23] SEC : Semantic risk score calculated (98)</div>
+                      <div className="c5-log opacity-0">[10:04:23] AUDIT: Rollback to S2 executed</div>
+                      <div className="c5-log opacity-0 mt-4 text-black font-bold bg-[#e8ff47] px-2 py-1 inline-block uppercase tracking-widest text-center">Generating SOC2 Compliance Report...</div>
+                    </div>
+                  </div>
+                  <div className="c5-pdf opacity-0 scale-0 mt-8 bg-[#00f0ff]/10 border border-[#00f0ff] text-[#00f0ff] px-6 py-3 rounded-full font-bold shadow-[0_0_30px_rgba(0,240,255,0.3)] flex items-center gap-3">
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M3 17a1 1 0 011-1h12a1 1 0 110 2H4a1 1 0 01-1-1zm3.293-7.707a1 1 0 011.414 0L9 10.586V3a1 1 0 112 0v7.586l1.293-1.293a1 1 0 111.414 1.414l-3 3a1 1 0 01-1.414 0l-3-3a1 1 0 010-1.414z" clipRule="evenodd" /></svg>
+                    SOC2_Audit_Log_2026.pdf
+                  </div>
+                </div>
+              )}
+
             </div>
 
             {/* Video Controls Overlay */}
@@ -354,7 +447,7 @@ export default function HowItWorks() {
                   </svg>
                   <div className="flex items-center gap-1">
                     <span className="video-time text-white font-bold">0:00</span>
-                    <span className="opacity-50">/ 0:{activeChapter === 0 ? "05" : activeChapter === 1 ? "06" : "07"}</span>
+                    <span className="opacity-50">/ 0:{[0, 3].includes(activeChapter) ? "05" : activeChapter === 1 ? "06" : "07"}</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-4">

@@ -20,18 +20,21 @@ export default function Features() {
 
   useEffect(() => {
     const ctx = gsap.context(() => {
-      gsap.from(".feature-card", {
-        y: 40,
-        opacity: 0,
-        duration: 0.8,
-        stagger: 0.1,
-        ease: "power3.out",
-        scrollTrigger: {
-          trigger: containerRef.current,
-          start: "top 75%",
-          once: true
+      gsap.fromTo(".feature-card", 
+        { y: 40, opacity: 0 },
+        {
+          y: 0,
+          opacity: 1,
+          duration: 0.8,
+          stagger: 0.1,
+          ease: "power3.out",
+          scrollTrigger: {
+            trigger: containerRef.current,
+            start: "top 75%",
+            once: true
+          }
         }
-      });
+      );
     }, containerRef);
     return () => ctx.revert();
   }, []);
