@@ -23,7 +23,7 @@ import uuid
 from dataclasses import dataclass
 
 from agentwatch.core.schema import AgentEvent, EventType, ToolCallData
-from agentwatch.security.owasp import OwaspScanner, OwaspVector
+from agentwatch.security.owasp import validate_owasp, OwaspVector
 from agentwatch.security.redteam import RedTeamHarness
 
 # ── Synthetic attack events for OWASP scanner ──────────────────────
@@ -168,9 +168,9 @@ class HarnessResult:
 
 def run_owasp_scan() -> tuple[int, int, list[str]]:
     """Run all OWASP vectors through the scanner. Returns (score, finding_count, critical_failures)."""
-    scanner = OwaspScanner()
+
     events = [_make_event(payload) for _, _, payload in OWASP_ATTACK_VECTORS]
-    scan = scanner.scan(events)
+    scan = validate_owasp(events)
 
     critical_failures = [
         f"{vector.value}: {desc}"
