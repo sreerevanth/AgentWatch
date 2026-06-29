@@ -149,7 +149,7 @@ class OwaspScanner:
         parts: list[str] = []
 
         # Track containers to avoid infinite recursion
-        if isinstance(data, (dict, list, tuple, set)):
+        if isinstance(data, dict | list | tuple | set):
             if id(data) in visited:
                 return []
             visited.add(id(data))
@@ -159,7 +159,7 @@ class OwaspScanner:
         elif isinstance(data, dict):
             for v in data.values():
                 parts.extend(self._flatten_values(v, visited))
-        elif isinstance(data, (list, tuple, set)):
+        elif isinstance(data, list | tuple | set):
             for item in data:
                 parts.extend(self._flatten_values(item, visited))
         elif data is not None:

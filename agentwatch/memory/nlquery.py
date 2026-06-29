@@ -123,7 +123,7 @@ def query(
 
     q_vec = embed(question) if semantic else None
     for m in memories:
-        text = " ".join(str(v) for v in m.values() if isinstance(v, (str, int, float)))
+        text = " ".join(str(v) for v in m.values() if isinstance(v, str | int | float))
         tokens = set(re.findall(r"[a-z0-9]+", text.lower()))
         score = 0.0
 

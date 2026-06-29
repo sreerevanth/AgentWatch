@@ -77,7 +77,7 @@ class GDPREngine:
     def scan_records(self, records: list[dict[str, Any]]) -> dict[str, int]:
         counts: dict[str, int] = {}
         for r in records:
-            blob = " ".join(str(v) for v in r.values() if isinstance(v, (str, int, float)))
+            blob = " ".join(str(v) for v in r.values() if isinstance(v, str | int | float))
             for f in detect_pii(blob):
                 counts[f.label] = counts.get(f.label, 0) + 1
         return counts
