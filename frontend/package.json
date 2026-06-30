@@ -11,12 +11,12 @@
     "test": "jest"
   },
   "dependencies": {
-    "next": "14.2.30",
+    "date-fns": "^4.1.0",
+    "lucide-react": "^0.454.0",
+    "next": "^16.2.9",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "lucide-react": "^0.454.0",
     "recharts": "^2.13.0",
-    "date-fns": "^4.1.0",
     "swr": "^2.2.5"
   },
   "devDependencies": {
@@ -26,13 +26,13 @@
     "@types/node": "^22",
     "@types/react": "^18",
     "@types/react-dom": "^18",
-    "jest": "^29.7.0",
-    "jest-environment-jsdom": "^29.7.0",
-    "typescript": "^5",
-    "tailwindcss": "^3.4.14",
     "autoprefixer": "^10.4.20",
-    "postcss": "^8.4.47",
     "eslint": "^8",
-    "eslint-config-next": "14.2.30"
+    "eslint-config-next": "^16.2.9",
+    "jest": "^25.0.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5"
   }
 }

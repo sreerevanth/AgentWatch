@@ -1,4 +1,4 @@
-import type { ComponentType } from 'react'
+import { ComponentType } from 'react'
 import { useState } from 'react'
 import { useRouter } from 'next/router'
 import useSWR from 'swr'
@@ -300,17 +300,20 @@ function SafetyPanel({ blockedEvents, loading }: { blockedEvents: AgentEvent[]; 
 export default function DashboardPage() {
   const { data: summary, mutate: refreshSummary, isLoading: summaryLoading } = useSWR<DashboardSummary>(`${API_BASE}/dashboard/summary`, fetcher, { refreshInterval: 15000 })
   const { data: sessionsData, mutate: refreshSessions, isLoading: sessionsLoading } = useSWR<{ sessions: AgentSession[]; total: number }>(`${API_BASE}/sessions?limit=20`, fetcher, { refreshInterval: 15000 })
-  const { data: blockedData, isLoading: blockedLoading } = useSWR<{ blocked_events: AgentEvent[]; total: number }>(`${API_BASE}/safety/blocked?limit=20`, fetcher, { refreshInterval: 15000 })
+ const { data: blockedData, mutate: refreshBlocked, isLoading: blockedLoading } = useSWR<{ blocked_events: AgentEvent[]; total: number }>(`${API_BASE}/safety/blocked?limit=20`, fetcher, { refreshInterval: 15000 })
   const [liveEvents, setLiveEvents] = useState<AgentEvent[]>([])
-  const { status: wsStatus, reconnectElapsedSec } = useLiveEventSocket(
-    (event) => {
-      setLiveEvents((previous) => [event, ...previous].slice(0, 200))
-    },
-    () => {
-      refreshSummary()
-      refreshSessions()
-    },
-  )
+ const { status: wsStatus, reconnectElapsedSec } = useLiveEventSocket(
+  (event) => {
+    // Only handle the event here
+    setLiveEvents((previous) => [event, ...previous].slice(0, 200))
+  },
+  () => {
+    // ONLY perform refreshes here (when the connection recovers)
+    refreshSummary()
+    refreshSessions()
+    refreshBlocked() 
+  },
+)
 
   const sessions = sessionsData?.sessions ?? []
   const blockedEvents = blockedData?.blocked_events ?? []
@@ -330,10 +333,18 @@ export default function DashboardPage() {
             <div className="text-xs uppercase tracking-[0.32em] text-zinc-500">AgentWatch</div>
             <h1 className="text-2xl font-semibold text-white">Reliability, safety, and observability</h1>
           </div>
-          <button onClick={() => { refreshSummary(); refreshSessions() }} aria-label="Refresh dashboard data" className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/10 hover:text-white">
-            <RefreshCw size={14} />
-            Refresh
-          </button>
+          <button 
+  onClick={() => { 
+    refreshSummary(); 
+    refreshSessions(); 
+    refreshBlocked(); // Add this line!
+  }} 
+  aria-label="Refresh dashboard data" 
+  className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/10 hover:text-white"
+>
+  <RefreshCw size={14} />
+  Refresh
+</button>
         </div>
       </header>
 

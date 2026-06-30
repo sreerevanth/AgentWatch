@@ -4,8 +4,8 @@ from .main import main
 from .verify_env import verify_environment
 
 __all__ = [
+    "main",
     "run_demo",
     "init_cmd",
     "verify_environment",
-    "main",
 ]
