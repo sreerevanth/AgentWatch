@@ -412,12 +412,9 @@ class TenantRepository:
         # Filter to only this tenant's sessions
         from sqlalchemy import select
 
-        q = (
-            select(SessionRecord.session_id)
-            .where(
-                SessionRecord.session_id.in_(session_ids),
-                SessionRecord.tenant_id == self._tenant_id,
-            )
+        q = select(SessionRecord.session_id).where(
+            SessionRecord.session_id.in_(session_ids),
+            SessionRecord.tenant_id == self._tenant_id,
         )
         result = await self._session.execute(q)
         return list(result.scalars())
