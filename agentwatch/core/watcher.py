@@ -42,6 +42,7 @@ from agentwatch.core.schema import (
     SafetyCheckData,
     ToolCallData,
 )
+from agentwatch.telemetry.execution_logger import ExecutionLogger
 
 logger = logging.getLogger(__name__)
 
@@ -240,6 +241,11 @@ class GenericAdapter:
         self._step = 0
         self._wrapped_methods: dict[str, Any] = {}
         self._safety_engine = safety_engine or SafetyEngine()
+        self._exec_logger = ExecutionLogger(
+            agent_id=self.agent_id,
+            session_id=self.session_id,
+            task_id=self.session_id,
+        )
         # CMP-003/004: scrub PII/PHI from tool-call payloads before they are
         # published and persisted. Opt-in to avoid the cost when not required.
         self._redact = redact
@@ -305,6 +311,13 @@ class GenericAdapter:
         return self.agent
 
     def _wrap(self, method_name: str, original: Any) -> Any:
+        """Return a wrapper for *original* that emits AgentEvents and logs execution steps.
+
+        Detects whether the original is a coroutine function and returns the
+        appropriate async or sync wrapper. Both wrappers apply the safety gate
+        for tool-like methods, emit lifecycle events (AGENT_START / AGENT_END /
+        AGENT_ERROR), and record structured execution logs via ExecutionLogger.
+        """
         import functools
         import inspect
 
@@ -314,7 +327,16 @@ class GenericAdapter:
 
             @functools.wraps(original)
             async def async_wrapped(*args: Any, **kwargs: Any) -> Any:
+                """Async wrapper that logs execution and applies the safety gate."""
                 self._step += 1
+
+                import time as _time
+
+                _t0 = _time.monotonic()
+                self._exec_logger.log_step(
+                    method_name,
+                    {"step": self._step, "args_count": len(args), "kwargs": list(kwargs.keys())},
+                )
 
                 # ── Safety gate (async path — full check_event with approval) ──
                 if is_tool_like:
@@ -361,6 +383,8 @@ class GenericAdapter:
                 )
                 try:
                     result = await original(*args, **kwargs)
+                    _dur = (_time.monotonic() - _t0) * 1000
+                    self._exec_logger.log_execution_complete("success", _dur)
                     await self._async_emit(
                         EventType.AGENT_END,
                         status=ExecutionStatus.SUCCESS,
@@ -370,6 +394,16 @@ class GenericAdapter:
                 except AgentWatchBlockedError:
                     raise
                 except Exception as exc:
+                    import traceback as _tb
+
+                    _dur = (_time.monotonic() - _t0) * 1000
+                    self._exec_logger.log_error(
+                        str(exc),
+                        type(exc).__name__,
+                        _tb.format_exc(),
+                        {"method": method_name, "step": self._step},
+                    )
+                    self._exec_logger.log_execution_complete("failure", _dur)
                     await self._async_emit(
                         EventType.AGENT_ERROR,
                         status=ExecutionStatus.FAILURE,
@@ -381,7 +415,16 @@ class GenericAdapter:
 
         @functools.wraps(original)
         def sync_wrapped(*args: Any, **kwargs: Any) -> Any:
+            """Sync wrapper that logs execution and applies the pattern-match safety gate."""
             self._step += 1
+
+            import time as _time
+
+            _t0 = _time.monotonic()
+            self._exec_logger.log_step(
+                method_name,
+                {"step": self._step, "args_count": len(args), "kwargs": list(kwargs.keys())},
+            )
 
             # ── Safety gate (sync path — pattern match only, no approval) ──
             if is_tool_like:
@@ -430,6 +473,8 @@ class GenericAdapter:
             )
             try:
                 result = original(*args, **kwargs)
+                _dur = (_time.monotonic() - _t0) * 1000
+                self._exec_logger.log_execution_complete("success", _dur)
                 self._emit_safely(
                     EventType.AGENT_END,
                     status=ExecutionStatus.SUCCESS,
@@ -439,6 +484,16 @@ class GenericAdapter:
             except AgentWatchBlockedError:
                 raise
             except Exception as exc:
+                import traceback as _tb
+
+                _dur = (_time.monotonic() - _t0) * 1000
+                self._exec_logger.log_error(
+                    str(exc),
+                    type(exc).__name__,
+                    _tb.format_exc(),
+                    {"method": method_name, "step": self._step},
+                )
+                self._exec_logger.log_execution_complete("failure", _dur)
                 self._emit_safely(
                     EventType.AGENT_ERROR,
                     status=ExecutionStatus.FAILURE,

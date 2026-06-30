@@ -234,19 +234,55 @@ def test_budget_governance_requires_human_above_auto_approve():
     assert dec.action == BudgetAction.REQUIRE_HUMAN
 
 
+def test_tracker_decimal_precision_accumulation():
+    tracker = CostTracker(default_token_budget=10000, default_usd_budget=1.0)
+    tracker.configure_session("prec-session", token_budget=10000, usd_budget=0.3)
+    
+    # 0.1 + 0.1 + 0.1 in float accumulates precision error: 0.30000000000000004
+    # Using Decimal, this stays exactly 0.3 and does not exceed the 0.3 budget.
+    for _ in range(3):
+        ev = AgentEvent(
+            session_id="prec-session",
+            agent_id="A",
+            event_type=EventType.TOOL_CALL,
+            token_usage=TokenUsage(total_tokens=100, estimated_cost_usd=0.1),
+        )
+        budget = tracker.ingest_event(ev)
+    
+    # usd_used is converted back to float in to_dict() or we can check usd_used directly
+    assert budget.to_dict()["usd_used"] == 0.3
+    assert not budget.exceeded
+
+
+def test_budget_governance_decimal_precision():
+    g = BudgetGovernance()
+    g.configure_team("team-prec", monthly_cap_usd=0.3, auto_approve_ceiling_usd=0.5)
+    g.configure_agent("agent-prec", "team-prec", daily_cap_usd=0.3)
+    
+    # Three events costing 0.1 should fit exactly in the 0.3 budget.
+    for _ in range(3):
+        dec = g.request("agent-prec", action_cost_usd=0.1)
+        assert dec.action == BudgetAction.APPROVE
+    
+    # A fourth event should exceed the budget and be blocked.
+    dec = g.request("agent-prec", action_cost_usd=0.1)
+    assert dec.action == BudgetAction.BLOCK
+
+
 # ─────────────────────────────────────────────
 # CST-008 — Stale session eviction (Issue #137)
 # ─────────────────────────────────────────────
+
 
 def test_tracker_expired_session_evicted():
     tracker = CostTracker(ttl_seconds=60.0)
     tracker.configure_session("session-expired")
     assert tracker.get_session("session-expired") is not None
-    
+
     # Set last_accessed to be older than TTL
     session = tracker._budgets["session-expired"]
     session.last_accessed = time.monotonic() - 61.0
-    
+
     # Trigger cleanup
     tracker._cleanup_stale_sessions(force=True)
     assert tracker.get_session("session-expired") is None
@@ -255,11 +291,11 @@ def test_tracker_expired_session_evicted():
 def test_tracker_active_session_retained():
     tracker = CostTracker(ttl_seconds=60.0)
     tracker.configure_session("session-active")
-    
+
     # Access within TTL
     session = tracker._budgets["session-active"]
     session.last_accessed = time.monotonic() - 10.0
-    
+
     # Trigger cleanup
     tracker._cleanup_stale_sessions(force=True)
     assert tracker.get_session("session-active") is not None
@@ -268,22 +304,22 @@ def test_tracker_active_session_retained():
 def test_tracker_access_refreshes_ttl():
     tracker = CostTracker(ttl_seconds=60.0)
     tracker.configure_session("session-refresh")
-    
+
     # Advance time partially by setting last_accessed back
     session = tracker._budgets["session-refresh"]
     session.last_accessed = time.monotonic() - 40.0
-    
+
     # Access session (which updates last_accessed)
     retrieved = tracker.get_session("session-refresh")
     assert retrieved is not None
     assert time.monotonic() - retrieved.last_accessed < 1.0
-    
+
     # Advance time again (since last access)
     retrieved.last_accessed = time.monotonic() - 30.0
-    
+
     # Trigger cleanup
     tracker._cleanup_stale_sessions(force=True)
-    
+
     # Verify session survives because access refreshed the TTL
     assert tracker.get_session("session-refresh") is not None
 
@@ -293,14 +329,14 @@ def test_tracker_multiple_session_cleanup():
     tracker.configure_session("s1")
     tracker.configure_session("s2")
     tracker.configure_session("s3")
-    
+
     tracker._budgets["s1"].last_accessed = time.monotonic() - 70.0
     tracker._budgets["s2"].last_accessed = time.monotonic() - 20.0
     tracker._budgets["s3"].last_accessed = time.monotonic() - 90.0
-    
+
     # Trigger cleanup
     tracker._cleanup_stale_sessions(force=True)
-    
+
     assert "s1" not in tracker._budgets
     assert "s2" in tracker._budgets
     assert "s3" not in tracker._budgets
@@ -315,4 +351,3 @@ def test_tracker_ttl_config_env_var(monkeypatch):
     monkeypatch.delenv("AGENTWATCH_SESSION_TTL_SECONDS", raising=False)
     tracker2 = CostTracker()
     assert tracker2.ttl_seconds == 900.0
-

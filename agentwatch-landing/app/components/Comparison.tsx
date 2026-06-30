@@ -24,15 +24,15 @@ export default function Comparison() {
     if (prefersReduced) return;
 
     const ctx = gsap.context(() => {
-      gsap.from(".cmp-title", {
-        y: 40, opacity: 0, duration: 0.8, ease: "power3.out",
-        scrollTrigger: { trigger: sectionRef.current, start: "top 80%", once: true },
-      });
+      gsap.fromTo(".cmp-title", 
+        { y: 40, opacity: 0 },
+        { y: 0, opacity: 1, duration: 0.8, ease: "power3.out", scrollTrigger: { trigger: sectionRef.current, start: "top 80%", once: true } }
+      );
 
-      gsap.from(".cmp-row", {
-        x: -20, opacity: 0, duration: 0.6, stagger: 0.08, ease: "power3.out",
-        scrollTrigger: { trigger: ".cmp-table", start: "top 85%", once: true },
-      });
+      gsap.fromTo(".cmp-row", 
+        { x: -20, opacity: 0 },
+        { x: 0, opacity: 1, duration: 0.6, stagger: 0.08, ease: "power3.out", scrollTrigger: { trigger: ".cmp-table", start: "top 85%", once: true } }
+      );
     }, sectionRef);
 
     setTimeout(() => ScrollTrigger.refresh(), 100);

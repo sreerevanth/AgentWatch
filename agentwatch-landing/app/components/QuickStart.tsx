@@ -95,15 +95,15 @@ export default function QuickStart() {
     }
 
     const ctx = gsap.context(() => {
-      gsap.from(leftRef.current, {
-        x: -40, opacity: 0, duration: 0.8, ease: "power3.out",
-        scrollTrigger: { trigger: leftRef.current, start: "top 80%", once: true },
-      });
+      gsap.fromTo(leftRef.current, 
+        { x: -40, opacity: 0 },
+        { x: 0, opacity: 1, duration: 0.8, ease: "power3.out", scrollTrigger: { trigger: leftRef.current, start: "top 80%", once: true } }
+      );
 
-      gsap.from(terminalRef.current, {
-        x: 40, opacity: 0, duration: 0.8, ease: "power3.out",
-        scrollTrigger: { trigger: terminalRef.current, start: "top 80%", once: true },
-      });
+      gsap.fromTo(terminalRef.current, 
+        { x: 40, opacity: 0 },
+        { x: 0, opacity: 1, duration: 0.8, ease: "power3.out", scrollTrigger: { trigger: terminalRef.current, start: "top 80%", once: true } }
+      );
 
       ScrollTrigger.create({
         trigger: terminalRef.current,

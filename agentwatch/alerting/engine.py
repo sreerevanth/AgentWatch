@@ -10,6 +10,7 @@ import httpx
 
 from agentwatch.alerting.channels import validate_channels
 from agentwatch.core.schema import AgentEvent, RiskLevel
+from agentwatch.security.abuse_detection import AbuseEvent
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,51 @@ class AlertingEngine:
                 payload["pagerduty"],
             )
         return sent
+
+    async def alert_abuse(self, event: AbuseEvent) -> dict[str, bool]:
+        """Surface an entitlement-abuse event to the configured admin channels."""
+        payload = self._build_abuse_payload(event)
+        sent = {"slack": False, "pagerduty": False}
+        if self._config.slack_webhook_url:
+            sent["slack"] = await self._post(self._config.slack_webhook_url, payload["slack"])
+        if self._config.pagerduty_webhook_url:
+            sent["pagerduty"] = await self._post(
+                self._config.pagerduty_webhook_url, payload["pagerduty"]
+            )
+        return sent
+
+    def _build_abuse_payload(self, event: AbuseEvent) -> dict[str, dict[str, Any]]:
+        summary = (
+            f"AgentWatch entitlement abuse: {event.subject} used on "
+            f"{event.distinct_devices} devices within {event.window_seconds}s"
+        )
+        devices = ", ".join(f"`{mid}`" for mid in event.machine_ids)
+        return {
+            "slack": {
+                "text": summary,
+                "blocks": [
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f"*{summary}*"}},
+                    {
+                        "type": "section",
+                        "text": {"type": "mrkdwn", "text": f"*Devices:* {devices}"},
+                    },
+                ],
+            },
+            "pagerduty": {
+                "routing_key": self._config.pagerduty_routing_key or "",
+                "event_action": "trigger",
+                "payload": {
+                    "summary": summary,
+                    "source": "agentwatch",
+                    "severity": "error",
+                    "custom_details": {
+                        "subject": event.subject,
+                        "machine_ids": list(event.machine_ids),
+                        "distinct_devices": event.distinct_devices,
+                    },
+                },
+            },
+        }
 
     def _should_page(self, risk_level: RiskLevel) -> bool:
         order = [

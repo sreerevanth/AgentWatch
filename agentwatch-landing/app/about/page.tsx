@@ -12,12 +12,7 @@ gsap.registerPlugin(ScrollTrigger);
 // Content
 // ─────────────────────────────────────────────
 
-const ABOUT_PARAGRAPHS = [
-  "AgentWatch was founded by sreerevanth, a developer from Bangalore, India with 3 years of AI/ML experience building production systems.",
-  "AgentWatch started as a solo project and quickly grew into an open source community of contributors shipping real features in production.",
-  "The core insight came from personal experience: AI agents failing silently with no tool to catch it before the damage was done. So we built one.",
-  "v0.1.0 shipped May 2026. Contributors showed up within 72 hours. The community has been growing since.",
-];
+
 
 const WHY_PARAGRAPHS = [
   "The monitoring gap in AI agents is well documented but unsolved.",
@@ -52,11 +47,11 @@ const DIFFERENTIATORS = [
 ];
 
 const NUMBERS = [
-  { value: 90,  suffix: "",   label: "Features built" },
-  { value: 205, suffix: "",   label: "Tests passing" },
-  { value: 8,   suffix: "",   label: "Framework adapters" },
-  { value: 40,  suffix: "+",  label: "Safety patterns blocked" },
-  { value: 9,   suffix: "",   label: "Feature domains" },
+  { value: 143, suffix: "",   label: "Features built" },
+  { value: 585, suffix: "",   label: "Tests passing" },
+  { value: 9,   suffix: "",   label: "Framework adapters" },
+  { value: 64,  suffix: "+",  label: "Safety patterns blocked" },
+  { value: 12,  suffix: "",   label: "Feature domains" },
   { value: 100, suffix: "%",  label: "Open source (Apache 2.0)" },
 ];
 
@@ -109,7 +104,7 @@ const FUTURE = [
 
 export default function AboutPage() {
   const pageRef = useRef<HTMLDivElement>(null);
-  const numRefs = useRef<(HTMLSpanElement | null)[]>([]);
+  const gridRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
@@ -117,128 +112,139 @@ export default function AboutPage() {
 
     const ctx = gsap.context(() => {
       // Hero
-      gsap.from(".about-hero-eyebrow, .about-hero-title, .about-hero-sub", {
-        y: 30,
-        opacity: 0,
-        duration: 0.9,
-        stagger: 0.15,
-        ease: "power3.out",
-      });
-      gsap.from(".about-hero-underline", {
-        scaleX: 0,
-        transformOrigin: "left center",
-        duration: 1.1,
-        delay: 0.6,
-        ease: "power3.out",
-      });
+      gsap.fromTo(".about-hero-eyebrow, .about-hero-title, .about-hero-sub", 
+        { y: 30, opacity: 0 },
+        {
+          y: 0,
+          opacity: 1,
+          duration: 0.9,
+          stagger: 0.15,
+          ease: "power3.out",
+        }
+      );
+      gsap.fromTo(".about-hero-underline", 
+        { scaleX: 0 },
+        {
+          scaleX: 1,
+          transformOrigin: "left center",
+          duration: 1.1,
+          delay: 0.6,
+          ease: "power3.out",
+        }
+      );
 
       // Common scroll fade-in for section headings
       gsap.utils.toArray<HTMLElement>(".about-section-title").forEach((el) => {
-        gsap.from(el, {
-          y: 30,
-          opacity: 0,
-          duration: 0.8,
-          ease: "power3.out",
-          scrollTrigger: { trigger: el, start: "top 85%", once: true },
-        });
+        gsap.fromTo(el, 
+          { y: 30, opacity: 0 },
+          {
+            y: 0,
+            opacity: 1,
+            duration: 0.8,
+            ease: "power3.out",
+            scrollTrigger: { trigger: el, start: "top 85%", once: true },
+          }
+        );
       });
 
       // Founder block
-      gsap.from(".founder-avatar, .founder-text > *, .founder-badges > *", {
-        y: 30,
-        opacity: 0,
-        duration: 0.7,
-        stagger: 0.08,
-        ease: "power3.out",
-        scrollTrigger: { trigger: ".founder-block", start: "top 80%", once: true },
-      });
+      gsap.fromTo(".founder-avatar, .founder-text > *, .founder-badges > *", 
+        { y: 30, opacity: 0 },
+        {
+          y: 0,
+          opacity: 1,
+          duration: 0.7,
+          stagger: 0.08,
+          ease: "power3.out",
+          scrollTrigger: { trigger: ".founder-block", start: "top 80%", once: true },
+        }
+      );
 
       // Why paragraphs
-      gsap.from(".why-para", {
-        y: 24,
-        opacity: 0,
-        duration: 0.7,
-        stagger: 0.1,
-        ease: "power3.out",
-        scrollTrigger: { trigger: ".why-block", start: "top 80%", once: true },
-      });
+      gsap.fromTo(".why-para", 
+        { y: 24, opacity: 0 },
+        {
+          y: 0,
+          opacity: 1,
+          duration: 0.7,
+          stagger: 0.1,
+          ease: "power3.out",
+          scrollTrigger: { trigger: ".why-block", start: "top 80%", once: true },
+        }
+      );
 
       // Differentiators stagger
       gsap.set(".diff-card", { willChange: "transform, opacity" });
-      gsap.from(".diff-card", {
-        y: 40,
-        opacity: 0,
-        duration: 0.7,
-        stagger: 0.12,
-        ease: "power3.out",
-        scrollTrigger: { trigger: ".diff-list", start: "top 80%", once: true },
-        onComplete: () =>
-          gsap.set(".diff-card", { clearProps: "transform,opacity,willChange" }),
-      });
+      gsap.fromTo(".diff-card", 
+        { y: 40, opacity: 0 },
+        {
+          y: 0,
+          opacity: 1,
+          duration: 0.7,
+          stagger: 0.12,
+          ease: "power3.out",
+          scrollTrigger: { trigger: ".diff-list", start: "top 80%", once: true },
+          onComplete: () =>
+            gsap.set(".diff-card", { clearProps: "transform,opacity,willChange" }),
+        }
+      );
 
       // Numbers — stagger + counter
-      gsap.from(".num-card", {
-        y: 30,
-        opacity: 0,
-        duration: 0.7,
-        stagger: 0.1,
-        ease: "power3.out",
-        scrollTrigger: { trigger: ".num-grid", start: "top 80%", once: true },
-      });
+      gsap.fromTo(".num-card", 
+        { y: 30, opacity: 0 },
+        {
+          y: 0,
+          opacity: 1,
+          duration: 0.7,
+          stagger: 0.1,
+          ease: "power3.out",
+          scrollTrigger: { trigger: gridRef.current, start: "top 80%", once: true },
+        }
+      );
 
-      NUMBERS.forEach((n, i) => {
-        const numEl = numRefs.current[i];
-        if (!numEl) return;
-        const counter = { val: 0 };
-        ScrollTrigger.create({
-          trigger: ".num-grid",
-          start: "top 80%",
-          once: true,
-          onEnter: () => {
-            gsap.to(counter, {
-              val: n.value,
-              duration: 1.5,
-              ease: "power2.out",
-              onUpdate: () => {
-                numEl.textContent = `${Math.round(counter.val)}${n.suffix}`;
-              },
-            });
-          },
-        });
-      });
+
 
       // Timeline entries
-      gsap.from(".timeline-entry", {
-        x: -30,
-        opacity: 0,
-        duration: 0.7,
-        stagger: 0.15,
-        ease: "power3.out",
-        scrollTrigger: { trigger: ".timeline", start: "top 80%", once: true },
-      });
+      gsap.fromTo(".timeline-entry", 
+        { x: -30, opacity: 0 },
+        {
+          x: 0,
+          opacity: 1,
+          duration: 0.7,
+          stagger: 0.15,
+          ease: "power3.out",
+          scrollTrigger: { trigger: ".timeline", start: "top 80%", once: true },
+        }
+      );
 
       // Future cards
       gsap.set(".future-card", { willChange: "transform, opacity" });
-      gsap.from(".future-card", {
-        y: 40,
-        opacity: 0,
-        duration: 0.7,
-        stagger: 0.12,
-        ease: "power3.out",
-        scrollTrigger: { trigger: ".future-grid", start: "top 80%", once: true },
-        onComplete: () =>
-          gsap.set(".future-card", { clearProps: "transform,opacity,willChange" }),
-      });
+      gsap.fromTo(".future-card", 
+        { y: 40, opacity: 0 },
+        {
+          y: 0,
+          opacity: 1,
+          duration: 0.7,
+          stagger: 0.12,
+          ease: "power3.out",
+          scrollTrigger: { trigger: ".future-grid", start: "top 80%", once: true },
+          onComplete: () =>
+            gsap.set(".future-card", { clearProps: "transform,opacity,willChange" }),
+        }
+      );
 
       // CTA
-      gsap.from(".about-cta > *", {
-        y: 30,
-        opacity: 0,
-        duration: 0.8,
-        stagger: 0.1,
-        ease: "power3.out",
-        scrollTrigger: { trigger: ".about-cta", start: "top 85%", once: true },
-      });
+      gsap.fromTo(".about-cta > *", 
+        { y: 30, opacity: 0 },
+        {
+          y: 0,
+          opacity: 1,
+          duration: 0.8,
+          stagger: 0.1,
+          ease: "power3.out",
+          scrollTrigger: { trigger: ".about-cta", start: "top 85%", once: true },
+        }
+      );
     }, pageRef);
 
     // Cursor spotlight on all spotlight-cards within this page
@@ -263,8 +269,19 @@ export default function AboutPage() {
   }, []);
 
   return (
-    <main ref={pageRef} className="relative">
-      <div className="max-w-[900px] mx-auto px-6 pt-32 pb-24">
+    <main ref={pageRef} className="relative min-h-screen bg-[#050505] text-[#ededed] overflow-hidden selection:bg-[#00f0ff]/30 selection:text-[#00f0ff]">
+      {/* Background Grid & Vignette */}
+      <div className="absolute inset-0 z-0 pointer-events-none" style={{
+        backgroundImage: "linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px)",
+        backgroundSize: "64px 64px",
+        backgroundPosition: "center center",
+        maskImage: "radial-gradient(circle at center, black 20%, transparent 80%)",
+        WebkitMaskImage: "radial-gradient(circle at center, black 20%, transparent 80%)"
+      }} />
+      <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[500px] bg-[#00f0ff] rounded-full blur-[150px] opacity-[0.07] pointer-events-none z-0" />
+      <div className="absolute inset-0 bg-[url('/noise.svg')] opacity-[0.05] pointer-events-none mix-blend-overlay z-0" />
+
+      <div className="max-w-[900px] mx-auto px-6 pt-32 pb-24 relative z-10">
         {/* ─── 1. HERO ─── */}
         <section className="mb-24 text-center">
           <a
@@ -326,70 +343,113 @@ export default function AboutPage() {
               fontSize: "clamp(1.5rem, 3vw, 2.2rem)",
             }}
           >
-            Founded by <span className="gradient-text">sreerevanth</span>
+            The <span className="gradient-text">Creators</span>
           </h2>
 
-          <div className="flex flex-col sm:flex-row gap-8 items-start">
-            <div className="founder-avatar flex-shrink-0">
-              <div
-                className="relative rounded-full p-[2px]"
-                style={{
-                  background:
-                    "linear-gradient(135deg, #e8ff47, #bcd20e)",
-                  boxShadow: "0 0 20px rgba(232,255,71,0.2)",
-                }}
-              >
-                <Image
-                  src="https://github.com/sreerevanth.png"
-                  alt="sreerevanth"
-                  width={80}
-                  height={80}
-                  className="rounded-full block"
-                  unoptimized
-                />
+          <div className="flex flex-col gap-16">
+            {/* SREEREVANTH */}
+            <div className="flex flex-col sm:flex-row gap-8 items-start">
+              <div className="founder-avatar flex-shrink-0">
+                <div
+                  className="relative rounded-full p-[2px]"
+                  style={{
+                    background:
+                      "linear-gradient(135deg, #e8ff47, #bcd20e)",
+                    boxShadow: "0 0 20px rgba(232,255,71,0.2)",
+                  }}
+                >
+                  <Image
+                    src="https://github.com/sreerevanth.png"
+                    alt="sreerevanth"
+                    width={80}
+                    height={80}
+                    className="rounded-full block"
+                    unoptimized
+                  />
+                </div>
+              </div>
+              <div className="founder-text flex-1 space-y-4">
+                <h3 className="text-2xl font-bold text-white mb-2" style={{ fontFamily: "var(--font-syne)" }}>Sreerevanth</h3>
+                <div className="text-[#00f0ff] font-mono tracking-widest text-xs uppercase mb-4">&gt; Creator of AgentWatch</div>
+                <div className="text-[#c0c0c0] leading-[1.8] space-y-4" style={{ fontSize: "1rem" }}>
+                  <p>
+                    I'm a developer focused on AI systems, developer tools, open-source software, and building technology that solves real-world problems.
+                  </p>
+                  <p>
+                    I'm the creator of AgentWatch, an open-source observability and reasoning-auditing platform designed to help developers monitor, understand, and improve AI agent behavior. Through AgentWatch, I explore challenges around AI reliability, transparency, and agentic systems while contributing to the growing ecosystem of AI development tools.
+                  </p>
+                </div>
+                <div className="founder-badges flex flex-wrap gap-3 pt-2">
+                  <a
+                    href="https://github.com/sreerevanth"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="dark-glass btn-magnetic inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs hover:text-[#e8ff47] transition-colors"
+                    style={{
+                      border: "1px solid rgba(232,255,71,0.35)",
+                      color: "#e5e2e1",
+                      fontFamily: "var(--font-jetbrains)",
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                      <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+                    </svg>
+                    sreerevanth
+                  </a>
+                </div>
               </div>
             </div>
-            <div className="founder-text flex-1 space-y-4">
-              {ABOUT_PARAGRAPHS.map((p, i) => (
-                <p
-                  key={i}
-                  className="text-[#c0c0c0] leading-[1.8]"
-                  style={{ fontSize: "1rem" }}
-                >
-                  {p}
-                </p>
-              ))}
-              <div className="founder-badges flex flex-wrap gap-3 pt-2">
-                <a
-                  href="https://github.com/sreerevanth"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="dark-glass btn-magnetic inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs hover:text-[#e8ff47] transition-colors"
+
+            {/* SHAURYA */}
+            <div className="flex flex-col sm:flex-row gap-8 items-start">
+              <div className="founder-avatar flex-shrink-0">
+                <div
+                  className="relative rounded-full p-[2px]"
                   style={{
-                    border: "1px solid rgba(232,255,71,0.35)",
-                    color: "#e5e2e1",
-                    fontFamily: "var(--font-jetbrains)",
+                    background:
+                      "linear-gradient(135deg, #00f0ff, #0077ff)",
+                    boxShadow: "0 0 20px rgba(0,240,255,0.2)",
                   }}
                 >
-                  <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
-                    <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
-                  </svg>
-                  github.com/sreerevanth
-                </a>
-                <span
-                  className="dark-glass inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs"
-                  style={{
-                    border: "1px solid rgba(232,255,71,0.35)",
-                    color: "#e5e2e1",
-                    fontFamily: "var(--font-jetbrains)",
-                  }}
-                >
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-3.5 h-3.5">
-                    <path d="M12 21s-7-6.5-7-12a7 7 0 1114 0c0 5.5-7 12-7 12z" />
-                    <circle cx="12" cy="9" r="2.5" />
-                  </svg>
-                  Bangalore, India
-                </span>
+                  <Image
+                    src="https://github.com/SHAURYASANYAL3.png"
+                    alt="SHAURYASANYAL3"
+                    width={80}
+                    height={80}
+                    className="rounded-full block"
+                    unoptimized
+                  />
+                </div>
+              </div>
+              <div className="founder-text flex-1 space-y-4">
+                <h3 className="text-2xl font-bold text-white mb-2" style={{ fontFamily: "var(--font-syne)" }}>Shaurya Sanyal</h3>
+                <div className="text-[#e8ff47] font-mono tracking-widest text-xs uppercase mb-4">&gt; Creator of Frontend & Landing Page</div>
+                <div className="text-[#c0c0c0] leading-[1.8] space-y-4" style={{ fontSize: "1rem" }}>
+                  <p>
+                    I architected and built the entire frontend experience and landing page for AgentWatch. My goal was to create a brutalist, high-performance, and cyberpunk-inspired interface that perfectly matched the cutting-edge nature of the backend safety engine.
+                  </p>
+                  <p>
+                    I'm also the maintainer of VoidSwift, a community-driven open-source ecosystem built around a simple belief: meaningful contributions matter more than contribution counts.
+                  </p>
+                </div>
+                <div className="founder-badges flex flex-wrap gap-3 pt-2">
+                  <a
+                    href="https://github.com/SHAURYASANYAL3"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="dark-glass btn-magnetic inline-flex items-center gap-2 px-4 py-2 rounded-full text-xs hover:text-[#00f0ff] transition-colors"
+                    style={{
+                      border: "1px solid rgba(0,240,255,0.35)",
+                      color: "#e5e2e1",
+                      fontFamily: "var(--font-jetbrains)",
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" fill="currentColor" className="w-3.5 h-3.5">
+                      <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
+                    </svg>
+                    SHAURYASANYAL3
+                  </a>
+                </div>
               </div>
             </div>
           </div>
@@ -476,7 +536,7 @@ export default function AboutPage() {
           >
             By <span className="gradient-text">The Numbers</span>
           </h2>
-          <div className="num-grid grid grid-cols-2 md:grid-cols-3 gap-4">
+          <div ref={gridRef} className="num-grid grid grid-cols-2 md:grid-cols-3 gap-4">
             {NUMBERS.map((n, i) => (
               <div
                 key={i}
@@ -490,8 +550,8 @@ export default function AboutPage() {
                     color: "#e8ff47",
                   }}
                 >
-                  <span ref={(el) => { numRefs.current[i] = el; }}>
-                    0{n.suffix}
+                  <span className={`num-val-${i}`}>
+                    {n.value}{n.suffix}
                   </span>
                 </div>
                 <p className="text-[#b8b8b8] text-xs sm:text-sm leading-snug">
@@ -627,7 +687,7 @@ export default function AboutPage() {
               View on GitHub →
             </a>
             <a
-              href="https://discord.gg/ZbQ9m9HtnE"
+              href="https://discord.gg/UT9uaeY46e"
               target="_blank"
               rel="noreferrer"
               className="btn-magnetic btn-discord-pulse px-6 py-3 rounded-lg bg-[#5865F2] hover:bg-[#4752c4] text-white transition-all duration-200 text-sm font-medium"
