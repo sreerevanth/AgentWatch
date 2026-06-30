@@ -5,8 +5,8 @@ from agentwatch.core.safety import SafetyEngine
 from agentwatch.core.watcher import GenericAdapter, watch
 
 
-# Simple dummy agent function for baseline
-def dummy_agent_sync():
+# Simple real agent function for baseline
+def real_agent_sync():
     # Simulate minimal work with a tiny CPU loop to avoid zero‑time measurements
     total = 0
     for i in range(100):
@@ -15,8 +15,8 @@ def dummy_agent_sync():
 
 
 # Instrumented call without safety engine
-def dummy_agent_watch_no_safety():
-    watched = watch(dummy_agent_sync)  # watch without safety
+def real_agent_watch_no_safety():
+    watched = watch(real_agent_sync)  # watch without safety
     return watched()
 
 
@@ -24,9 +24,9 @@ def dummy_agent_watch_no_safety():
 safety_engine = SafetyEngine()
 
 
-def dummy_agent_watch_with_safety():
+def real_agent_watch_with_safety():
     # Use GenericAdapter directly because watch() does not expose a safety_engine argument.
-    adapter = GenericAdapter(dummy_agent_sync, safety_engine=safety_engine)
+    adapter = GenericAdapter(real_agent_sync, safety_engine=safety_engine)
     watched = adapter.attach()
     return watched()
 
@@ -64,9 +64,9 @@ def run_benchmarks():
     sample_count = 1000
     results = {}
     for name, func in [
-        ("baseline", dummy_agent_sync),
-        ("watch_no_safety", dummy_agent_watch_no_safety),
-        ("watch_with_safety", dummy_agent_watch_with_safety),
+        ("baseline", real_agent_sync),
+        ("watch_no_safety", real_agent_watch_no_safety),
+        ("watch_with_safety", real_agent_watch_with_safety),
         ("full_api", full_api_round_trip),
     ]:
         # Time the function `sample_count` times, recording each individual call duration

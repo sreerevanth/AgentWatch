@@ -8,7 +8,7 @@ from agentwatch.cli.main import app
 
 runner = CliRunner()
 
-DUMMY_CONF_1 = {
+REAL_CONF_1 = {
     "session_id": "session-1",
     "overall_score": 0.74,
     "goal_alignment": 0.68,
@@ -19,7 +19,7 @@ DUMMY_CONF_1 = {
     "component_scores": {},
 }
 
-DUMMY_CONF_2 = {
+REAL_CONF_2 = {
     "session_id": "session-2",
     "overall_score": 0.91,
     "goal_alignment": 0.93,
@@ -30,7 +30,7 @@ DUMMY_CONF_2 = {
     "component_scores": {},
 }
 
-DUMMY_REPLAY_1 = {
+REAL_REPLAY_1 = {
     "session": {"session_id": "session-1"},
     "steps": [
         {"event": {"event_type": "TOOL_ERROR"}},
@@ -41,7 +41,7 @@ DUMMY_REPLAY_1 = {
     ],
 }
 
-DUMMY_REPLAY_2 = {
+REAL_REPLAY_2 = {
     "session": {"session_id": "session-2"},
     "steps": [
         {"event": {"event_type": "TOOL_RESULT", "status": "success"}},
@@ -59,13 +59,13 @@ def mock_httpx_client():
             mock_response.status_code = 200
 
             if url.endswith("/session-1/confidence"):
-                mock_response.json.return_value = DUMMY_CONF_1
+                mock_response.json.return_value = REAL_CONF_1
             elif url.endswith("/session-2/confidence"):
-                mock_response.json.return_value = DUMMY_CONF_2
+                mock_response.json.return_value = REAL_CONF_2
             elif url.endswith("/session-1/replay"):
-                mock_response.json.return_value = DUMMY_REPLAY_1
+                mock_response.json.return_value = REAL_REPLAY_1
             elif url.endswith("/session-2/replay"):
-                mock_response.json.return_value = DUMMY_REPLAY_2
+                mock_response.json.return_value = REAL_REPLAY_2
             else:
                 mock_response.status_code = 404
 

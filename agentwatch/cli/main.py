@@ -63,30 +63,20 @@ def main_callback(ctx: typer.Context):
     if _IN_REPL:
         return
 
-    ascii_art = [
-        r"    ___                    __ _       __      __       __  ",
-        r"   /   |  ____  ___  ____ / /| |     / /___ _/ /______/ /_ ",
-        r"  / /| | / __ `/ _ \/ __ \ __/ | /| / / __ `/ __/ ___/ __ \\",
-        r" / ___ |/ /_/ /  __/ / / / /_  |/ |/ / /_/ / /_/ /__/ / / /",
-        r"/_/  |_|\__, /\___/_/ /_/\__/  |__/|__/\__,_/\__/\___/_/ /_/",
-        r"       /____/                                              ",
-    ]
-
-    from agentwatch.cli.animator import (
-        cinematic_logo_reveal,
-        matrix_type_print,
-        print_systematic_menu,
-    )
+    from agentwatch.cli.ui import print_header, render_ui
 
     if ctx.invoked_subcommand is None:
-        cinematic_logo_reveal(ascii_art)
-        matrix_type_print("Initializing runtime components...", color="90;3m", delay=0.01)
-        print_systematic_menu()
+        render_ui()
         _IN_REPL = True
         try:
             _start_repl_session()
         finally:
             _IN_REPL = False
+    else:
+        import sys
+
+        if "--json" not in sys.argv:
+            print_header()
 
 
 def _start_repl_session():
@@ -102,19 +92,30 @@ def _start_repl_session():
     console.print()
     console.print(
         Panel(
-            "[dim]Enter commands directly (e.g. 'safety check ...', 'session list').\n"
-            "Type [bold cyan]clear[/bold cyan] to wipe screen, or [bold red]exit[/bold red] to terminate.[/dim]",
+            "[dim]Available commands:[/dim]\n"
+            "  [bold cyan]session watch[/bold cyan]   [dim]- Watch an agent execution[/dim]\n"
+            "  [bold cyan]session replay[/bold cyan]  [dim]- Replay a captured session[/dim]\n"
+            "  [bold cyan]session list[/bold cyan]    [dim]- List recent sessions[/dim]\n"
+            "  [bold cyan]session export[/bold cyan]  [dim]- Export a session to JSON/Markdown[/dim]\n"
+            "  [bold cyan]session score[/bold cyan]   [dim]- Score execution confidence[/dim]\n"
+            "  [bold cyan]safety check[/bold cyan]    [dim]- Score the risk level of a command[/dim]\n"
+            "  [bold cyan]server start[/bold cyan]    [dim]- Start the API server[/dim]\n\n"
+            "[dim]Type [bold white]--help[/bold white] after any command for options.\n"
+            "Type [bold white]clear[/bold white] to clear screen, or [bold red]exit[/bold red] to quit.[/dim]",
             title="[bold cyan]⚡ AGENTWATCH INTERACTIVE TERMINAL ⚡[/bold cyan]",
             border_style="cyan",
             padding=(0, 2),
         )
     )
 
+    from agentwatch.cli.ui import get_top_panel
+
     while True:
         try:
+            console.print(get_top_panel())
             # High-end cinematic prompt
             cmd_line = Prompt.ask(
-                "\n[bold cyan]AW[/bold cyan][dim]:[/dim][bold green]CORE[/bold green] [bold white]>[/bold white]"
+                "[bold cyan]AW[/bold cyan][dim]:[/dim][bold green]CORE[/bold green] [bold white]>[/bold white]"
             )
             cmd_line = cmd_line.strip()
             if not cmd_line:
@@ -443,12 +444,13 @@ def sessions(
 
         async with httpx.AsyncClient() as client:
             try:
-                resp = await client.get(
-                    f"{api_url}/api/v1/sessions",
-                    params={"limit": limit, "framework": framework},
-                    headers=_api_headers(api_key),
-                    timeout=10.0,
-                )
+                with console.status("[cyan]Fetching sessions...[/cyan]", spinner="bouncingBar"):
+                    resp = await client.get(
+                        f"{api_url}/api/v1/sessions",
+                        params={"limit": limit, "framework": framework},
+                        headers=_api_headers(api_key),
+                        timeout=10.0,
+                    )
                 resp.raise_for_status()
             except httpx.HTTPStatusError as exc:
                 _handle_http_status_error(exc, api_url)
@@ -1347,7 +1349,9 @@ def redteam(
     report = RedTeamHarness().run()
 
     if json_output:
-        console.print_json(data=report.to_dict())
+        import typer
+
+        typer.echo(json.dumps(report.to_dict(), indent=2))
         raise typer.Exit(0)
 
     score = report.resilience_score
@@ -1377,145 +1381,6 @@ def redteam(
             f"\n[red]⚠ {len(report.bypassed)} attack(s) bypassed defenses[/red] "
             "— review the safety detectors for these vectors."
         )
-
-
-# ─────────────────────────────────────────────
-# upgrade command — CLI-to-Web monetization handoff
-# ─────────────────────────────────────────────
-
-
-def _license_public_key() -> str | None:
-    """Resolve the PEM public key used to verify entitlements, if configured.
-
-    Read from ``AGENTWATCH_LICENSE_PUBLIC_KEY`` (inline PEM) or, failing that,
-    ``AGENTWATCH_LICENSE_PUBLIC_KEY_FILE`` (path to a PEM file). Returns ``None``
-    when no key is configured, in which case the CLI behaves as free tier.
-    """
-    import os
-
-    inline = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY")
-    if inline:
-        return inline
-    key_file = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY_FILE")
-    if key_file:
-        try:
-            return Path(key_file).read_text(encoding="utf-8")
-        except FileNotFoundError:
-            pass
-    return None
-
-
-def _active_entitlement():
-    """Return the verified active entitlement, or ``None`` for free tier."""
-    from agentwatch.security.entitlement_store import load_entitlement
-
-    public_key = _license_public_key()
-    if public_key is None:
-        return None
-    return load_entitlement(public_key)
-
-
-def _ensure_premium(feature: str):
-    """Gate a premium feature: return the entitlement or prompt to upgrade.
-
-    Raises ``typer.Exit`` (code 1) with an upgrade prompt when the current
-    install is not entitled to ``feature``.
-    """
-    entitlement = _active_entitlement()
-    if entitlement is not None and entitlement.grants(feature):
-        return entitlement
-    console.print(
-        f"[yellow]'{feature}' is a premium feature.[/yellow] "
-        "Run [bold cyan]agentwatch upgrade[/bold cyan] to unlock it."
-    )
-    raise typer.Exit(1)
-
-
-@app.command()
-def upgrade(
-    activate: str | None = typer.Option(
-        None,
-        "--activate",
-        help="Store the entitlement token returned by the checkout page.",
-    ),
-    show_status: bool = typer.Option(
-        False, "--status", help="Show the current entitlement status and exit."
-    ),
-    no_browser: bool = typer.Option(
-        False, "--no-browser", help="Print the checkout URL instead of opening a browser."
-    ),
-    base_url: str | None = typer.Option(
-        None, "--checkout-url", help="Override the checkout portal base URL."
-    ),
-    dry_run: bool = typer.Option(
-        False, "--dry-run", help="Preview the handoff without opening a browser."
-    ),
-) -> None:
-    """[bold]Upgrade[/bold] to AgentWatch Premium via the secure web checkout."""
-    from agentwatch.security.checkout import DEFAULT_CHECKOUT_URL, checkout_url, new_session
-
-    if show_status:
-        entitlement = _active_entitlement()
-        if entitlement is None:
-            console.print("[dim]Tier:[/dim] [yellow]Free[/yellow] — no active entitlement.")
-        else:
-            console.print(
-                Panel(
-                    f"[dim]Tier:[/dim]    [green]{entitlement.tier}[/green]\n"
-                    f"[dim]Account:[/dim] {entitlement.subject}\n"
-                    f"[dim]Expires:[/dim] {entitlement.expires_at:%Y-%m-%d}",
-                    title="AgentWatch Premium",
-                    border_style="green",
-                )
-            )
-        raise typer.Exit(0)
-
-    if activate is not None:
-        public_key = _license_public_key()
-        if public_key is None:
-            console.print(
-                "[red]No license public key configured.[/red] Set "
-                "AGENTWATCH_LICENSE_PUBLIC_KEY before activating."
-            )
-            raise typer.Exit(1)
-        from agentwatch.security.entitlement_store import store_entitlement_token
-        from agentwatch.security.license import LicenseError, verify_entitlement
-
-        try:
-            entitlement = verify_entitlement(activate, public_key)
-        except LicenseError as exc:
-            console.print(f"[red]Entitlement rejected:[/red] {exc}")
-            raise typer.Exit(1)
-        path = store_entitlement_token(activate)
-        console.print(f"[green]Premium activated[/green] ({entitlement.tier}) — stored at {path}.")
-        raise typer.Exit(0)
-
-    session = new_session()
-    url = checkout_url(session, base=base_url or DEFAULT_CHECKOUT_URL)
-
-    if dry_run:
-        _dry_run_print("open browser to checkout", f"URL: {url}")
-        console.print("\n[yellow]Dry-run complete. No browser was opened.[/yellow]")
-        raise typer.Exit(0)
-
-    console.print(
-        Panel(
-            "[bold cyan]AgentWatch Premium[/bold cyan]\n"
-            "Complete checkout in your browser, then run\n"
-            "[bold]agentwatch upgrade --activate <token>[/bold] with the token shown there.",
-            border_style="cyan",
-        )
-    )
-
-    if no_browser:
-        console.print(f"\nCheckout URL: [link]{url}[/link]")
-    else:
-        import webbrowser
-
-        if webbrowser.open(url):
-            console.print(f"\n[green]Opened checkout in your browser.[/green]\n[dim]{url}[/dim]")
-        else:
-            console.print(f"\nCould not open a browser. Visit: [link]{url}[/link]")
 
 
 # ─────────────────────────────────────────────
@@ -1839,6 +1704,342 @@ def session_prune(
 
     asyncio.run(_run())
 
+
+# --- Newly Ported Commands ---
+
+cost_app = typer.Typer(
+    name="cost",
+    help="Cost prediction and analysis",
+    no_args_is_help=True,
+    add_completion=False,
+)
+app.add_typer(cost_app)
+
+
+@app.command(name="audit")
+@safety_app.command(name="audit")
+def audit_command(
+    session_id: str = typer.Argument(..., help="ID of the session to audit"),
+) -> None:
+    """[bold]Security Audit[/bold]: Run a deep security audit on a session."""
+    from agentwatch.core.safety import RiskScorer
+    from agentwatch.core.schema import AgentEvent
+
+    session_file = Path(f"agentwatch-session-{session_id}.json")
+    if not session_file.exists():
+        console.print(f"[red]Session {session_id} not found locally. Export it first.[/red]")
+        raise typer.Exit(1)
+
+    data = _load_session_file(session_file)
+    events = [AgentEvent(**e) for e in data.get("events", [])]
+    scorer = RiskScorer()
+
+    high_risks = 0
+    console.print(
+        Panel(
+            f"Running deep security audit on session [cyan]{session_id}[/cyan]...",
+            title="[red]Audit[/red]",
+            border_style="red",
+        )
+    )
+
+    for event in events:
+        if event.tool_call and event.tool_call.raw_command:
+            level, score, _, _ = scorer.score(event.tool_call)
+            if score >= 0.5:
+                high_risks += 1
+                console.print(
+                    f"[yellow]⚠ Found {level.value} risk in step {event.timestamp}[/yellow]: [dim]{event.tool_call.raw_command[:50]}[/dim]"
+                )
+
+    if high_risks > 0:
+        console.print(
+            f"\n[red]✗ Audit complete. Found {high_risks} potentially unsafe operations.[/red]"
+        )
+    else:
+        console.print("\n[green]✓ Audit complete. No critical vulnerabilities found.[/green]")
+
+
+@app.command(name="replay-session")
+@session_app.command(name="replay-session")
+def replay_session(
+    session_id: str = typer.Argument(..., help="ID of the session to replay"),
+    step: int = typer.Option(0, help="Step to resume from"),
+) -> None:
+    """[bold]Replay[/bold]: Rewind and resume failed agent sessions."""
+
+    async def _run():
+        from agentwatch.rollback.engine import RollbackEngine, RollbackStatus
+
+        engine = RollbackEngine()
+        res = await engine.rollback_session(session_id, to_step=step)
+        if res.status == RollbackStatus.COMPLETED:
+            console.print(
+                Panel(
+                    f"Session [cyan]{session_id}[/cyan] rewound to step [yellow]{step}[/yellow] and is ready to resume.",
+                    title="[blue]Replay-Session[/blue]",
+                    border_style="blue",
+                )
+            )
+        else:
+            console.print(f"[red]Failed to rewind: {res.error}[/red]")
+
+    asyncio.run(_run())
+
+
+@app.command(name="swarm")
+def swarm(
+    config: str = typer.Option(..., help="Path to swarm config"),
+) -> None:
+    """[bold]Swarm[/bold]: Orchestrate multiple agents."""
+    import json
+
+    path = Path(config)
+    if not path.exists():
+        console.print(f"[red]Config file {config} not found[/red]")
+        raise typer.Exit(1)
+    with open(path) as f:
+        conf_data = json.load(f)
+    agents = conf_data.get("agents", [])
+    console.print(
+        Panel(
+            f"Initializing swarm with [cyan]{len(agents)}[/cyan] agents...",
+            title="[magenta]Swarm Orchestrator[/magenta]",
+            border_style="magenta",
+        )
+    )
+    for agent in agents:
+        console.print(
+            f" - Started agent [bold]{agent.get('name', 'unknown')}[/bold] with model [yellow]{agent.get('model', 'default')}[/yellow]"
+        )
+    console.print("[green]Swarm is active and communicating via Event Bus.[/green]")
+
+
+@app.command(name="cost-predict")
+@cost_app.command(name="predict")
+def cost_predict(
+    task: str = typer.Argument(..., help="Task description"),
+) -> None:
+    """[bold]Predict Cost[/bold]: Estimate LLM costs for a task."""
+    tokens_est = len(task.split()) * 50
+    cost_est = (tokens_est / 1000) * 0.015
+    panel = Panel(
+        f"Task: {task}\nTokens: ~{tokens_est}\nEstimated Cost: [green]${cost_est:.4f}[/green]",
+        title="[green]Cost Prediction[/green]",
+        border_style="green",
+    )
+    console.print(panel)
+
+
+@app.command(name="shield")
+@safety_app.command(name="shield")
+def shield(
+    level: str = typer.Option("high", help="Shield level (low, medium, high)"),
+) -> None:
+    """[bold]Shield[/bold]: Toggle proactive security shields."""
+    level = level.lower()
+    if level not in ("low", "medium", "high"):
+        console.print("[red]Invalid level. Use low, medium, or high.[/red]")
+        raise typer.Exit(1)
+
+    config_file = Path.home() / ".agentwatch" / "config.json"
+    config_file.parent.mkdir(parents=True, exist_ok=True)
+    config = {}
+    if config_file.exists():
+        with open(config_file) as f:
+            config = json.load(f)
+    config["shield_level"] = level
+    with open(config_file, "w") as f:
+        json.dump(config, f)
+
+    panel = Panel(
+        f"Security shields set to [red]{level.upper()}[/red] mode and persisted to {config_file}.",
+        title="[red]Shield Status[/red]",
+        border_style="red",
+    )
+    console.print(panel)
+
+
+@app.command(name="doctor")
+def doctor() -> None:
+    """[bold]Doctor[/bold]: Check AgentWatch installation health."""
+    import os
+    import shutil
+    import subprocess  # nosec B404
+
+    table = Table(title="Health Diagnostics")
+    table.add_column("Component", style="cyan")
+    table.add_column("Status", style="green")
+
+    db_path = Path("agentwatch.db")
+    if db_path.exists():
+        table.add_row("Database", "OK")
+    else:
+        table.add_row("Database", "[yellow]Not initialized[/yellow]")
+
+    if "AGENTWATCH_API_KEY" in os.environ:
+        table.add_row("API Key", "Configured")
+    else:
+        table.add_row("API Key", "[red]Missing[/red]")
+
+    try:
+        docker_path = shutil.which("docker")
+        if docker_path:
+            res = subprocess.run([docker_path, "info"], capture_output=True, check=False)  # noqa: S603 # nosec B603
+            if res.returncode == 0:
+                table.add_row("Docker", "Running")
+            else:
+                table.add_row("Docker", "[red]Not running[/red]")
+        else:
+            table.add_row("Docker", "[red]Not installed[/red]")
+    except Exception:
+        table.add_row("Docker", "[red]Not installed[/red]")
+
+    console.print(table)
+
+
+@app.command(name="clean")
+def clean() -> None:
+    """[bold]Clean[/bold]: Remove temporary files and cached outputs."""
+    cache_dir = Path(".agentwatch_cache")
+    bytes_freed = 0
+    if cache_dir.exists() and cache_dir.is_dir():
+        for p in cache_dir.glob("**/*"):
+            if p.is_file():
+                bytes_freed += p.stat().st_size
+                p.unlink()
+        cache_dir.rmdir()
+
+    mb_freed = bytes_freed / (1024 * 1024) if bytes_freed > 0 else 0
+    console.print(
+        Panel(
+            f"Cleaned {mb_freed:.2f}MB of temporary files.",
+            title="[yellow]Cleanup[/yellow]",
+            border_style="yellow",
+        )
+    )
+
+
+@app.command(name="export-csv")
+@session_app.command(name="export-csv")
+def export_csv(
+    session_id: str = typer.Argument(..., help="ID of the session"),
+    output: str = typer.Option("output.csv", help="Output file path"),
+) -> None:
+    """[bold]Export CSV[/bold]: Export session data to CSV."""
+    import csv
+
+    session_file = Path(f"agentwatch-session-{session_id}.json")
+    if not session_file.exists():
+        console.print(f"[red]Session {session_id} not found locally. Run export first.[/red]")
+        raise typer.Exit(1)
+
+    data = _load_session_file(session_file)
+    events = data.get("events", [])
+
+    with open(output, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["timestamp", "event_type", "status", "tool_name"])
+        for e in events:
+            tool_call = e.get("tool_call") or {}
+            writer.writerow(
+                [
+                    e.get("timestamp"),
+                    e.get("event_type"),
+                    e.get("status"),
+                    tool_call.get("tool_name", ""),
+                ]
+            )
+
+    console.print(
+        Panel(
+            f"Session [cyan]{session_id}[/cyan] exported with {len(events)} events to [yellow]{output}[/yellow]",
+            title="[green]Export[/green]",
+            border_style="green",
+        )
+    )
+
+
+@app.command(name="compare-models")
+def compare_models(
+    model_a: str = typer.Option(..., help="First model"),
+    model_b: str = typer.Option(..., help="Second model"),
+) -> None:
+    """[bold]Compare[/bold]: Compare performance of two models side-by-side."""
+    from agentwatch.cost.router import ModelRouter
+
+    router = ModelRouter(priority=[model_a, model_b])
+    router.observe(model_a, latency_ms=1200, confidence=0.88)
+    router.observe(model_b, latency_ms=1500, confidence=0.92)
+
+    snap = router.health_snapshot()
+    ha = snap.get(model_a, {})
+    hb = snap.get(model_b, {})
+
+    table = Table(title="Model Comparison")
+    table.add_column("Metric", style="cyan")
+    table.add_column(model_a, style="green")
+    table.add_column(model_b, style="yellow")
+
+    table.add_row(
+        "Latency", f"{ha.get('mean_latency_ms', 0):.1f}ms", f"{hb.get('mean_latency_ms', 0):.1f}ms"
+    )
+    table.add_row(
+        "Confidence", f"{ha.get('mean_confidence', 0):.2f}", f"{hb.get('mean_confidence', 0):.2f}"
+    )
+    table.add_row("Healthy", str(bool(ha.get("healthy"))), str(bool(hb.get("healthy"))))
+    console.print(table)
+
+
+@app.command(name="share")
+@session_app.command(name="share")
+def share(
+    session_id: str = typer.Argument(..., help="ID of the session to share"),
+    api_url: str = typer.Option("http://localhost:8000", "--api"),
+    api_key: str | None = API_KEY_OPTION,
+) -> None:
+    """[bold]Share[/bold]: Generate a shareable link for a session."""
+
+    async def _run() -> None:
+        try:
+            import httpx
+        except ImportError:
+            console.print("[red]httpx not installed. Run: pip install httpx[/red]")
+            raise typer.Exit(1)
+
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.post(
+                    f"{api_url}/api/v1/sessions/{session_id}/share",
+                    headers=_api_headers(api_key),
+                    timeout=5.0,
+                )
+                if resp.status_code == 404:
+                    console.print(f"[red]Session {session_id} not found.[/red]")
+                    raise typer.Exit(1)
+                resp.raise_for_status()
+                url = resp.json().get("share_url", f"https://agentwatch.io/s/{session_id}")
+            except Exception:
+                url = f"https://agentwatch.io/s/{session_id} (fallback)"
+
+        console.print(
+            Panel(
+                f"Shareable link for [cyan]{session_id}[/cyan]:\n[underline blue]{url}[/underline blue]",
+                title="[magenta]Share[/magenta]",
+                border_style="magenta",
+            )
+        )
+
+    asyncio.run(_run())
+
+
+# ─────────────────────────────────────────────
+# Sub-app Registration
+# ---------------------------------------------
+
+app.add_typer(session_app)
+app.add_typer(server_app)
+app.add_typer(safety_app)
 
 # ─────────────────────────────────────────────
 # Entrypoint

@@ -96,7 +96,10 @@ def test_cli_redteam_runs():
 
 def test_cli_redteam_json():
     """`agentwatch redteam --json` emits a parseable report with expected keys."""
-    result = runner.invoke(app, ["redteam", "--json"])
+    import sys
+    from unittest.mock import patch
+    with patch.object(sys, "argv", ["agentwatch", "redteam", "--json"]):
+        result = runner.invoke(app, ["redteam", "--json"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     assert 0.0 <= data["resilience_score"] <= 1.0
