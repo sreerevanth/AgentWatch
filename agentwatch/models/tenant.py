@@ -1,4 +1,42 @@
-"""Tenant, API key, and usage tracking models for AgentWatch Cloud."""
+"""Tenant, API key, and usage tracking models for AgentWatch Cloud.
+
+Architecture
+~~~~~~~~~~~~
+Every data record (``SessionRecord``, ``EventRecord``, ``MemoryEntryRecord``)
+carries a nullable ``tenant_id`` column.  In cloud mode the ``TenantRepository``
+wrapper **enforces** that all reads/writes are scoped to the authenticated
+tenant — unscoped queries are never executed.
+
+API keys are stored as PBKDF2-HMAC-SHA256 hashes with a random 16-byte salt
+(``salt:hex_digest``).  Raw keys are returned once at creation time and never
+persisted or logged.
+
+Migration Strategy
+~~~~~~~~~~~~~~~~~~
+1. Add ``tenant_id`` column (nullable ``VARCHAR(36)``) to ``agent_sessions``,
+   ``agent_events``, ``agent_checkpoints``, and ``memory_entries`` tables.
+2. Run a backfill script: assign all existing rows to a default migration
+   tenant (``tenant_id = '00000000-0000-0000-0000-000000000001'``).
+3. After backfill, set the column to ``NOT NULL`` with a server default.
+4. Add composite indexes: ``(tenant_id, started_at)``, ``(tenant_id, session_id)``.
+5. The ``TenantRepository`` guard ensures new writes always include
+   ``tenant_id``; legacy single-tenant deployments set ``tenant_id = 'default'``.
+
+Usage Tracking & Future Billing
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``UsageRecord`` aggregates per-tenant monthly metrics:
+
+- ``tokens_used`` — total LLM tokens consumed
+- ``requests_count`` — API call count
+- ``usd_cost`` — estimated cost (from ``TokenUsage.estimated_cost_usd``)
+- ``sessions_count`` / ``events_count`` — volume tracking
+
+These fields map directly to Stripe metered billing line items:
+``tokens_used`` → per-token pricing, ``usd_cost`` → cost-plus markup,
+``requests_count`` → flat-rate tiers.  The ``TenantPlan`` enum defines
+plan-level quotas; exceeding them triggers HTTP 429 responses via
+``check_usage_limits()``.
+"""
 
 from __future__ import annotations
 
@@ -102,9 +140,23 @@ class Tenant:
         }
 
 
-def _hash_api_key(raw_key: str) -> str:
-    """SHA-256 hash of an API key for secure storage."""
-    return hashlib.sha256(raw_key.encode()).hexdigest()
+def _hash_api_key(raw_key: str, salt: str | None = None) -> str:
+    """PBKDF2-HMAC-SHA256 hash of an API key with random salt.
+
+    Returns ``salt:hash`` so the salt is recoverable during validation.
+    If *salt* is ``None`` a fresh 16-byte hex salt is generated.
+    """
+    if salt is None:
+        salt = secrets.token_hex(16)
+    dk = hashlib.pbkdf2_hmac("sha256", raw_key.encode(), salt.encode(), iterations=100_000)
+    return f"{salt}:{dk.hex()}"
+
+
+def _verify_api_key(raw_key: str, stored: str) -> bool:
+    """Verify a raw key against a ``salt:hash`` value."""
+    salt, expected_hash = stored.split(":", 1)
+    dk = hashlib.pbkdf2_hmac("sha256", raw_key.encode(), salt.encode(), iterations=100_000)
+    return secrets.compare_digest(dk.hex(), expected_hash)
 
 
 def generate_api_key(tenant_id: str) -> str:

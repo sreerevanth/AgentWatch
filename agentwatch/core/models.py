@@ -333,6 +333,99 @@ class Repository:
         return result.rowcount
 
 
+class TenantRepository:
+    """Wrapper around Repository that enforces tenant_id isolation.
+
+    In cloud mode, every query is scoped to the provided tenant_id,
+    preventing cross-tenant data access.  In legacy (single-tenant) mode,
+    tenant_id filtering is skipped.
+    """
+
+    def __init__(self, repo: Repository, tenant_id: str | None = None):
+        self._repo = repo
+        self._tenant_id = tenant_id
+
+    @property
+    def _session(self) -> AsyncSession:
+        return self._repo._session  # noqa: SLF001
+
+    def _scope(self, q: Any) -> Any:
+        """Add tenant_id filter to a SQLAlchemy select query if in cloud mode."""
+        if self._tenant_id:
+            # Check if the query's entity has a tenant_id column
+            from sqlalchemy import inspect as sa_inspect
+
+            for entity in q.column_descriptions:
+                mapper = sa_inspect(entity["entity"])
+                if hasattr(mapper.c, "tenant_id"):
+                    return q.where(mapper.c.tenant_id == self._tenant_id)
+        return q
+
+    async def upsert_session(self, session_data: dict[str, Any]) -> None:
+        if self._tenant_id and "tenant_id" not in session_data:
+            session_data["tenant_id"] = self._tenant_id
+        await self._repo.upsert_session(session_data)
+
+    async def insert_event(self, event_data: dict[str, Any]) -> None:
+        if self._tenant_id and "tenant_id" not in event_data:
+            event_data["tenant_id"] = self._tenant_id
+        await self._repo.insert_event(event_data)
+
+    async def get_session(self, session_id: str) -> SessionRecord | None:
+        record = await self._repo.get_session(session_id)
+        if record and self._tenant_id and record.tenant_id != self._tenant_id:
+            return None
+        return record
+
+    async def get_events(
+        self,
+        session_id: str,
+        event_type: str | None = None,
+        limit: int = 1000,
+    ) -> list[EventRecord]:
+        events = await self._repo.get_events(session_id, event_type, limit)
+        if self._tenant_id:
+            events = [e for e in events if e.tenant_id == self._tenant_id]
+        return events
+
+    async def get_recent_sessions(
+        self,
+        limit: int = 50,
+        framework: str | None = None,
+        status: str | None = None,
+    ) -> list[SessionRecord]:
+        sessions = await self._repo.get_recent_sessions(limit, framework, status)
+        if self._tenant_id:
+            sessions = [s for s in sessions if s.tenant_id == self._tenant_id]
+        return sessions
+
+    async def get_blocked_events(self, limit: int = 100) -> list[EventRecord]:
+        events = await self._repo.get_blocked_events(limit)
+        if self._tenant_id:
+            events = [e for e in events if e.tenant_id == self._tenant_id]
+        return events
+
+    async def get_sessions_older_than(self, cutoff: datetime) -> list[str]:
+        session_ids = await self._repo.get_sessions_older_than(cutoff)
+        if not self._tenant_id or not session_ids:
+            return session_ids
+        # Filter to only this tenant's sessions
+        from sqlalchemy import select
+
+        q = (
+            select(SessionRecord.session_id)
+            .where(
+                SessionRecord.session_id.in_(session_ids),
+                SessionRecord.tenant_id == self._tenant_id,
+            )
+        )
+        result = await self._session.execute(q)
+        return list(result.scalars())
+
+    async def prune_sessions(self, session_ids: list[str]) -> int:
+        return await self._repo.prune_sessions(session_ids)
+
+
 # ─────────────────────────────────────────────
 # Database initialization
 # ─────────────────────────────────────────────

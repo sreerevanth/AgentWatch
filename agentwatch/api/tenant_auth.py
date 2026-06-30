@@ -15,6 +15,7 @@ from agentwatch.models.tenant import (
     TenantStatus,
     UsageRecord,
     _hash_api_key,
+    _verify_api_key,
     generate_api_key,
 )
 
@@ -30,7 +31,6 @@ class TenantStore:
     def __init__(self) -> None:
         self._tenants: dict[str, Tenant] = {}
         self._api_keys: dict[str, ApiKey] = {}  # key_id -> ApiKey
-        self._key_hash_index: dict[str, str] = {}  # key_hash -> key_id
         self._usage: dict[str, UsageRecord] = {}  # "tenant_id:YYYY-MM" -> UsageRecord
 
     # ── Tenant management ──────────────────────────────────────────
@@ -113,21 +113,25 @@ class TenantStore:
             scopes=scopes or ["*"],
         )
         self._api_keys[key_id] = api_key
-        self._key_hash_index[key_hash] = key_id
         logger.info("Created API key '%s' for tenant %s", name, tenant_id)
         return api_key, raw_key
 
     def validate_api_key(self, raw_key: str) -> ApiKey | None:
-        """Validate an API key and return the ApiKey if valid."""
-        key_hash = _hash_api_key(raw_key)
-        key_id = self._key_hash_index.get(key_hash)
-        if not key_id:
-            return None
-        api_key = self._api_keys.get(key_id)
-        if not api_key or not api_key.is_valid():
-            return None
-        api_key.last_used_at = datetime.now(UTC)
-        return api_key
+        """Validate an API key and return the ApiKey if valid.
+
+        Uses PBKDF2-HMAC-SHA256 verification (constant-time) against stored
+        salt:hash values — raw keys are never persisted or logged.
+        """
+        # Iterate keys and verify using PBKDF2 (constant-time comparison)
+        for api_key in self._api_keys.values():
+            if api_key.revoked:
+                continue
+            if api_key.expires_at and datetime.now(UTC) > api_key.expires_at:
+                continue
+            if _verify_api_key(raw_key, api_key.key_hash):
+                api_key.last_used_at = datetime.now(UTC)
+                return api_key
+        return None
 
     def revoke_api_key(self, key_id: str) -> bool:
         api_key = self._api_keys.get(key_id)
