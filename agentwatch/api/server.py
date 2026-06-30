@@ -27,11 +27,13 @@ from fastapi import (
 )
 from fastapi.exception_handlers import http_exception_handler
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, Response
+from prometheus_client import generate_latest
 from pydantic import BaseModel, Field
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
 from agentwatch.api.auth import require_permission
+from agentwatch.api.middleware.rate_limiter import RateLimiter, RateLimitMiddleware
 from agentwatch.core.event_bus import get_event_bus
 from agentwatch.core.models import Repository, init_db
 from agentwatch.core.safety import RiskScorer, SafetyEngine, SafetyPolicy
@@ -50,12 +52,18 @@ from agentwatch.core.schema import (
 from agentwatch.cost.tracker import CostTracker
 from agentwatch.governance.compliance_reporter import ComplianceReporter
 from agentwatch.governance.engine import AuditEventType, GovernanceEngine
+from agentwatch.monitoring.metrics import (
+    record_api_latency,
+    record_failure,
+)
 from agentwatch.reasoning.auditor import ReasoningAuditor
 from agentwatch.replay.counterfactual import CounterfactualEngine, CounterfactualScenario
 from agentwatch.replay.engine import ReplayEngine
 from agentwatch.rollback.engine import RollbackEngine
 from agentwatch.scoring.confidence import ConfidenceScorer
+from agentwatch.security.abuse_detection import EntitlementUsageTracker
 from agentwatch.tracing.collector import TraceCollector
+from agentwatch.validation.schema_validator import SchemaValidator
 
 logger = logging.getLogger(__name__)
 
@@ -238,6 +246,37 @@ _alerting = AlertingEngine(
     )
 )
 _ws_clients: list[WebSocket] = []
+_schema_validator = SchemaValidator()
+_usage_tracker = EntitlementUsageTracker()
+
+
+def _init_default_schemas() -> None:
+    """Register built-in JSON schemas for each supported agent framework."""
+    _tool_call_schema: dict[str, Any] = {
+        "type": "object",
+        "properties": {
+            "tool_name": {"type": "string"},
+            "arguments": {"type": "object"},
+        },
+        "required": ["tool_name"],
+    }
+    _schema_validator.schemas["claude-code"] = _tool_call_schema
+    _schema_validator.schemas["langchain"] = {
+        "type": "object",
+        "properties": {
+            "tool_name": {"type": "string"},
+            "arguments": {"type": "object"},
+        },
+        "required": ["tool_name"],
+    }
+    _schema_validator.schemas["crewai"] = {
+        "type": "object",
+        "properties": {
+            "tool_name": {"type": "string"},
+            "arguments": {"type": "object"},
+        },
+        "required": ["tool_name"],
+    }
 
 
 # Optional API key guard.
@@ -332,6 +371,11 @@ class SafetyCheckRequest(BaseModel):
     tool_name: str = "bash"
     arguments: dict[str, Any] = Field(default_factory=dict)
     affected_resources: list[str] = Field(default_factory=list)
+
+
+class EntitlementUsageReport(BaseModel):
+    subject: str = Field(min_length=1)
+    machine_id: str | None = None
 
 
 class ThreatPathNode(BaseModel):
@@ -488,6 +532,7 @@ async def lifespan(app: FastAPI):
             logger.info("PostgreSQL connected and tables ready")
         except Exception:
             logger.warning("PostgreSQL unavailable — running in-memory only", exc_info=True)
+    _init_default_schemas()
     bus = get_event_bus()
     bus.subscribe_fn(_collector.ingest, handler_id="api.collector")
     bus.subscribe_fn(_after_publish, handler_id="api.post_publish")
@@ -506,6 +551,20 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc",
 )
+
+# Initialize rate limiter with configurable limits from environment
+RATE_LIMIT_PER_USER = int(os.getenv("RATE_LIMIT_PER_USER", "100"))
+RATE_LIMIT_GLOBAL = int(os.getenv("RATE_LIMIT_GLOBAL", "10000"))
+RATE_LIMIT_WINDOW_SEC = int(os.getenv("RATE_LIMIT_WINDOW_SEC", "3600"))
+
+_rate_limiter = RateLimiter(
+    user_limit=RATE_LIMIT_PER_USER,
+    global_limit=RATE_LIMIT_GLOBAL,
+    window_sec=RATE_LIMIT_WINDOW_SEC,
+)
+
+# Add rate limiting middleware
+app.add_middleware(RateLimitMiddleware, limiter=_rate_limiter)
 
 
 @app.exception_handler(HTTPException)
@@ -531,6 +590,29 @@ async def rl_headers(request: Request, call_next):
         response.headers["X-RateLimit-Limit"] = str(request.state.rl_limit)
         response.headers["X-RateLimit-Remaining"] = str(request.state.rl_remaining)
     return response
+
+
+@app.middleware("http")
+async def record_metrics(request: Request, call_next):
+    """Record API latency metrics for all requests including failures."""
+    start_time = time.time()
+    endpoint = request.url.path
+    response = None
+
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as exc:
+        # Record failure before re-raising
+        duration = time.time() - start_time
+        record_api_latency(endpoint, duration)
+        record_failure(endpoint, 500, str(exc))
+        raise
+    finally:
+        # Record latency for successful responses
+        if response is not None:
+            duration = time.time() - start_time
+            record_api_latency(endpoint, duration)
 
 
 # CORS configuration.
@@ -590,6 +672,12 @@ async def health(request: Request) -> dict[str, Any]:
         "safety": _safety_engine.stats(),
         "cost": _cost_tracker.stats(),
     }
+
+
+@app.get("/metrics")
+async def metrics() -> Response:
+    """Expose Prometheus metrics endpoint."""
+    return Response(content=generate_latest(), media_type="text/plain; version=0.0.4")
 
 
 @app.get("/api/v1/sessions", response_model=SessionListResponse)
@@ -727,7 +815,22 @@ async def ingest_event(
     _auth: None = Depends(_require_api_key),
 ) -> dict[str, Any]:
     _limiter.check(_rate_limit_key(request, "w"), RATE_WRITE, request)
+    if event.event_type == EventType.TOOL_CALL and event.tool_call is not None:
+        schema_key = event.framework.value.replace("_", "-")
+        if _schema_validator.get_schema(schema_key) is not None:
+            params: dict[str, Any] = {
+                "tool_name": event.tool_call.tool_name,
+                "arguments": dict(event.tool_call.arguments) if event.tool_call.arguments else {},
+            }
+            valid, err = _schema_validator.validate_task_parameters(schema_key, params)
+            if not valid:
+                raise HTTPException(status_code=422, detail=f"Schema validation failed: {err}")
     await get_event_bus().publish(event)
+
+    if event.agent_id and hasattr(event, "status"):
+        if getattr(event, "status", None) == ExecutionStatus.FAILURE:
+            record_failure(event.agent_id)
+
     return {"status": "accepted", "event_id": event.event_id}
 
 
@@ -1073,6 +1176,29 @@ async def dashboard_top(_auth: None = Depends(_require_api_key)) -> dict[str, An
 @app.get("/api/v1/governance/compliance-report")
 async def compliance_report(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     return _compliance_reporter.generate().to_dict()
+
+
+@app.post("/api/v1/entitlement/usage")
+async def report_entitlement_usage(
+    report: EntitlementUsageReport,
+    x_machine_id: str | None = Header(default=None, alias="X-Machine-Id"),
+    _auth: None = Depends(_require_api_key),
+) -> dict[str, Any]:
+    """Record an entitlement usage heartbeat and flag cross-device abuse (#463)."""
+    machine_id = report.machine_id or x_machine_id
+    if not machine_id:
+        raise HTTPException(
+            status_code=400, detail="machine_id is required (body or X-Machine-Id header)."
+        )
+    event = _usage_tracker.record(report.subject, machine_id)
+    if event is not None:
+        logger.warning("Entitlement abuse: %s on %d devices", event.subject, event.distinct_devices)
+        await _alerting.alert_abuse(event)
+    return {
+        "recorded": True,
+        "abuse_detected": event is not None,
+        "active_devices": len(_usage_tracker.active_devices(report.subject)),
+    }
 
 
 @app.get("/api/v1/governance/eu-ai-act-report")

@@ -1,35 +1,31 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { usePathname } from "next/navigation";
 import gsap from "gsap";
 
 const LINKS = [
   { label: "Features",     href: "#features",     section: "features" },
   { label: "How it works", href: "#how-it-works", section: "how-it-works" },
   { label: "About",        href: "/about",        page: true },
-  { label: "Contributors", href: "#contributors", section: "contributors" },
+  { label: "Contributors", href: "/contributors", page: true },
   { label: "GitHub",       href: "https://github.com/sreerevanth/agentwatch", external: true },
-  { label: "Discord",      href: "https://discord.gg/ZbQ9m9HtnE", external: true },
+  { label: "Discord",      href: "https://discord.gg/UT9uaeY46e", external: true },
 ];
 
 export default function Navbar() {
+  const pathname = usePathname();
   const navRef = useRef<HTMLElement>(null);
   const [scrolled, setScrolled] = useState(false);
   const [active, setActive] = useState<string | null>(null);
 
   useEffect(() => {
-    gsap.from(navRef.current, {
-      y: -80,
-      opacity: 0,
-      duration: 0.8,
-      ease: "power3.out",
-      delay: 0.2,
-    });
-
     const onScroll = () => {
       setScrolled(window.scrollY > 40);
     };
     window.addEventListener("scroll", onScroll, { passive: true });
+    // Run once on mount to catch initial scroll state
+    onScroll();
 
     // Active section tracking via IntersectionObserver
     const ids = LINKS.filter((l) => l.section).map((l) => l.section!) as string[];
@@ -86,7 +82,7 @@ export default function Navbar() {
   return (
     <nav
       ref={navRef}
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-300 ${
+      className={`fixed top-0 left-0 right-0 z-[999] transition-all duration-300 ${
         scrolled
           ? "bg-[#0a0a0a]/80 backdrop-blur-xl border-b border-white/5"
           : "bg-transparent"
@@ -154,9 +150,8 @@ export default function Navbar() {
               );
             }
             if (item.page) {
-              // Internal page link (e.g. /about) — let Next handle normal nav.
-              const isActive =
-                typeof window !== "undefined" && window.location.pathname === item.href;
+              // Internal page link (e.g. /about) — use usePathname
+              const isActive = pathname === item.href;
               return (
                 <a
                   key={item.label}
@@ -193,7 +188,7 @@ export default function Navbar() {
           </a>
         </div>
 
-        <button className="md:hidden text-[#888] hover:text-white transition-colors">
+        <button aria-label="Toggle menu" className="md:hidden text-[#888] hover:text-white transition-colors">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" className="w-6 h-6">
             <path strokeLinecap="round" d="M4 6h16M4 12h16M4 18h16" />
           </svg>

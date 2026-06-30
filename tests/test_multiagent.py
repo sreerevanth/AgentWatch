@@ -1,4 +1,4 @@
-"""Phase 6 — Multi-Agent tests (MAG-001..008)."""
+"""Phase 6 — Multi-Agent tests (MAG-001..009)."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from agentwatch.orchestration.propagation import trace_propagation
 from agentwatch.orchestration.shapley import shapley_attribution
 from agentwatch.orchestration.spawning import SpawningTracker, SpawnLimitExceeded
 from agentwatch.orchestration.trust import InterAgentTrust
+from agentwatch.orchestration.race_condition import AccessType, RaceConditionDetector
 
 # ─────────────────────────────────────────────
 # MAG-001 — Inter-Agent DAG
@@ -82,6 +83,103 @@ def test_low_trust_influences_high_trust():
         t.record("high", "x", success=True)
     flagged = t.low_trust_influencing_high_trust()
     assert any(e.src == "low" for e in flagged)
+
+
+# ─────────────────────────────────────────────
+# MAG-009 — Race Condition Detector
+# ─────────────────────────────────────────────
+
+
+def _race_ts(offset_seconds: float):
+    from datetime import datetime, timedelta
+    base = datetime(2026, 1, 1, 0, 0, 0)
+    return base + timedelta(seconds=offset_seconds)
+
+
+def test_race_overlapping_write_write_detected():
+    det = RaceConditionDetector()
+    det.record_access("agent-a", "db:users", AccessType.WRITE, _race_ts(0), _race_ts(5))
+    det.record_access("agent-b", "db:users", AccessType.WRITE, _race_ts(2), _race_ts(7))
+    rep = det.scan()
+    assert rep.has_race
+    assert len(rep.conflicts) == 1
+    assert {rep.conflicts[0].agent_a, rep.conflicts[0].agent_b} == {"agent-a", "agent-b"}
+
+
+def test_race_overlapping_read_write_detected():
+    det = RaceConditionDetector()
+    det.record_access("agent-a", "cache:key1", AccessType.READ, _race_ts(0), _race_ts(5))
+    det.record_access("agent-b", "cache:key1", AccessType.WRITE, _race_ts(3), _race_ts(6))
+    rep = det.scan()
+    assert rep.has_race
+    assert len(rep.conflicts) == 1
+
+
+def test_race_overlapping_read_read_is_not_a_race():
+    det = RaceConditionDetector()
+    det.record_access("agent-a", "cache:key1", AccessType.READ, _race_ts(0), _race_ts(5))
+    det.record_access("agent-b", "cache:key1", AccessType.READ, _race_ts(2), _race_ts(7))
+    rep = det.scan()
+    assert rep.has_race is False
+    assert rep.conflicts == []
+
+
+def test_race_same_agent_overlap_is_not_a_race():
+    det = RaceConditionDetector()
+    det.record_access("agent-a", "db:orders", AccessType.WRITE, _race_ts(0), _race_ts(5))
+    det.record_access("agent-a", "db:orders", AccessType.WRITE, _race_ts(2), _race_ts(7))
+    rep = det.scan()
+    assert rep.has_race is False
+
+
+def test_race_non_overlapping_windows_no_conflict():
+    det = RaceConditionDetector()
+    det.record_access("agent-a", "db:orders", AccessType.WRITE, _race_ts(0), _race_ts(5))
+    det.record_access("agent-b", "db:orders", AccessType.WRITE, _race_ts(10), _race_ts(15))
+    rep = det.scan()
+    assert rep.has_race is False
+
+
+def test_race_exact_boundary_touch_is_not_overlapping():
+    det = RaceConditionDetector()
+    det.record_access("agent-a", "db:orders", AccessType.WRITE, _race_ts(0), _race_ts(5))
+    det.record_access("agent-b", "db:orders", AccessType.WRITE, _race_ts(5), _race_ts(10))
+    rep = det.scan()
+    assert rep.has_race is False
+
+
+def test_race_different_resources_no_conflict():
+    det = RaceConditionDetector()
+    det.record_access("agent-a", "db:users", AccessType.WRITE, _race_ts(0), _race_ts(5))
+    det.record_access("agent-b", "db:orders", AccessType.WRITE, _race_ts(0), _race_ts(5))
+    rep = det.scan()
+    assert rep.has_race is False
+
+
+def test_race_three_agents_overlapping_reports_multiple_conflicts():
+    det = RaceConditionDetector()
+    det.record_access("agent-a", "db:users", AccessType.WRITE, _race_ts(0), _race_ts(10))
+    det.record_access("agent-b", "db:users", AccessType.WRITE, _race_ts(2), _race_ts(8))
+    det.record_access("agent-c", "db:users", AccessType.WRITE, _race_ts(4), _race_ts(12))
+    rep = det.scan()
+    assert rep.has_race
+    assert len(rep.conflicts) == 3
+
+
+def test_race_zero_duration_access_does_not_self_overlap_with_touching_window():
+    det = RaceConditionDetector()
+    det.record_access("agent-a", "db:orders", AccessType.WRITE, _race_ts(5), _race_ts(5))
+    det.record_access("agent-b", "db:orders", AccessType.WRITE, _race_ts(5), _race_ts(10))
+    rep = det.scan()
+    assert rep.has_race is False
+
+
+def test_race_invalid_window_raises():
+    det = RaceConditionDetector()
+    with pytest.raises(ValueError):
+        det.record_access("agent-a", "db:orders", AccessType.WRITE, _race_ts(10), _race_ts(5))
+
+
 
 
 # ─────────────────────────────────────────────

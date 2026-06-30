@@ -31,13 +31,14 @@ app = typer.Typer(
     add_completion=True,
     rich_markup_mode="rich",
 )
+session_app = typer.Typer(
+    name="session", help="Manage and inspect agent sessions", no_args_is_help=True
+)
+app.add_typer(session_app)
 app.add_typer(mcp_app, name="mcp")
 
 console = Console()
 
-session_app = typer.Typer(
-    name="session", help="Manage and inspect agent sessions", no_args_is_help=True
-)
 server_app = typer.Typer(
     name="server", help="Manage the AgentWatch API server", no_args_is_help=True
 )
@@ -48,7 +49,6 @@ safety_app = typer.Typer(
     no_args_is_help=True,
 )
 
-app.add_typer(session_app)
 app.add_typer(server_app)
 app.add_typer(safety_app)
 
@@ -126,7 +126,9 @@ def _start_repl_session():
                 break
 
             if cmd_lower in ("clear", "cls"):
-                os.system("cls" if os.name == "nt" else "clear")  # nosec # noqa: S605, S607
+                os.system(  # noqa: S605, S607
+                    "cls" if os.name == "nt" else "clear"
+                )  # nosec
                 continue
 
             args = shlex.split(cmd_line)
@@ -948,7 +950,9 @@ def top(
 @server_app.command(name="status")
 def status(
     api_url: str = typer.Option("http://localhost:8000", "--api"),
-    refresh_rate: float = typer.Option(1.0, "--refresh", help="Refresh rate in seconds"),
+    refresh_rate: float = typer.Option(
+        1.0, "--refresh", min=0.1, help="Refresh rate in seconds (must be >= 0.1)"
+    ),
     api_key: str | None = API_KEY_OPTION,
 ) -> None:
     """[bold]Show[/bold] a real-time live dashboard of AgentWatch runtime status."""
@@ -981,7 +985,9 @@ def status(
         def generate_dashboard(data, error_msg=None):
             if error_msg:
                 return Panel(
-                    f"[red]{error_msg}[/red]", title="AgentWatch Error", border_style="red"
+                    f"[red]{error_msg}[/red]",
+                    title="AgentWatch Error",
+                    border_style="red",
                 )
 
             # Create sub-panels
@@ -1002,7 +1008,9 @@ def status(
             resources.add_row("Total Tokens:", f"[bold]{tokens:,}[/bold]")
             resources.add_row("Est. Cost:", f"[green]${cost:.4f}[/green]")
             p2 = Panel(
-                resources, title="[magenta]Resource Utilization[/magenta]", border_style="magenta"
+                resources,
+                title="[magenta]Resource Utilization[/magenta]",
+                border_style="magenta",
             )
 
             safety_stats = data.get("safety_stats", {})
@@ -1013,7 +1021,9 @@ def status(
             pipeline.add_row("Event T-Put:", f"{eb_stats.get('total_published', 0):,} processed")
             pipeline.add_row("Subscribers:", f"{eb_stats.get('active_subscribers', 0)}")
             p3 = Panel(
-                pipeline, title="[yellow]Safety & Event Pipeline[/yellow]", border_style="yellow"
+                pipeline,
+                title="[yellow]Safety & Event Pipeline[/yellow]",
+                border_style="yellow",
             )
 
             layout = Layout()
@@ -1034,7 +1044,9 @@ def status(
 
         async with httpx.AsyncClient() as client:
             with Live(
-                generate_dashboard({}), refresh_per_second=1 / refresh_rate, console=console
+                generate_dashboard({}),
+                refresh_per_second=1 / refresh_rate,
+                console=console,
             ) as live:
                 while True:
                     try:
@@ -1231,11 +1243,15 @@ def compare(
         table.add_column("Session B", justify="center", width=12)
 
         table.add_row(
-            "Overall Confidence", format_score(m1["overall"]), format_score(m2["overall"])
+            "Overall Confidence",
+            format_score(m1["overall"]),
+            format_score(m2["overall"]),
         )
         table.add_row("Hallucination Risk", m1["hrisk"], m2["hrisk"])
         table.add_row(
-            "Goal Alignment", format_score(m1["alignment"]), format_score(m2["alignment"])
+            "Goal Alignment",
+            format_score(m1["alignment"]),
+            format_score(m2["alignment"]),
         )
         table.add_row("Failed Steps", str(m1["failed"]), str(m2["failed"]))
         table.add_row("Safety Blocks", str(m1["blocks"]), str(m2["blocks"]))
@@ -1537,7 +1553,9 @@ def _print_live_event(event) -> None:
         if event.safety:
             rc = _risk_color(event.safety.risk_level.value)
             risk_str = f" [{rc}][{event.safety.risk_level.value}][/{rc}]"
-        status_str = " [red][BLOCKED][/red]" if event.is_blocked else ""
+        status_str = ""
+        if event.is_blocked:
+            status_str = " [red][BLOCKED][/red]"
         console.print(f"[dim]{ts}[/dim] {icon} [bold]{name}[/bold]{risk_str}{status_str}")
         if cmd:
             console.print(f"         [dim]{cmd}[/dim]")
@@ -1676,7 +1694,6 @@ def session_rollback(
     """[bold]Rollback[/bold] a session to a specific step."""
 
     async def _run() -> None:
-
         from agentwatch.rollback.engine import RollbackEngine, RollbackStatus
 
         engine = RollbackEngine()
@@ -1807,7 +1824,8 @@ def session_prune(
         table.add_row("Database Sessions", str(data.get("pruned_db_sessions", 0)))
         table.add_row("Trace Files (.json)", str(data.get("pruned_trace_files", 0)))
         table.add_row(
-            "Checkpoints (Snapshots + Metadata)", str(data.get("pruned_checkpoint_files", 0))
+            "Checkpoints (Snapshots + Metadata)",
+            str(data.get("pruned_checkpoint_files", 0)),
         )
 
         console.print(table)
@@ -1833,3 +1851,41 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+@app.command(name="doctor")
+def doctor() -> None:
+    """[bold]Doctor[/bold]: Check AgentWatch installation health."""
+    import os
+    import shutil
+    import subprocess  # nosec B404
+
+    table = Table(title="Health Diagnostics")
+    table.add_column("Component", style="cyan")
+    table.add_column("Status", style="green")
+
+    db_path = Path("agentwatch.db")
+    if db_path.exists():
+        table.add_row("Database", "OK")
+    else:
+        table.add_row("Database", "[yellow]Not initialized[/yellow]")
+
+    if "AGENTWATCH_API_KEY" in os.environ:
+        table.add_row("API Key", "Configured")
+    else:
+        table.add_row("API Key", "[red]Missing[/red]")
+
+    try:
+        docker_path = shutil.which("docker")
+        if docker_path:
+            res = subprocess.run([docker_path, "info"], capture_output=True, check=False)  # noqa: S603 # nosec B603
+            if res.returncode == 0:
+                table.add_row("Docker", "Running")
+            else:
+                table.add_row("Docker", "[red]Not running[/red]")
+        else:
+            table.add_row("Docker", "[red]Not installed[/red]")
+    except Exception:
+        table.add_row("Docker", "[red]Not installed[/red]")
+
+    console.print(table)

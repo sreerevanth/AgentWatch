@@ -34,18 +34,21 @@ export default function Stats() {
     if (prefersReduced) return;
 
     const ctx = gsap.context(() => {
-      gsap.from(".stat-card", {
-        y: 50,
-        opacity: 0,
-        duration: 0.8,
-        stagger: 0.15,
-        ease: "power3.out",
-        scrollTrigger: {
-          trigger: sectionRef.current,
-          start: "top 80%",
-          once: true,
-        },
-      });
+      gsap.fromTo(".stat-card", 
+        { y: 50, opacity: 0 },
+        {
+          y: 0,
+          opacity: 1,
+          duration: 0.8,
+          stagger: 0.15,
+          ease: "power3.out",
+          scrollTrigger: {
+            trigger: sectionRef.current,
+            start: "top 80%",
+            once: true,
+          },
+        }
+      );
 
       // Counter animations
       stats.forEach((stat, i) => {

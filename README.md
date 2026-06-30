@@ -302,6 +302,22 @@ if checked.status == ExecutionStatus.BLOCKED:
 
 Blocks **40+ dangerous patterns pre-execution**, not post-hoc logging.
 
+### 🔒 Secure Subprocess Wrapper
+
+To prevent command-injection risks when invoking external utilities in CLI extensions or scripts, use the central secure command execution utility:
+
+```python
+from agentwatch.cli._utils import run, CommandError
+
+try:
+    # Runs securely (shell=False) with strict argument character whitelisting
+    result = run(["echo", "hello world"])
+    print(result.stdout)
+except CommandError as exc:
+    print(f"Command execution failed: {exc}")
+```
+
+
 ### ⏪ One-Click Rollback
 
 ```bash
