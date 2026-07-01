@@ -39,6 +39,7 @@ DUMMY_REPLAY = {
     },
 }
 
+
 @pytest.fixture
 def mock_httpx_client():
     with patch("httpx.AsyncClient") as mock_client_cls:
@@ -76,7 +77,9 @@ def test_export_md(mock_httpx_client, tmp_path):
     mock_instance, mock_response = mock_httpx_client
     out_file = tmp_path / "out.md"
 
-    result = runner.invoke(app, ["session", "export", "abc-123", "--format", "md", "--output", str(out_file)])
+    result = runner.invoke(
+        app, ["session", "export", "abc-123", "--format", "md", "--output", str(out_file)]
+    )
     assert result.exit_code == 0
     assert "out.md created successfully" in result.stdout
 

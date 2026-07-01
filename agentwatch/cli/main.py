@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import platform
+import sys
 import time
 from enum import Enum
 from pathlib import Path
@@ -31,13 +33,14 @@ app = typer.Typer(
     add_completion=True,
     rich_markup_mode="rich",
 )
+session_app = typer.Typer(
+    name="session", help="Manage and inspect agent sessions", no_args_is_help=True
+)
+app.add_typer(session_app)
 app.add_typer(mcp_app, name="mcp")
 
 console = Console()
 
-session_app = typer.Typer(
-    name="session", help="Manage and inspect agent sessions", no_args_is_help=True
-)
 server_app = typer.Typer(
     name="server", help="Manage the AgentWatch API server", no_args_is_help=True
 )
@@ -48,7 +51,6 @@ safety_app = typer.Typer(
     no_args_is_help=True,
 )
 
-app.add_typer(session_app)
 app.add_typer(server_app)
 app.add_typer(safety_app)
 
@@ -57,9 +59,24 @@ _IN_REPL = False
 
 
 @app.callback(invoke_without_command=True)
-def main_callback(ctx: typer.Context):
+def main_callback(
+    ctx: typer.Context,
+    version: bool = typer.Option(False, "--version", "-V", help="Show version and exit."),
+):
     """AgentWatch CLI with ASCII Animation"""
     global _IN_REPL
+
+    if version:
+        import platform
+        import sys
+
+        from agentwatch import __version__
+
+        console.print(f"AgentWatch CLI version: {__version__}")
+        console.print(f"Python: {sys.version.split()[0]}")
+        console.print(f"Platform: {platform.platform()}")
+        raise typer.Exit()
+
     if _IN_REPL:
         return
 
@@ -126,7 +143,9 @@ def _start_repl_session():
                 break
 
             if cmd_lower in ("clear", "cls"):
-                os.system("cls" if os.name == "nt" else "clear")  # nosec # noqa: S605, S607
+                os.system(  # noqa: S605, S607
+                    "cls" if os.name == "nt" else "clear"
+                )  # nosec
                 continue
 
             args = shlex.split(cmd_line)
@@ -882,7 +901,9 @@ def top(
         def generate_dashboard(data, error_msg=None):
             if error_msg:
                 return Panel(
-                    f"[red]{error_msg}[/red]", title="AgentWatch Top Error", border_style="red"
+                    f"[red]{error_msg}[/red]",
+                    title="AgentWatch Top Error",
+                    border_style="red",
                 )
 
             table = Table(show_header=True, header_style="bold magenta", expand=True)
@@ -910,7 +931,9 @@ def top(
                 )
 
             return Panel(
-                table, title="[cyan]AgentWatch Top - Active Agent Loops[/cyan]", border_style="cyan"
+                table,
+                title="[cyan]AgentWatch Top - Active Agent Loops[/cyan]",
+                border_style="cyan",
             )
 
         async def poll_loop(live_display: Any) -> None:
@@ -931,7 +954,8 @@ def top(
                     await asyncio.sleep(refresh_rate)
 
         with Live(
-            generate_dashboard({"top_sessions": []}), refresh_per_second=1.0 / refresh_rate
+            generate_dashboard({"top_sessions": []}),
+            refresh_per_second=1.0 / refresh_rate,
         ) as live:
             await poll_loop(live)
 
@@ -948,7 +972,9 @@ def top(
 @server_app.command(name="status")
 def status(
     api_url: str = typer.Option("http://localhost:8000", "--api"),
-    refresh_rate: float = typer.Option(1.0, "--refresh", help="Refresh rate in seconds"),
+    refresh_rate: float = typer.Option(
+        1.0, "--refresh", min=0.1, help="Refresh rate in seconds (must be >= 0.1)"
+    ),
     api_key: str | None = API_KEY_OPTION,
 ) -> None:
     """[bold]Show[/bold] a real-time live dashboard of AgentWatch runtime status."""
@@ -981,7 +1007,9 @@ def status(
         def generate_dashboard(data, error_msg=None):
             if error_msg:
                 return Panel(
-                    f"[red]{error_msg}[/red]", title="AgentWatch Error", border_style="red"
+                    f"[red]{error_msg}[/red]",
+                    title="AgentWatch Error",
+                    border_style="red",
                 )
 
             # Create sub-panels
@@ -1002,7 +1030,9 @@ def status(
             resources.add_row("Total Tokens:", f"[bold]{tokens:,}[/bold]")
             resources.add_row("Est. Cost:", f"[green]${cost:.4f}[/green]")
             p2 = Panel(
-                resources, title="[magenta]Resource Utilization[/magenta]", border_style="magenta"
+                resources,
+                title="[magenta]Resource Utilization[/magenta]",
+                border_style="magenta",
             )
 
             safety_stats = data.get("safety_stats", {})
@@ -1013,7 +1043,9 @@ def status(
             pipeline.add_row("Event T-Put:", f"{eb_stats.get('total_published', 0):,} processed")
             pipeline.add_row("Subscribers:", f"{eb_stats.get('active_subscribers', 0)}")
             p3 = Panel(
-                pipeline, title="[yellow]Safety & Event Pipeline[/yellow]", border_style="yellow"
+                pipeline,
+                title="[yellow]Safety & Event Pipeline[/yellow]",
+                border_style="yellow",
             )
 
             layout = Layout()
@@ -1034,7 +1066,9 @@ def status(
 
         async with httpx.AsyncClient() as client:
             with Live(
-                generate_dashboard({}), refresh_per_second=1 / refresh_rate, console=console
+                generate_dashboard({}),
+                refresh_per_second=1 / refresh_rate,
+                console=console,
             ) as live:
                 while True:
                     try:
@@ -1231,11 +1265,15 @@ def compare(
         table.add_column("Session B", justify="center", width=12)
 
         table.add_row(
-            "Overall Confidence", format_score(m1["overall"]), format_score(m2["overall"])
+            "Overall Confidence",
+            format_score(m1["overall"]),
+            format_score(m2["overall"]),
         )
         table.add_row("Hallucination Risk", m1["hrisk"], m2["hrisk"])
         table.add_row(
-            "Goal Alignment", format_score(m1["alignment"]), format_score(m2["alignment"])
+            "Goal Alignment",
+            format_score(m1["alignment"]),
+            format_score(m2["alignment"]),
         )
         table.add_row("Failed Steps", str(m1["failed"]), str(m2["failed"]))
         table.add_row("Safety Blocks", str(m1["blocks"]), str(m2["blocks"]))
@@ -1364,6 +1402,145 @@ def redteam(
 
 
 # ─────────────────────────────────────────────
+# upgrade command — CLI-to-Web monetization handoff
+# ─────────────────────────────────────────────
+
+
+def _license_public_key() -> str | None:
+    """Resolve the PEM public key used to verify entitlements, if configured.
+
+    Read from ``AGENTWATCH_LICENSE_PUBLIC_KEY`` (inline PEM) or, failing that,
+    ``AGENTWATCH_LICENSE_PUBLIC_KEY_FILE`` (path to a PEM file). Returns ``None``
+    when no key is configured, in which case the CLI behaves as free tier.
+    """
+    import os
+
+    inline = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY")
+    if inline:
+        return inline
+    key_file = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY_FILE")
+    if key_file:
+        try:
+            return Path(key_file).read_text(encoding="utf-8")
+        except FileNotFoundError:
+            pass
+    return None
+
+
+def _active_entitlement():
+    """Return the verified active entitlement, or ``None`` for free tier."""
+    from agentwatch.security.entitlement_store import load_entitlement
+
+    public_key = _license_public_key()
+    if public_key is None:
+        return None
+    return load_entitlement(public_key)
+
+
+def _ensure_premium(feature: str):
+    """Gate a premium feature: return the entitlement or prompt to upgrade.
+
+    Raises ``typer.Exit`` (code 1) with an upgrade prompt when the current
+    install is not entitled to ``feature``.
+    """
+    entitlement = _active_entitlement()
+    if entitlement is not None and entitlement.grants(feature):
+        return entitlement
+    console.print(
+        f"[yellow]'{feature}' is a premium feature.[/yellow] "
+        "Run [bold cyan]agentwatch upgrade[/bold cyan] to unlock it."
+    )
+    raise typer.Exit(1)
+
+
+@app.command()
+def upgrade(
+    activate: str | None = typer.Option(
+        None,
+        "--activate",
+        help="Store the entitlement token returned by the checkout page.",
+    ),
+    show_status: bool = typer.Option(
+        False, "--status", help="Show the current entitlement status and exit."
+    ),
+    no_browser: bool = typer.Option(
+        False, "--no-browser", help="Print the checkout URL instead of opening a browser."
+    ),
+    base_url: str | None = typer.Option(
+        None, "--checkout-url", help="Override the checkout portal base URL."
+    ),
+    dry_run: bool = typer.Option(
+        False, "--dry-run", help="Preview the handoff without opening a browser."
+    ),
+) -> None:
+    """[bold]Upgrade[/bold] to AgentWatch Premium via the secure web checkout."""
+    from agentwatch.security.checkout import DEFAULT_CHECKOUT_URL, checkout_url, new_session
+
+    if show_status:
+        entitlement = _active_entitlement()
+        if entitlement is None:
+            console.print("[dim]Tier:[/dim] [yellow]Free[/yellow] — no active entitlement.")
+        else:
+            console.print(
+                Panel(
+                    f"[dim]Tier:[/dim]    [green]{entitlement.tier}[/green]\n"
+                    f"[dim]Account:[/dim] {entitlement.subject}\n"
+                    f"[dim]Expires:[/dim] {entitlement.expires_at:%Y-%m-%d}",
+                    title="AgentWatch Premium",
+                    border_style="green",
+                )
+            )
+        raise typer.Exit(0)
+
+    if activate is not None:
+        public_key = _license_public_key()
+        if public_key is None:
+            console.print(
+                "[red]No license public key configured.[/red] Set "
+                "AGENTWATCH_LICENSE_PUBLIC_KEY before activating."
+            )
+            raise typer.Exit(1)
+        from agentwatch.security.entitlement_store import store_entitlement_token
+        from agentwatch.security.license import LicenseError, verify_entitlement
+
+        try:
+            entitlement = verify_entitlement(activate, public_key)
+        except LicenseError as exc:
+            console.print(f"[red]Entitlement rejected:[/red] {exc}")
+            raise typer.Exit(1)
+        path = store_entitlement_token(activate)
+        console.print(f"[green]Premium activated[/green] ({entitlement.tier}) — stored at {path}.")
+        raise typer.Exit(0)
+
+    session = new_session()
+    url = checkout_url(session, base=base_url or DEFAULT_CHECKOUT_URL)
+
+    if dry_run:
+        _dry_run_print("open browser to checkout", f"URL: {url}")
+        console.print("\n[yellow]Dry-run complete. No browser was opened.[/yellow]")
+        raise typer.Exit(0)
+
+    console.print(
+        Panel(
+            "[bold cyan]AgentWatch Premium[/bold cyan]\n"
+            "Complete checkout in your browser, then run\n"
+            "[bold]agentwatch upgrade --activate <token>[/bold] with the token shown there.",
+            border_style="cyan",
+        )
+    )
+
+    if no_browser:
+        console.print(f"\nCheckout URL: [link]{url}[/link]")
+    else:
+        import webbrowser
+
+        if webbrowser.open(url):
+            console.print(f"\n[green]Opened checkout in your browser.[/green]\n[dim]{url}[/dim]")
+        else:
+            console.print(f"\nCould not open a browser. Visit: [link]{url}[/link]")
+
+
+# ─────────────────────────────────────────────
 # Print helpers
 # ---------------------------------------------
 
@@ -1398,7 +1575,9 @@ def _print_live_event(event) -> None:
         if event.safety:
             rc = _risk_color(event.safety.risk_level.value)
             risk_str = f" [{rc}][{event.safety.risk_level.value}][/{rc}]"
-        status_str = " [red][BLOCKED][/red]" if event.is_blocked else ""
+        status_str = ""
+        if event.is_blocked:
+            status_str = " [red][BLOCKED][/red]"
         console.print(f"[dim]{ts}[/dim] {icon} [bold]{name}[/bold]{risk_str}{status_str}")
         if cmd:
             console.print(f"         [dim]{cmd}[/dim]")
@@ -1537,7 +1716,6 @@ def session_rollback(
     """[bold]Rollback[/bold] a session to a specific step."""
 
     async def _run() -> None:
-
         from agentwatch.rollback.engine import RollbackEngine, RollbackStatus
 
         engine = RollbackEngine()
@@ -1668,7 +1846,8 @@ def session_prune(
         table.add_row("Database Sessions", str(data.get("pruned_db_sessions", 0)))
         table.add_row("Trace Files (.json)", str(data.get("pruned_trace_files", 0)))
         table.add_row(
-            "Checkpoints (Snapshots + Metadata)", str(data.get("pruned_checkpoint_files", 0))
+            "Checkpoints (Snapshots + Metadata)",
+            str(data.get("pruned_checkpoint_files", 0)),
         )
 
         console.print(table)
@@ -1684,6 +1863,33 @@ def session_prune(
 
 
 # ─────────────────────────────────────────────
+# Version
+# ---------------------------------------------
+
+
+@app.command()
+def version() -> None:
+    """Show AgentWatch version and diagnostics."""
+    from agentwatch import __version__
+
+    table = Table(title="AgentWatch Diagnostics", box=box.ROUNDED)
+    table.add_column("Key", style="cyan")
+    table.add_column("Value")
+
+    table.add_row("Version", __version__)
+    table.add_row("Python", sys.version.split()[0])
+    table.add_row("Platform", platform.platform())
+    table.add_row("Executable", sys.executable)
+
+    try:
+        table.add_row("Package Location", str(Path(__file__).resolve().parent.parent.parent))
+    except Exception:
+        table.add_row("Package Location", "N/A")
+
+    console.print(table)
+
+
+# ─────────────────────────────────────────────
 # Entrypoint
 # ---------------------------------------------
 
@@ -1694,3 +1900,41 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+@app.command(name="doctor")
+def doctor() -> None:
+    """[bold]Doctor[/bold]: Check AgentWatch installation health."""
+    import os
+    import shutil
+    import subprocess  # nosec B404
+
+    table = Table(title="Health Diagnostics")
+    table.add_column("Component", style="cyan")
+    table.add_column("Status", style="green")
+
+    db_path = Path("agentwatch.db")
+    if db_path.exists():
+        table.add_row("Database", "OK")
+    else:
+        table.add_row("Database", "[yellow]Not initialized[/yellow]")
+
+    if "AGENTWATCH_API_KEY" in os.environ:
+        table.add_row("API Key", "Configured")
+    else:
+        table.add_row("API Key", "[red]Missing[/red]")
+
+    try:
+        docker_path = shutil.which("docker")
+        if docker_path:
+            res = subprocess.run([docker_path, "info"], capture_output=True, check=False)  # noqa: S603 # nosec B603
+            if res.returncode == 0:
+                table.add_row("Docker", "Running")
+            else:
+                table.add_row("Docker", "[red]Not running[/red]")
+        else:
+            table.add_row("Docker", "[red]Not installed[/red]")
+    except Exception:
+        table.add_row("Docker", "[red]Not installed[/red]")
+
+    console.print(table)

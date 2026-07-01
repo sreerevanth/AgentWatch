@@ -163,6 +163,10 @@ class TraceCollector:
                 self._traces[event.session_id] = trace
                 self._session_index[event.session_id] = session
 
+                # Seed session metadata from the first event's metadata
+                if event.metadata:
+                    trace.session.metadata.update(event.metadata)
+
                 if len(self._traces) > self._max_traces:
                     oldest_key = next(iter(self._traces))
                     del self._traces[oldest_key]

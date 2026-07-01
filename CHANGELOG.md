@@ -11,6 +11,7 @@ file and uses it as the GitHub Release body, so keep each version's notes here.
 ## [Unreleased]
 
 ### Added
+- Enterprise Telemetry (OBS-008): OTLP export of agent reasoning traces mapping to OpenTelemetry span hierarchy, ensuring compatibility with Grafana, Jaeger, and Datadog via `BatchSpanProcessor`.
 - Scheduled red-team automation (issue #399): externalized the attack corpus to `agentwatch/security/payloads.json` (loadable via `load_corpus()`), plus a Celery task `agentwatch.tasks.run_redteam` that runs the red-team harness on a schedule and returns a JSON vulnerability report (bypassed = guardrails that failed).
 - PII/PHI redaction for telemetry (issue #398, CMP-003/004): `agentwatch.security.redaction` masks SSNs, emails, medical diagnoses, and similar sensitive data as `[REDACTED]` (Presidio when installed via the `redaction` extra, else the GDPR/HIPAA regex detectors). Opt-in on the watcher (`GenericAdapter(redact=True)`) scrubs tool-call payloads before they are published/persisted, plus a `GET /api/v1/governance/eu-ai-act-report` Article 15 conformity export.
 - Cost-aware model router (`agentwatch.cost.complexity_router`): scores task complexity and routes to the cheapest model capable of handling it — simple subtasks to cheap models (e.g. Gemini Flash), advanced models reserved for complex work — with a budget ceiling and manual override, reusing the `DEFAULT_PRICING` table.

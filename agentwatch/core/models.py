@@ -39,6 +39,7 @@ class SessionRecord(Base):
     __tablename__ = "agent_sessions"
 
     session_id = Column(String(36), primary_key=True)
+    tenant_id = Column(String(36), index=True, nullable=True)  # Cloud multi-tenancy
     agent_id = Column(String(128), nullable=False, index=True)
     agent_name = Column(String(256))
     framework = Column(String(64), nullable=False, index=True)
@@ -58,6 +59,7 @@ class SessionRecord(Base):
     __table_args__ = (
         Index("ix_sessions_started_at", "started_at"),
         Index("ix_sessions_framework_status", "framework", "status"),
+        Index("ix_sessions_tenant_id", "tenant_id"),
     )
 
 
@@ -65,6 +67,7 @@ class EventRecord(Base):
     __tablename__ = "agent_events"
 
     event_id = Column(String(36), primary_key=True)
+    tenant_id = Column(String(36), index=True, nullable=True)  # Cloud multi-tenancy
     session_id = Column(
         String(36), ForeignKey("agent_sessions.session_id", ondelete="CASCADE"), index=True
     )
@@ -142,6 +145,7 @@ class MemoryEntryRecord(Base):
     __tablename__ = "memory_entries"
 
     entry_id = Column(String(36), primary_key=True)
+    tenant_id = Column(String(36), index=True, nullable=True)  # Cloud multi-tenancy
     agent_id = Column(String(128), nullable=False, index=True)
     memory_type = Column(String(32), nullable=False, index=True)
     content = Column(Text, nullable=False)
@@ -327,6 +331,138 @@ class Repository:
         result = await self._session.execute(d)
         await self._session.flush()
         return result.rowcount
+
+
+class TenantRepository:
+    """Wrapper around Repository that enforces tenant_id isolation.
+
+    In cloud mode, every query is scoped to the provided tenant_id,
+    preventing cross-tenant data access.  In legacy (single-tenant) mode,
+    tenant_id filtering is skipped.
+    """
+
+    def __init__(self, repo: Repository, tenant_id: str | None = None):
+        self._repo = repo
+        self._tenant_id = tenant_id
+
+    @property
+    def _session(self) -> AsyncSession:
+        return self._repo._session  # noqa: SLF001
+
+    def _scope(self, q: Any) -> Any:
+        """Add tenant_id filter to a SQLAlchemy select query if in cloud mode."""
+        if self._tenant_id:
+            # Check if the query's entity has a tenant_id column
+            from sqlalchemy import inspect as sa_inspect
+
+            for entity in q.column_descriptions:
+                mapper = sa_inspect(entity["entity"])
+                if hasattr(mapper.c, "tenant_id"):
+                    return q.where(mapper.c.tenant_id == self._tenant_id)
+        return q
+
+    async def upsert_session(self, session_data: dict[str, Any]) -> None:
+        if self._tenant_id:
+            # Always enforce tenant_id — overwrite any mismatched value
+            session_data["tenant_id"] = self._tenant_id
+        await self._repo.upsert_session(session_data)
+
+    async def insert_event(self, event_data: dict[str, Any]) -> None:
+        if self._tenant_id:
+            # Always enforce tenant_id — overwrite any mismatched value
+            event_data["tenant_id"] = self._tenant_id
+        await self._repo.insert_event(event_data)
+
+    async def get_session(self, session_id: str) -> SessionRecord | None:
+        record = await self._repo.get_session(session_id)
+        if record and self._tenant_id and record.tenant_id != self._tenant_id:
+            return None
+        return record
+
+    async def get_events(
+        self,
+        session_id: str,
+        event_type: str | None = None,
+        limit: int = 1000,
+    ) -> list[EventRecord]:
+        if self._tenant_id:
+            from sqlalchemy import select
+
+            q = select(EventRecord).where(
+                EventRecord.session_id == session_id,
+                EventRecord.tenant_id == self._tenant_id,
+            )
+            if event_type:
+                q = q.where(EventRecord.event_type == event_type)
+            q = q.order_by(EventRecord.step_number).limit(limit)
+            result = await self._session.execute(q)
+            return list(result.scalars())
+        return await self._repo.get_events(session_id, event_type, limit)
+
+    async def get_recent_sessions(
+        self,
+        limit: int = 50,
+        framework: str | None = None,
+        status: str | None = None,
+    ) -> list[SessionRecord]:
+        if self._tenant_id:
+            from sqlalchemy import select
+
+            q = (
+                select(SessionRecord)
+                .where(SessionRecord.tenant_id == self._tenant_id)
+                .order_by(SessionRecord.started_at.desc())
+            )
+            if framework:
+                q = q.where(SessionRecord.framework == framework)
+            if status:
+                q = q.where(SessionRecord.status == status)
+            q = q.limit(limit)
+            result = await self._session.execute(q)
+            return list(result.scalars())
+        return await self._repo.get_recent_sessions(limit, framework, status)
+
+    async def get_blocked_events(self, limit: int = 100) -> list[EventRecord]:
+        if self._tenant_id:
+            from sqlalchemy import select
+
+            q = (
+                select(EventRecord)
+                .where(
+                    EventRecord.safety_blocked,
+                    EventRecord.tenant_id == self._tenant_id,
+                )
+                .order_by(EventRecord.timestamp.desc())
+                .limit(limit)
+            )
+            result = await self._session.execute(q)
+            return list(result.scalars())
+        return await self._repo.get_blocked_events(limit)
+
+    async def get_sessions_older_than(self, cutoff: datetime) -> list[str]:
+        session_ids = await self._repo.get_sessions_older_than(cutoff)
+        if not self._tenant_id or not session_ids:
+            return session_ids
+        # Filter to only this tenant's sessions
+        from sqlalchemy import select
+
+        q = select(SessionRecord.session_id).where(
+            SessionRecord.session_id.in_(session_ids),
+            SessionRecord.tenant_id == self._tenant_id,
+        )
+        result = await self._session.execute(q)
+        return list(result.scalars())
+
+    async def prune_sessions(self, session_ids: list[str]) -> int:
+        if not session_ids:
+            return 0
+        # Verify tenant ownership before pruning
+        if self._tenant_id:
+            owned_ids = await self.get_sessions_older_than(datetime.max.replace(tzinfo=UTC))
+            # Intersect requested ids with owned ids
+            owned_set = set(owned_ids)
+            session_ids = [sid for sid in session_ids if sid in owned_set]
+        return await self._repo.prune_sessions(session_ids)
 
 
 # ─────────────────────────────────────────────

@@ -4,6 +4,8 @@
   --bg: #0a0a0a;
   --accent: #e8ff47;
   --secondary: #bcd20e;
+  --cyan: #00f0ff;
+  --cyan-dim: rgba(0, 240, 255, 0.2);
   --text: #e5e2e1;
   --muted: #888;
 }
@@ -58,7 +60,7 @@ code, pre, .mono {
 
 /* Gradient text utility */
 .gradient-text {
-  background: linear-gradient(135deg, #e8ff47, #bcd20e);
+  background: linear-gradient(135deg, var(--cyan), var(--accent));
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
