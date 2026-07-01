@@ -5,6 +5,7 @@ FastAPI-based REST API for the observability dashboard, CLI, and integrations.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -14,6 +15,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+import redis.asyncio as aioredis
 from fastapi import (
     Depends,
     FastAPI,
@@ -30,6 +32,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, Response
 from prometheus_client import generate_latest
 from pydantic import BaseModel, Field
+from sqlalchemy import text
 
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
 from agentwatch.api.auth import require_permission
@@ -751,10 +754,10 @@ async def system_status(_auth: None = Depends(_require_api_key)) -> dict[str, An
 
 
 @app.get("/health")
-async def health(request: Request) -> dict[str, Any]:
+async def health(request: Request) -> JSONResponse:
     _limiter.check(_rate_limit_key(request, "r"), RATE_READ, request)
-    return {
-        "status": "ok",
+
+    checks: dict[str, Any] = {
         "version": "0.2.0",
         "timestamp": datetime.now(UTC).isoformat(),
         "database_connected": _db_session_factory is not None,
@@ -763,6 +766,45 @@ async def health(request: Request) -> dict[str, Any]:
         "safety": _safety_engine.stats(),
         "cost": _cost_tracker.stats(),
     }
+    degraded = False
+
+    if _db_session_factory is None:
+        checks["database"] = {"status": "in_memory"}
+    else:
+        try:
+
+            async def _ping_db():
+                async with _db_session_factory() as db:
+                    await db.execute(text("SELECT 1"))
+
+            await asyncio.wait_for(_ping_db(), timeout=10.0)
+            checks["database"] = {"status": "ok"}
+        except Exception:
+            degraded = True
+            checks["database"] = {"status": "degraded", "error": "Database is Unavailable"}
+
+    redis_url = os.getenv("REDIS_URL")
+    if redis_url:
+        try:
+
+            async def _ping_redis():
+                r = aioredis.from_url(redis_url)
+                try:
+                    await r.ping()
+                finally:
+                    await r.aclose()
+
+            await asyncio.wait_for(_ping_redis(), timeout=10.0)
+            checks["redis"] = {"status": "ok"}
+        except Exception:
+            degraded = True
+            checks["redis"] = {"status": "degraded", "error": "Redis is Unavailable"}
+    else:
+        checks["redis"] = {"status": "not_configured"}
+
+    checks["status"] = "degraded" if degraded else "ok"
+    http_status = 503 if degraded else 200
+    return JSONResponse(content=checks, status_code=http_status)
 
 
 @app.get("/metrics")
