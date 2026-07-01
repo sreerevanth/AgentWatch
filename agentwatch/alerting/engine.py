@@ -32,14 +32,23 @@ class AlertingEngine:
             pagerduty_webhook_url=self._config.pagerduty_webhook_url,
             pagerduty_routing_key=self._config.pagerduty_routing_key,
         )
+        from agentwatch.alerting.router import AlertRouter
+        from agentwatch.alerting.filters import AlertFilter
+        self._router = AlertRouter()
+        self._filter = AlertFilter()
 
     async def alert_event(self, event: AgentEvent) -> dict[str, bool]:
+        if self._filter.should_suppress(event):
+            return {"slack": False, "pagerduty": False}
+
         payload = self._build_payload(event)
         sent = {"slack": False, "pagerduty": False}
-        if self._config.slack_webhook_url:
+        destinations = self._router.determine_destinations(event)
+
+        if "slack" in destinations and self._config.slack_webhook_url:
             sent["slack"] = await self._post(self._config.slack_webhook_url, payload["slack"])
-        risk_level = event.safety.risk_level if event.safety else RiskLevel.SAFE
-        if self._config.pagerduty_webhook_url and self._should_page(risk_level):
+        
+        if "pagerduty" in destinations and self._config.pagerduty_webhook_url:
             sent["pagerduty"] = await self._post(
                 self._config.pagerduty_webhook_url,
                 payload["pagerduty"],
