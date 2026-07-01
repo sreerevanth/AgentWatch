@@ -1938,3 +1938,55 @@ def doctor() -> None:
         table.add_row("Docker", "[red]Not installed[/red]")
 
     console.print(table)
+
+# ─────────────────────────────────────────────
+# export-csv command
+# ─────────────────────────────────────────────
+
+@session_app.command(name="export-csv")
+def export_csv(
+    session_id: str = typer.Argument(..., help="ID of the session to export"),
+    out: str = typer.Option("report.csv", "--out", help="Custom output file path"),
+    api_url: str = typer.Option("http://localhost:8000", "--api"),
+    api_key: str | None = API_KEY_OPTION,
+) -> None:
+    """[bold]Export-csv[/bold] a session replay to a CSV file."""
+
+    async def _run() -> None:
+        try:
+            import httpx
+            import csv
+        except ImportError:
+            console.print("[red]httpx not installed.[/red]")
+            raise typer.Exit(1)
+
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(
+                    f"{api_url}/api/v1/sessions/{session_id}/replay",
+                    headers=_api_headers(api_key),
+                    timeout=10.0,
+                )
+                if resp.status_code == 404:
+                    console.print(f"[red]Session {session_id} not found.[/red]")
+                    raise typer.Exit(1)
+                resp.raise_for_status()
+            except Exception as exc:
+                console.print(f"[red]API error: {exc}[/red]")
+                raise typer.Exit(1)
+
+        data = resp.json()
+        steps = data.get("steps", [])
+
+        try:
+            with open(out, "w", newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(["step", "action", "status"])
+                for i, step in enumerate(steps):
+                    writer.writerow([i, step.get("action", ""), step.get("status", "")])
+            console.print(f"[green]{out} created successfully[/green]")
+        except PermissionError:
+            console.print(f"[red]Cannot write to {out}. Please ensure the file is closed and try again.[/red]")
+            raise typer.Exit(1)
+
+    asyncio.run(_run())
