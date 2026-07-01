@@ -25,10 +25,10 @@ from agentwatch.core.schema import (
     ToolCallData,
 )
 from agentwatch.security.exfiltration import detect as detect_exfil
-from agentwatch.security.owasp import validate_owasp, OwaspVector
+from agentwatch.security.owasp import OwaspVector, _flatten_values, validate_owasp
 from agentwatch.security.report import generate, to_pdf_bytes
 from agentwatch.security.sandbox import LiveSandbox
-from agentwatch.security.owasp import _flatten_values
+
 
 def _tool_event(tool: str, raw: str, args: dict | None = None) -> AgentEvent:
     return AgentEvent(
