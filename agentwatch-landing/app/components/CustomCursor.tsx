@@ -77,53 +77,33 @@ export default function CustomCursor() {
 
   return (
     <>
-      {/* Outer trailing ring */}
+      {/* Trailing glow/ring */}
       <motion.div
-        className="fixed top-0 left-0 w-10 h-10 rounded-full border pointer-events-none z-[9998] flex items-center justify-center mix-blend-screen"
+        className="fixed top-0 left-0 w-12 h-12 rounded-full border border-[#00f0ff]/40 pointer-events-none z-[9998] mix-blend-screen"
         animate={{
-          x: mousePosition.x - 20,
-          y: mousePosition.y - 20,
-          scale: isClicking ? 0.8 : isHovering ? 1.8 : 1,
+          x: mousePosition.x - 24,
+          y: mousePosition.y - 24,
+          scale: isClicking ? 0.8 : isHovering ? 1.5 : 1,
           opacity: isVisible ? 1 : 0,
-          backgroundColor: isHovering ? "rgba(0, 240, 255, 0.1)" : "rgba(0, 0, 0, 0)",
-          borderColor: isHovering ? "rgba(0, 240, 255, 0.8)" : "rgba(255, 255, 255, 0.2)",
+          backgroundColor: isHovering ? "rgba(0, 240, 255, 0.05)" : "rgba(0,0,0,0)",
+          borderColor: isHovering ? "rgba(232, 255, 71, 0.6)" : "rgba(0, 240, 255, 0.4)",
         }}
-        transition={{ 
-          type: "spring", 
-          stiffness: 150, 
-          damping: 15, 
-          mass: 0.6 
-        }}
-      >
-        {/* Subtle inner glow when hovering */}
-        <motion.div 
-          className="w-full h-full rounded-full bg-[#00f0ff] blur-md pointer-events-none"
-          animate={{
-            opacity: isHovering ? 0.4 : 0
-          }}
-          transition={{ duration: 0.2 }}
-        />
-      </motion.div>
+        transition={{ type: "spring", stiffness: 100, damping: 20, mass: 0.5 }}
+      />
 
-      {/* Center crisp dot */}
-      <motion.div
-        className="fixed top-0 left-0 w-2 h-2 rounded-full pointer-events-none z-[9999]"
+      {/* Generated Cursor Image (Center Pointer) */}
+      <motion.img
+        src="/cursor.jpg"
+        alt="custom cursor"
+        className="fixed top-0 left-0 w-8 h-8 pointer-events-none z-[9999] mix-blend-screen"
         animate={{
-          x: mousePosition.x - 4,
-          y: mousePosition.y - 4,
-          scale: isClicking ? 0.5 : isHovering ? 0 : 1,
+          x: mousePosition.x - 16,
+          y: mousePosition.y - 16,
+          scale: isClicking ? 0.7 : isHovering ? 0.9 : 1,
           opacity: isVisible ? 1 : 0,
-          backgroundColor: isHovering ? "#00f0ff" : "#ffffff",
+          rotate: isHovering ? 45 : 0,
         }}
-        transition={{ 
-          type: "spring", 
-          stiffness: 800, 
-          damping: 30, 
-          mass: 0.1 
-        }}
-        style={{
-          boxShadow: isHovering ? "0 0 10px #00f0ff" : "0 0 4px rgba(255,255,255,0.8)"
-        }}
+        transition={{ type: "spring", stiffness: 500, damping: 28, mass: 0.1 }}
       />
     </>
   );
