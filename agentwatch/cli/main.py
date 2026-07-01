@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import platform
+import sys
 import time
 from enum import Enum
 from pathlib import Path
@@ -57,9 +59,24 @@ _IN_REPL = False
 
 
 @app.callback(invoke_without_command=True)
-def main_callback(ctx: typer.Context):
+def main_callback(
+    ctx: typer.Context,
+    version: bool = typer.Option(False, "--version", "-V", help="Show version and exit."),
+):
     """AgentWatch CLI with ASCII Animation"""
     global _IN_REPL
+
+    if version:
+        import platform
+        import sys
+
+        from agentwatch import __version__
+
+        console.print(f"AgentWatch CLI version: {__version__}")
+        console.print(f"Python: {sys.version.split()[0]}")
+        console.print(f"Platform: {platform.platform()}")
+        raise typer.Exit()
+
     if _IN_REPL:
         return
 
@@ -884,7 +901,9 @@ def top(
         def generate_dashboard(data, error_msg=None):
             if error_msg:
                 return Panel(
-                    f"[red]{error_msg}[/red]", title="AgentWatch Top Error", border_style="red"
+                    f"[red]{error_msg}[/red]",
+                    title="AgentWatch Top Error",
+                    border_style="red",
                 )
 
             table = Table(show_header=True, header_style="bold magenta", expand=True)
@@ -912,7 +931,9 @@ def top(
                 )
 
             return Panel(
-                table, title="[cyan]AgentWatch Top - Active Agent Loops[/cyan]", border_style="cyan"
+                table,
+                title="[cyan]AgentWatch Top - Active Agent Loops[/cyan]",
+                border_style="cyan",
             )
 
         async def poll_loop(live_display: Any) -> None:
@@ -933,7 +954,8 @@ def top(
                     await asyncio.sleep(refresh_rate)
 
         with Live(
-            generate_dashboard({"top_sessions": []}), refresh_per_second=1.0 / refresh_rate
+            generate_dashboard({"top_sessions": []}),
+            refresh_per_second=1.0 / refresh_rate,
         ) as live:
             await poll_loop(live)
 
@@ -1841,6 +1863,33 @@ def session_prune(
 
 
 # ─────────────────────────────────────────────
+# Version
+# ---------------------------------------------
+
+
+@app.command()
+def version() -> None:
+    """Show AgentWatch version and diagnostics."""
+    from agentwatch import __version__
+
+    table = Table(title="AgentWatch Diagnostics", box=box.ROUNDED)
+    table.add_column("Key", style="cyan")
+    table.add_column("Value")
+
+    table.add_row("Version", __version__)
+    table.add_row("Python", sys.version.split()[0])
+    table.add_row("Platform", platform.platform())
+    table.add_row("Executable", sys.executable)
+
+    try:
+        table.add_row("Package Location", str(Path(__file__).resolve().parent.parent.parent))
+    except Exception:
+        table.add_row("Package Location", "N/A")
+
+    console.print(table)
+
+
+# ─────────────────────────────────────────────
 # Entrypoint
 # ---------------------------------------------
 
@@ -1851,3 +1900,41 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+@app.command(name="doctor")
+def doctor() -> None:
+    """[bold]Doctor[/bold]: Check AgentWatch installation health."""
+    import os
+    import shutil
+    import subprocess  # nosec B404
+
+    table = Table(title="Health Diagnostics")
+    table.add_column("Component", style="cyan")
+    table.add_column("Status", style="green")
+
+    db_path = Path("agentwatch.db")
+    if db_path.exists():
+        table.add_row("Database", "OK")
+    else:
+        table.add_row("Database", "[yellow]Not initialized[/yellow]")
+
+    if "AGENTWATCH_API_KEY" in os.environ:
+        table.add_row("API Key", "Configured")
+    else:
+        table.add_row("API Key", "[red]Missing[/red]")
+
+    try:
+        docker_path = shutil.which("docker")
+        if docker_path:
+            res = subprocess.run([docker_path, "info"], capture_output=True, check=False)  # noqa: S603 # nosec B603
+            if res.returncode == 0:
+                table.add_row("Docker", "Running")
+            else:
+                table.add_row("Docker", "[red]Not running[/red]")
+        else:
+            table.add_row("Docker", "[red]Not installed[/red]")
+    except Exception:
+        table.add_row("Docker", "[red]Not installed[/red]")
+
+    console.print(table)

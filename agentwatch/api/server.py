@@ -34,8 +34,10 @@ from pydantic import BaseModel, Field
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
 from agentwatch.api.auth import require_permission
 from agentwatch.api.middleware.rate_limiter import RateLimiter, RateLimitMiddleware
+from agentwatch.api.tenant_auth import get_tenant_store
+from agentwatch.core.config import get_cloud_config
 from agentwatch.core.event_bus import get_event_bus
-from agentwatch.core.models import Repository, init_db
+from agentwatch.core.models import Repository, TenantRepository, init_db
 from agentwatch.core.safety import RiskScorer, SafetyEngine, SafetyPolicy
 from agentwatch.core.schema import (
     AgentEvent,
@@ -52,6 +54,7 @@ from agentwatch.core.schema import (
 from agentwatch.cost.tracker import CostTracker
 from agentwatch.governance.compliance_reporter import ComplianceReporter
 from agentwatch.governance.engine import AuditEventType, GovernanceEngine
+from agentwatch.models.tenant import TenantPlan
 from agentwatch.monitoring.metrics import (
     record_api_latency,
     record_failure,
@@ -203,27 +206,37 @@ def _event_to_pg(event: AgentEvent) -> dict:
     return d
 
 
-async def _pg_write_session(session: AgentSession) -> None:
+async def _pg_write_session(session: AgentSession, tenant_id: str | None = None) -> None:
     if _db_session_factory is None:
         return
     try:
         async with _db_session_factory() as db:
-            await Repository(db).upsert_session(_session_to_pg(session))
+            repo = TenantRepository(Repository(db), tenant_id=tenant_id)
+            data = _session_to_pg(session)
+            if tenant_id:
+                data["tenant_id"] = tenant_id
+            await repo.upsert_session(data)
             await db.commit()
     except Exception:
         logger.warning("PG session write failed", exc_info=True)
 
 
-async def _pg_write_event(event: AgentEvent) -> None:
+async def _pg_write_event(event: AgentEvent, tenant_id: str | None = None) -> None:
     if _db_session_factory is None:
         return
     try:
         async with _db_session_factory() as db:
-            repo = Repository(db)
-            await repo.insert_event(_event_to_pg(event))
+            repo = TenantRepository(Repository(db), tenant_id=tenant_id)
+            event_data = _event_to_pg(event)
+            if tenant_id:
+                event_data["tenant_id"] = tenant_id
+            await repo.insert_event(event_data)
             trace = _collector.get_trace(event.session_id)
             if trace:
-                await repo.upsert_session(_session_to_pg(trace.session))
+                session_data = _session_to_pg(trace.session)
+                if tenant_id:
+                    session_data["tenant_id"] = tenant_id
+                await repo.upsert_session(session_data)
             await db.commit()
     except Exception:
         logger.warning("PG event write failed", exc_info=True)
@@ -293,15 +306,34 @@ _API_KEY: str | None = os.getenv("AGENTWATCH_API_KEY") or None
 # Environment detection for fail-closed logic
 _ENV = os.getenv("AGENTWATCH_ENV") or os.getenv("ENVIRONMENT") or "development"
 _IS_PROD = _ENV.lower() == "production"
+_CLOUD_MODE = get_cloud_config().is_cloud
 
 
-def _require_api_key(x_api_key: str | None = Header(default=None, alias="X-Api-Key")) -> None:
+def _require_api_key(
+    x_api_key: str | None = Header(default=None, alias="X-Api-Key"),
+) -> None:
     """FastAPI dependency that enforces API key authentication.
 
-    In production mode, if AGENTWATCH_API_KEY is not set, all requests to
-    protected endpoints are rejected (fail-closed). In non-production
-    environments, authentication is only enforced if the key is provided.
+    In cloud mode, validates against the TenantStore and attaches tenant context.
+    In legacy mode, validates against the single AGENTWATCH_API_KEY.
     """
+    if _CLOUD_MODE:
+        # Cloud mode: validate tenant API key
+        if not x_api_key:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing API key. Supply the key in the X-Api-Key header.",
+            )
+        store = get_tenant_store()
+        api_key = store.validate_api_key(x_api_key)
+        if not api_key:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or revoked API key.",
+            )
+        return
+
+    # Legacy mode
     if _IS_PROD and not _API_KEY:
         logger.error("AGENTWATCH_API_KEY is missing in production environment")
         raise HTTPException(
@@ -314,6 +346,65 @@ def _require_api_key(x_api_key: str | None = Header(default=None, alias="X-Api-K
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid API key. Supply the key in the X-Api-Key header.",
         )
+
+
+def _require_tenant_context(
+    request: Request,
+    x_api_key: str | None = Header(default=None, alias="X-Api-Key"),
+) -> str | None:
+    """FastAPI dependency that resolves tenant_id from the API key.
+
+    Returns the tenant_id for use in downstream handlers, or None in legacy mode
+    so downstream handlers preserve unscoped NULL tenant behavior.
+    """
+    if not _CLOUD_MODE:
+        return None
+    if not x_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing API key.",
+        )
+    store = get_tenant_store()
+    api_key = store.validate_api_key(x_api_key)
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or revoked API key.",
+        )
+    return api_key.tenant_id
+
+
+def _require_tenant_ownership(
+    request: Request,
+    path_tenant_id: str,
+    x_api_key: str | None = Header(default=None, alias="X-Api-Key"),
+) -> str:
+    """FastAPI dependency that verifies the caller owns the tenant resource.
+
+    Raises 403 if the API key's tenant doesn't match the path tenant_id.
+    Used for tenant management endpoints (API keys, usage, etc.).
+    """
+    if not _CLOUD_MODE:
+        # In legacy mode, allow access without tenant isolation
+        return path_tenant_id
+    if not x_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missing API key.",
+        )
+    store = get_tenant_store()
+    api_key = store.validate_api_key(x_api_key)
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or revoked API key.",
+        )
+    if api_key.tenant_id != path_tenant_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied: API key does not belong to this tenant.",
+        )
+    return path_tenant_id
 
 
 class SessionListResponse(BaseModel):
@@ -1377,6 +1468,108 @@ async def websocket_events(websocket: WebSocket) -> None:
         bus.unsubscribe(handler_id)
         if websocket in _ws_clients:
             _ws_clients.remove(websocket)
+
+
+# ─────────────────────────────────────────────
+# Tenant management endpoints (Cloud mode)
+# ─────────────────────────────────────────────
+
+
+@app.post("/api/v1/tenants")
+async def create_tenant(
+    name: str = Query(...),
+    plan: str = Query("free"),
+    _auth: None = Depends(_require_api_key),
+) -> dict[str, Any]:
+    store = get_tenant_store()
+    try:
+        tenant_plan = TenantPlan(plan)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid plan: {plan}")
+    tenant = store.create_tenant(name=name, plan=tenant_plan)
+    return tenant.to_dict()
+
+
+@app.get("/api/v1/tenants")
+async def list_tenants(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+    store = get_tenant_store()
+    tenants = store.list_tenants()
+    return {"tenants": [t.to_dict() for t in tenants]}
+
+
+@app.get("/api/v1/tenants/{tenant_id}")
+async def get_tenant(
+    tenant_id: str,
+    _auth: None = Depends(_require_api_key),
+) -> dict[str, Any]:
+    store = get_tenant_store()
+    tenant = store.get_tenant(tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    return tenant.to_dict()
+
+
+@app.post("/api/v1/tenants/{tenant_id}/api-keys")
+async def create_api_key(
+    tenant_id: str,
+    name: str = Query(""),
+    _tenant: str = Depends(_require_tenant_ownership),
+) -> dict[str, Any]:
+    store = get_tenant_store()
+    tenant = store.get_tenant(tenant_id)
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    api_key, raw_key = store.create_api_key(tenant_id=tenant_id, name=name)
+    return {
+        **api_key.to_dict(),
+        "key": raw_key,
+        "message": "Store this key securely — it will not be shown again.",
+    }
+
+
+@app.get("/api/v1/tenants/{tenant_id}/api-keys")
+async def list_api_keys(
+    tenant_id: str,
+    _tenant: str = Depends(_require_tenant_ownership),
+) -> dict[str, Any]:
+    store = get_tenant_store()
+    keys = store.list_api_keys(tenant_id)
+    return {"api_keys": [k.to_dict() for k in keys]}
+
+
+@app.delete("/api/v1/tenants/{tenant_id}/api-keys/{key_id}")
+async def revoke_api_key(
+    tenant_id: str,
+    key_id: str,
+    _tenant: str = Depends(_require_tenant_ownership),
+) -> dict[str, Any]:
+    store = get_tenant_store()
+    ok = store.revoke_api_key(key_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="API key not found")
+    return {"revoked": True}
+
+
+@app.get("/api/v1/tenants/{tenant_id}/usage")
+async def get_usage(
+    tenant_id: str,
+    period: str | None = Query(None),
+    _tenant: str = Depends(_require_tenant_ownership),
+) -> dict[str, Any]:
+    store = get_tenant_store()
+    usage = store.get_usage(tenant_id, period=period)
+    if not usage:
+        return {"usage": None, "message": "No usage data for this period"}
+    return {"usage": usage.to_dict()}
+
+
+@app.get("/api/v1/ingestion/metrics")
+async def ingestion_metrics(
+    tenant_id: str | None = Query(None),
+    _auth: None = Depends(_require_api_key),
+) -> dict[str, Any]:
+    # Ingestion metrics are available when the pipeline is running
+    return {"message": "Ingestion metrics endpoint — attach TenantIngestionPipeline for live data"}
 
 
 def create_app() -> FastAPI:

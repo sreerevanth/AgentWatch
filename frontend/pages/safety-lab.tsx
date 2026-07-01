@@ -3,7 +3,8 @@ import Link from 'next/link'
 import { useRouter } from 'next/router'
 import { AlertTriangle, CheckCircle2, Copy, Play, ShieldAlert, ShieldCheck } from 'lucide-react'
 
-import { api, SafetyCheckResponse, ThreatPathNode } from '../lib/api'
+import { SafetyCheckResponse, ThreatPathNode } from '../lib/api'
+import { useCheckSafety } from '../lib/api/hooks/useSafety'
 
 type RunRecord = {
   id: string
@@ -40,6 +41,7 @@ export default function SafetyLabPage() {
   const [selectedRunId, setSelectedRunId] = useState<string | null>(null)
   const [selectedNode, setSelectedNode] = useState<ThreatPathNode | null>(null)
   const inFlightRef = useRef(false)
+  const { checkSafety } = useCheckSafety()
 
   const demoMode = router.query.demo === 'true'
 
@@ -53,7 +55,7 @@ export default function SafetyLabPage() {
     inFlightRef.current = true
     setRunning(true)
     try {
-      const result = await api.checkSafety({ command: trimmed, tool_name: 'bash' })
+      const result = await checkSafety({ command: trimmed, tool_name: 'bash' })
       const runId = `${Date.now()}-${Math.random().toString(36).slice(2)}`
       setHistory((prev) => [
         {
@@ -74,7 +76,7 @@ export default function SafetyLabPage() {
       inFlightRef.current = false
       setRunning(false)
     }
-  }, [])
+  }, [checkSafety])
 
   useEffect(() => {
     if (!demoMode) return
