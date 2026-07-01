@@ -1,0 +1,33 @@
+name: PR Coverage & Security Guard (ELUSoC_2026)
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  coverage_security_guard:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install .[dev]
+
+    - name: Run Bandit Security Scan
+      run: |
+        bandit -r agentwatch/ -ll
+
+    - name: Run Tests and Measure Coverage
+      run: |
+        pytest --cov=agentwatch/ tests/
+
+    - name: Verify Minimum Coverage Thresholds
+      run: |
+        python scripts/verify_coverage.py
