@@ -75,6 +75,7 @@ dev = [
   "pytest-cov>=5.0.0",
   "mypy>=1.11.0",
   "ruff>=0.6.0",
+  "bandit>=1.7.0",
   "httpx>=0.28.0",
   "opentelemetry-sdk>=1.27.0",
 ]
