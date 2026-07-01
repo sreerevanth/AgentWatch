@@ -284,6 +284,7 @@ function SafetyPanel({ blockedEvents, loading }: { blockedEvents: AgentEvent[]; 
 }
 
 export default function DashboardPage() {
+  const router = useRouter()
   const queryClient = useQueryClient()
   const { summary, isSummaryLoading: summaryLoading } = useDashboardSummary()
   const { sessions, isSessionsLoading } = useSessions()
@@ -315,10 +316,15 @@ export default function DashboardPage() {
             <div className="text-xs uppercase tracking-[0.32em] text-zinc-500">AgentWatch</div>
             <h1 className="text-2xl font-semibold text-white">Reliability, safety, and observability</h1>
           </div>
-          <button onClick={() => { queryClient.invalidateQueries({ queryKey: ['dashboard'] }); queryClient.invalidateQueries({ queryKey: ['sessions'] }) }} aria-label="Refresh dashboard data" className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/10 hover:text-white">
-            <RefreshCw size={14} />
-            Refresh
-          </button>
+          <div className="flex items-center gap-3">
+            <button onClick={() => router.push('/dashboard_demo')} className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/10 hover:text-white">
+              Demo Page
+            </button>
+            <button onClick={() => { queryClient.invalidateQueries({ queryKey: ['dashboard'] }); queryClient.invalidateQueries({ queryKey: ['sessions'] }) }} aria-label="Refresh dashboard data" className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/10 hover:text-white">
+              <RefreshCw size={14} />
+              Refresh
+            </button>
+          </div>
         </div>
       </header>
 
