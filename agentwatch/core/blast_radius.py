@@ -132,18 +132,71 @@ class BlastRadiusEstimator:
 
     def _analyze_filesystem_impact(self, raw: str, radius: BlastRadius) -> None:
         """Heuristically estimate FS impact."""
-        # Recursive deletion of important paths
-        critical_paths = {"/etc", "/var", "/boot", "/root", "/home", "/usr", "/bin", "/sbin"}
-        for path in critical_paths:
-            if f"rm -rf {path}" in raw or f"rm -rf {path}/" in raw:
-                radius.is_critical_resource = True
-                radius.score = max(radius.score, 100)
-                radius.affected_file_count = 50000  # Assume massive
+        import shlex
+        import os
 
-        # Wildcard deletions
-        if re.search(r"rm\s+-rf\s+.*[*?]", raw):
-            radius.score = max(radius.score, 65)
-            radius.affected_file_count = 100
+        def parse_and_scan(text: str) -> list[tuple[set[str], list[str]]]:
+            try:
+                tokens = shlex.split(text)
+            except Exception:
+                tokens = text.split()
+
+            invocations = []
+            i = 0
+            while i < len(tokens):
+                token = tokens[i]
+                if any(sub in token for sub in ("rm ", "rm\t")):
+                    invocations.extend(parse_and_scan(token))
+                elif token == "rm":
+                    flags = set()
+                    paths = []
+                    j = i + 1
+                    while j < len(tokens):
+                        arg = tokens[j]
+                        if arg.startswith("-") and len(arg) > 1:
+                            if arg.startswith("--"):
+                                flags.add(arg)
+                            else:
+                                for char in arg[1:]:
+                                    flags.add(f"-{char}")
+                        else:
+                            paths.append(arg)
+                        j += 1
+                    invocations.append((flags, paths))
+                i += 1
+            return invocations
+
+        def is_sub_or_equal(target: str, critical: str) -> bool:
+            # Normalize target path to handle relative components and cross-platform slashes
+            normalized = os.path.normpath(target).replace("\\", "/")
+            if not normalized.startswith("/") and target.startswith("/"):
+                normalized = "/" + normalized
+            
+            target_parts = [p for p in normalized.split("/") if p]
+            critical_parts = [p for p in critical.split("/") if p]
+            
+            if len(target_parts) >= len(critical_parts):
+                return target_parts[:len(critical_parts)] == critical_parts
+            return False
+
+        critical_paths = {"/etc", "/var", "/boot", "/root", "/home", "/usr", "/bin", "/sbin", "/"}
+        invocations = parse_and_scan(raw)
+
+        for flags, paths in invocations:
+            is_recursive = any(f in flags for f in ("-r", "-R", "--recursive"))
+            for path in paths:
+                # Check for critical path deletions (recursive or not, but usually recursive is critical)
+                if any(is_sub_or_equal(path, cp) for cp in critical_paths):
+                    if is_recursive or path in ("/", "/*"):
+                        radius.is_critical_resource = True
+                        radius.score = max(radius.score, 100)
+                        radius.affected_file_count = 50000
+                
+                # Check for wildcard deletions
+                if is_recursive and any(char in path for char in "*?"):
+                    radius.score = max(radius.score, 65)
+                    if radius.affected_file_count is None:
+                        radius.affected_file_count = 100
 
     def _analyze_resource_criticality(self, radius: BlastRadius) -> None:
         """Check if any explicitly affected resources are tagged or named as critical."""

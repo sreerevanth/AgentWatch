@@ -90,3 +90,47 @@ async def test_safety_engine_escalates_on_high_blast_radius():
     assert result.safety.requires_approval is True
     assert approval_called is True
     assert any("ESCALATED" in r for r in result.safety.reasons)
+
+
+def test_blast_radius_filesystem_robustness():
+    estimator = BlastRadiusEstimator()
+
+    # 1. Test different flags and spacing
+    event = _tool_event("bash", "rm  -f  -r   /etc")
+    radius = estimator.estimate(event)
+    assert radius.score == 100
+    assert radius.is_critical_resource is True
+
+    # 2. Test long option flags
+    event = _tool_event("bash", "rm --recursive --force /etc")
+    radius = estimator.estimate(event)
+    assert radius.score == 100
+
+    # 3. Test quotes around target
+    event = _tool_event("bash", "rm -rf '/etc'")
+    radius = estimator.estimate(event)
+    assert radius.score == 100
+
+    event = _tool_event("bash", 'rm -rf "/etc/"')
+    radius = estimator.estimate(event)
+    assert radius.score == 100
+
+    # 4. Test subdirectories
+    event = _tool_event("bash", "rm -rf /etc/shadow")
+    radius = estimator.estimate(event)
+    assert radius.score == 100
+
+    event = _tool_event("bash", "rm -rf /var/log/nginx/access.log")
+    radius = estimator.estimate(event)
+    assert radius.score == 100
+
+    # 5. Test path traversal bypass attempts
+    event = _tool_event("bash", "rm -rf /tmp/../etc")
+    radius = estimator.estimate(event)
+    assert radius.score == 100
+
+    # 6. Test nested commands (like in bash execution)
+    event = _tool_event("bash", 'bash -c "rm -rf /etc"')
+    radius = estimator.estimate(event)
+    assert radius.score == 100
+
