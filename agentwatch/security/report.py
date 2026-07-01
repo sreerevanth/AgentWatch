@@ -15,7 +15,10 @@ from datetime import UTC, datetime
 from typing import Any
 
 from agentwatch.core.schema import AgentEvent
-from agentwatch.security.owasp import OwaspScan, OwaspScanner
+from agentwatch.security.owasp import (
+    OwaspScan,
+    validate_owasp,
+)
 
 
 @dataclass
@@ -45,8 +48,7 @@ def generate(session_id: str, events: list[AgentEvent]) -> SecurityReport:
     from agentwatch.security.exfiltration import detect as detect_exfil  # noqa: PLC0415
 
     report = SecurityReport(session_id=session_id)
-    scanner = OwaspScanner()
-    report.owasp = scanner.scan(events)
+    report.owasp = validate_owasp(events)
 
     blocked = sum(1 for e in events if e.is_blocked)
     exfil = sum(len(detect_exfil(e)) for e in events)

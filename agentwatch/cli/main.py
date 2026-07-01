@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import platform
+import sys
 import time
 from enum import Enum
 from pathlib import Path
@@ -57,9 +59,24 @@ _IN_REPL = False
 
 
 @app.callback(invoke_without_command=True)
-def main_callback(ctx: typer.Context):
+def main_callback(
+    ctx: typer.Context,
+    version: bool = typer.Option(False, "--version", "-V", help="Show version and exit."),
+):
     """AgentWatch CLI with ASCII Animation"""
     global _IN_REPL
+
+    if version:
+        import platform
+        import sys
+
+        from agentwatch import __version__
+
+        console.print(f"AgentWatch CLI version: {__version__}")
+        console.print(f"Python: {sys.version.split()[0]}")
+        console.print(f"Platform: {platform.platform()}")
+        raise typer.Exit()
+
     if _IN_REPL:
         return
 
@@ -1934,6 +1951,8 @@ def compliance_export_local(
             f"[yellow]No audit entries found in {audit_log}. "
             "The server persists audit data when AGENTWATCH_AUDIT_LOG_PATH is set.[/yellow]"
         )
+        return
+
     reporter = ComplianceReporter(engine)
     csv_content = reporter.generate_csv(include_allowed=include_allowed)
 
@@ -1942,6 +1961,33 @@ def compliance_export_local(
     # Count actual exported rows (subtract 1 for header)
     exported = max(0, csv_content.count("\n") - 1)
     console.print(f"[green]{output} created successfully ({exported} entries exported)[/green]")
+
+
+# ─────────────────────────────────────────────
+# Version
+# ---------------------------------------------
+
+
+@app.command()
+def version() -> None:
+    """Show AgentWatch version and diagnostics."""
+    from agentwatch import __version__
+
+    table = Table(title="AgentWatch Diagnostics", box=box.ROUNDED)
+    table.add_column("Key", style="cyan")
+    table.add_column("Value")
+
+    table.add_row("Version", __version__)
+    table.add_row("Python", sys.version.split()[0])
+    table.add_row("Platform", platform.platform())
+    table.add_row("Executable", sys.executable)
+
+    try:
+        table.add_row("Package Location", str(Path(__file__).resolve().parent.parent.parent))
+    except Exception:
+        table.add_row("Package Location", "N/A")
+
+    console.print(table)
 
 
 # ─────────────────────────────────────────────
