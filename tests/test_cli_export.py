@@ -105,6 +105,7 @@ def test_export_invalid_format():
     assert "not one of 'json', 'md'" in result.output
 
 
+
 def test_export_404(mock_httpx_client):
     mock_instance, mock_response = mock_httpx_client
     mock_response.status_code = 404
