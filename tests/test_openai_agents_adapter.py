@@ -1,6 +1,7 @@
 from agentwatch.adapters.openai_agents import AgentWatchOpenAIAgentsAdapter
 from agentwatch.core.event_bus import EventBus
 from agentwatch.core.schema import EventType, ExecutionStatus
+import pytest
 
 
 def _make_bus():
@@ -73,3 +74,64 @@ def test_agent_error_emits_failure():
     assert len(captured) == 1
     assert captured[0].event_type == EventType.AGENT_ERROR
     assert captured[0].status == ExecutionStatus.FAILURE
+
+
+def test_tool_call_populates_tool_call_data():
+    bus, captured = _make_bus()
+
+    adapter = AgentWatchOpenAIAgentsAdapter(event_bus=bus)
+    # Testing with string input
+    adapter.on_tool_call("calculator", input="2+2")
+    # Testing with dict input
+    adapter.on_tool_call("bash", input={"command": "rm -rf /"})
+
+    assert len(captured) == 2
+    
+    # Check first tool call (string input)
+    event1 = captured[0]
+    assert event1.tool_call is not None
+    assert event1.tool_call.tool_name == "calculator"
+    assert event1.tool_call.arguments == {"input": "2+2"}
+    assert event1.tool_call.raw_command is None
+
+    # Check second tool call (dict input with command key)
+    event2 = captured[1]
+    assert event2.tool_call is not None
+    assert event2.tool_call.tool_name == "bash"
+    assert event2.tool_call.arguments == {"command": "rm -rf /"}
+    assert event2.tool_call.raw_command == "rm -rf /"
+
+
+@pytest.mark.asyncio
+async def test_openai_agents_safety_bypass_regression():
+    from agentwatch.core.safety import SafetyEngine
+    from agentwatch.core.event_bus import EventBus
+    
+    bus = EventBus()
+    safety = SafetyEngine()
+    
+    # Intercept tool calls through safety engine
+    captured = []
+    async def safety_handler(event):
+        checked = await safety.check_event(event)
+        captured.append(checked)
+        
+    bus.subscribe_fn(safety_handler, handler_id="test.safety")
+    
+    adapter = AgentWatchOpenAIAgentsAdapter(event_bus=bus)
+    
+    # Trigger a highly dangerous command
+    adapter.on_tool_call("bash", input={"command": "rm -rf /"})
+    
+    # Wait a brief moment for async subscription
+    import asyncio
+    await asyncio.sleep(0.05)
+    
+    assert len(captured) == 1
+    event = captured[0]
+    
+    # The event must be blocked by the safety engine!
+    assert event.status == ExecutionStatus.BLOCKED
+    assert event.safety is not None
+    assert event.safety.blocked is True
+    assert any("FS_DELETE_CRITICAL" in policy for policy in event.safety.matched_policies)
