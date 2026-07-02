@@ -16,6 +16,7 @@ from typing import Any
 
 from agentwatch.api.tenant_auth import TenantStore
 from agentwatch.core.schema import AgentEvent
+from agentwatch.governance.residency import Region, ResidencyRouter, eu_only_policy, us_only_policy
 from agentwatch.models.tenant import TenantStatus
 
 logger = logging.getLogger(__name__)
@@ -75,6 +76,7 @@ class TenantIngestionPipeline:
         tenant_store: TenantStore,
         batch_size: int = 100,
         flush_interval: float = 5.0,
+        residency_router: ResidencyRouter | None = None,
     ):
         self._tenant_store = tenant_store
         self._batch_size = batch_size
@@ -84,6 +86,12 @@ class TenantIngestionPipeline:
         self._batches: dict[str, list[AgentEvent]] = defaultdict(list)
         self._handlers: list[Any] = []
         self._flush_task: asyncio.Task | None = None
+        self._residency_router = residency_router or ResidencyRouter()
+
+        # Register default compliance policies on the router
+        if residency_router is None:
+            self._residency_router.add_policy("eu_only", eu_only_policy())
+            self._residency_router.add_policy("us_only", us_only_policy())
 
     def add_handler(self, handler: Any) -> None:
         """Register an event handler to receive batched events."""
@@ -131,6 +139,11 @@ class TenantIngestionPipeline:
             metrics.events_rejected += 1
             logger.warning("Event rejected: %s for tenant %s", reason, tenant_id)
             return False
+
+        # Resolve target region for data residency compliance
+        region = self.resolve_tenant_region(tenant_id)
+        if region is not None:
+            event.metadata["residency_region"] = region.value
 
         # Accept event
         self._batches[tenant_id].append(event)
@@ -208,6 +221,38 @@ class TenantIngestionPipeline:
 
         logger.debug("Flushed %d events for tenant %s", len(batch), tenant_id)
         return len(batch)
+
+    def resolve_tenant_region(self, tenant_id: str) -> Region | None:
+        """Determine the target storage region for a tenant based on its config."""
+        tenant = self._tenant_store.get_tenant(tenant_id)
+        if not tenant:
+            return None
+
+        policy_name = tenant.config.residency_policy_name
+        explicit_region = tenant.config.residency_region
+
+        if policy_name:
+            decision = self._residency_router.route(
+                policy_name,
+                current_user_region=Region(explicit_region) if explicit_region else None,
+            )
+            return decision.region
+
+        if explicit_region:
+            try:
+                return Region(explicit_region)
+            except ValueError:
+                logger.warning("Unknown region '%s' for tenant %s", explicit_region, tenant_id)
+                return None
+
+        return None
+
+    def get_region_endpoint(self, tenant_id: str) -> str | None:
+        """Get the storage endpoint URL for a tenant's data residency region."""
+        region = self.resolve_tenant_region(tenant_id)
+        if region is None:
+            return None
+        return self._residency_router.endpoint_for(region)
 
     def get_metrics(self, tenant_id: str | None = None) -> dict[str, Any]:
         """Get ingestion metrics, optionally filtered by tenant."""

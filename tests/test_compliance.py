@@ -32,8 +32,13 @@ from agentwatch.governance.residency import (
     Region,
     ResidencyRouter,
     eu_only_policy,
+    us_only_policy,
 )
+from agentwatch.api.tenant_auth import TenantStore
+from agentwatch.core.schema import AgentEvent, EventType
 from agentwatch.memory.causal_graph import CausalGraph, CausalNode, EdgeKind
+from agentwatch.models.tenant import Tenant, TenantConfig, TenantPlan, TenantStatus
+from agentwatch.telemetry.ingestion import TenantIngestionPipeline
 
 # ─────────────────────────────────────────────
 # CMP-001 — GDPR
@@ -212,6 +217,98 @@ def test_causal_attribution_signs_report():
 # ─────────────────────────────────────────────
 # CMP-009 — ISO 42001
 # ─────────────────────────────────────────────
+
+
+# ─────────────────────────────────────────────
+# CMP-007b — Residency-aware Ingestion
+# ─────────────────────────────────────────────
+
+
+def _make_tenant_store() -> TenantStore:
+    store = TenantStore()
+    store.add_tenant(Tenant(
+        tenant_id="tenant-eu",
+        name="EU Corp",
+        plan=TenantPlan.PROFESSIONAL,
+        config=TenantConfig(residency_policy_name="eu_only", residency_region="eu-west-1"),
+    ))
+    store.add_tenant(Tenant(
+        tenant_id="tenant-us",
+        name="US Corp",
+        plan=TenantPlan.PROFESSIONAL,
+        config=TenantConfig(residency_policy_name="us_only", residency_region="us-east-1"),
+    ))
+    store.add_tenant(Tenant(
+        tenant_id="tenant-default",
+        name="Default Corp",
+        plan=TenantPlan.FREE,
+        config=TenantConfig(),
+    ))
+    return store
+
+
+def test_residency_ingestion_resolves_eu_region():
+    store = _make_tenant_store()
+    pipeline = TenantIngestionPipeline(tenant_store=store)
+    region = pipeline.resolve_tenant_region("tenant-eu")
+    assert region is not None
+    assert region.value.startswith("eu-")
+
+
+def test_residency_ingestion_resolves_us_region():
+    store = _make_tenant_store()
+    pipeline = TenantIngestionPipeline(tenant_store=store)
+    region = pipeline.resolve_tenant_region("tenant-us")
+    assert region is not None
+    assert region.value.startswith("us-")
+
+
+def test_residency_ingestion_no_policy_returns_none():
+    store = _make_tenant_store()
+    pipeline = TenantIngestionPipeline(tenant_store=store)
+    region = pipeline.resolve_tenant_region("tenant-default")
+    assert region is None
+
+
+def test_residency_ingestion_unknown_tenant_returns_none():
+    store = _make_tenant_store()
+    pipeline = TenantIngestionPipeline(tenant_store=store)
+    region = pipeline.resolve_tenant_region("nonexistent")
+    assert region is None
+
+
+def test_residency_ingestion_attaches_region_metadata():
+    store = _make_tenant_store()
+    pipeline = TenantIngestionPipeline(tenant_store=store)
+
+    async def _run():
+        event = AgentEvent(
+            session_id="s1",
+            agent_id="agent-a",
+            event_type=EventType.TOOL_CALL,
+            timestamp="2026-01-01T00:00:00Z",
+        )
+        accepted = await pipeline.ingest("tenant-eu", event)
+        assert accepted
+        assert event.metadata.get("residency_region", "").startswith("eu-")
+
+    import asyncio
+    asyncio.run(_run())
+
+
+def test_residency_ingestion_endpoint_lookup():
+    store = _make_tenant_store()
+    pipeline = TenantIngestionPipeline(tenant_store=store)
+    pipeline._residency_router.register_endpoint(Region.EU_WEST, "https://eu-storage.example.com")
+    endpoint = pipeline.get_region_endpoint("tenant-eu")
+    assert endpoint == "https://eu-storage.example.com"
+
+
+def test_residency_ingestion_no_endpoint_for_default_tenant():
+    store = _make_tenant_store()
+    pipeline = TenantIngestionPipeline(tenant_store=store)
+    endpoint = pipeline.get_region_endpoint("tenant-default")
+    assert endpoint is None
 
 
 def test_iso42001_report_counts():

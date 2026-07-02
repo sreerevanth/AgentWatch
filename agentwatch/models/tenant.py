@@ -71,6 +71,8 @@ class TenantConfig:
     max_usd_per_month: float = 100.0
     ingestion_rate_limit: int = 100  # events per second
     retention_days: int = 30
+    residency_policy_name: str | None = None  # e.g. "eu_only", "us_only"
+    residency_region: str | None = None  # e.g. "eu-west-1", "us-east-1"
 
 
 PLAN_DEFAULTS: dict[TenantPlan, TenantConfig] = {
@@ -134,6 +136,8 @@ class Tenant:
                 "max_usd_per_month": self.config.max_usd_per_month,
                 "ingestion_rate_limit": self.config.ingestion_rate_limit,
                 "retention_days": self.config.retention_days,
+                "residency_policy_name": self.config.residency_policy_name,
+                "residency_region": self.config.residency_region,
             },
             "created_at": self.created_at.isoformat(),
             "metadata": self.metadata,
