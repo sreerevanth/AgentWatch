@@ -73,6 +73,8 @@ class RollbackResult:
     error: str | None = None
     duration_seconds: float | None = None
     completed_at: datetime | None = None
+    warnings: list[str] = field(default_factory=list)
+    partial_restoration: bool = False
 
 
 class FilesystemSnapshot:
@@ -118,17 +120,53 @@ class FilesystemSnapshot:
         return out_path
 
     @staticmethod
-    async def restore(snapshot_path: Path, target_path: Path) -> list[str]:
+    async def restore(
+        snapshot_path: Path,
+        target_path: Path,
+    ) -> list[str]:
         restored: list[str] = []
+        partial: list[str] = []
 
         def _restore() -> None:
+            nonlocal restored, partial
+            extracted: list[str] = []
             with tarfile.open(snapshot_path, "r:gz") as tar:
                 members = tar.getmembers()
-                tar.extractall(str(target_path), filter="data")
-                restored.extend([m.name for m in members if m.isfile()])
+                for member in members:
+                    try:
+                        tar.extract(member, str(target_path), filter="data")
+                        if member.isfile():
+                            extracted.append(member.name)
+                    except Exception:
+                        logger.warning(
+                            "Failed to extract %s from snapshot %s",
+                            member.name,
+                            snapshot_path,
+                        )
+                        partial.append(member.name)
+            restored = extracted
 
         await asyncio.get_event_loop().run_in_executor(None, _restore)
-        logger.info("Restored %d files from snapshot %s", len(restored), snapshot_path)
+
+        if partial:
+            logger.warning(
+                "Partially restored %d of %d files from snapshot %s (%d failures)",
+                len(restored),
+                len(restored) + len(partial),
+                snapshot_path,
+                len(partial),
+            )
+            # Remove partially extracted files to avoid inconsistent state
+            for fname in partial:
+                fpath = target_path / fname
+                try:
+                    if fpath.exists():
+                        fpath.unlink()
+                except Exception as exc:
+                    logger.warning("Failed to clean up partial file %s: %s", fpath, exc)
+        else:
+            logger.info("Restored %d files from snapshot %s", len(restored), snapshot_path)
+
         return restored
 
 
@@ -321,13 +359,21 @@ class RollbackEngine:
                     logger.info("Rolled back git to %s", cp.git_commit_ref[:8])
 
             # Filesystem rollback
-            if restore_filesystem and cp.snapshot_path and cp.snapshot_path.exists():
-                restored = await FilesystemSnapshot.restore(
-                    snapshot_path=cp.snapshot_path,
-                    target_path=cwd,
-                )
-                result.rolled_back_files = restored
-                logger.info("Restored %d files from snapshot", len(restored))
+            if restore_filesystem:
+                if cp.snapshot_path and cp.snapshot_path.exists():
+                    restored = await FilesystemSnapshot.restore(
+                        snapshot_path=cp.snapshot_path,
+                        target_path=cwd,
+                    )
+                    result.rolled_back_files = restored
+                    logger.info("Restored %d files from snapshot", len(restored))
+                else:
+                    msg = (
+                        f"Filesystem snapshot for checkpoint {checkpoint_id} "
+                        f"is missing or was never created"
+                    )
+                    result.warnings.append(msg)
+                    logger.warning(msg)
 
             result.status = RollbackStatus.COMPLETED
 
