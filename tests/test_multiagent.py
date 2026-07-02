@@ -15,6 +15,8 @@ from agentwatch.orchestration.shapley import shapley_attribution
 from agentwatch.orchestration.spawning import SpawningTracker, SpawnLimitExceeded
 from agentwatch.orchestration.trust import InterAgentTrust
 
+from agentwatch.orchestration.discount import ConfidenceDiscountPropagator, DiscountReport
+
 # ─────────────────────────────────────────────
 # MAG-001 — Inter-Agent DAG
 # ─────────────────────────────────────────────
@@ -288,3 +290,95 @@ def test_spawning_descendants():
     tr.register("grand", parent_id="child1")
     desc = tr.descendants("root")
     assert {n.agent_id for n in desc} == {"child1", "child2", "grand"}
+
+
+# ─────────────────────────────────────────────
+# MAG-010 — Confidence Discount Propagation
+# ─────────────────────────────────────────────
+
+
+def test_discount_propagation_undiscounted_when_trust_high():
+    dag = InterAgentDAG()
+    dag.add_node("n1", "agent-a", "produce")
+    dag.add_node("n2", "agent-b", "consume")
+    dag.add_edge("n1", "n2")
+
+    trust = InterAgentTrust()
+    for _ in range(5):
+        trust.record("agent-a", "agent-b", success=True)
+
+    prop = ConfidenceDiscountPropagator(trust=trust)
+    report = prop.propagate(dag, "n1", "agent-a", 0.95)
+    assert report.origin_node == "n1"
+    assert report.depth >= 0
+    # With high trust the discount should be 0
+    assert all(e.discount == 0.0 for e in report.discounts)
+
+
+def test_discount_propagation_applies_discount_when_trust_low():
+    dag = InterAgentDAG()
+    dag.add_node("n1", "agent-a", "produce")
+    dag.add_node("n2", "agent-b", "consume")
+    dag.add_edge("n1", "n2")
+
+    trust = InterAgentTrust()
+    for _ in range(5):
+        trust.record("agent-a", "agent-b", success=False)
+
+    prop = ConfidenceDiscountPropagator(trust=trust)
+    report = prop.propagate(dag, "n1", "agent-a", 0.95)
+    assert len(report.discounts) == 1
+    assert report.discounts[0].discount > 0.0
+
+
+def test_discount_chain_propagates_downstream():
+    dag = InterAgentDAG()
+    dag.add_node("n1", "agent-a", "start")
+    dag.add_node("n2", "agent-b", "middle")
+    dag.add_node("n3", "agent-c", "end")
+    dag.add_edge("n1", "n2")
+    dag.add_edge("n2", "n3")
+
+    trust = InterAgentTrust()
+    for _ in range(5):
+        trust.record("agent-a", "agent-b", success=False)
+        trust.record("agent-b", "agent-c", success=True)
+
+    prop = ConfidenceDiscountPropagator(trust=trust)
+    report = prop.propagate(dag, "n1", "agent-a", 0.9)
+    assert len(report.discounts) == 2
+    # The first edge discount should be > 0 (low trust)
+    assert report.discounts[0].discount > 0.0
+
+
+def test_apply_discount_lowers_score():
+    prop = ConfidenceDiscountPropagator()
+    result = prop.apply_discount(0.85, 0.25)
+    assert result == 0.6375
+
+
+def test_apply_discount_clamps_at_zero():
+    prop = ConfidenceDiscountPropagator()
+    result = prop.apply_discount(0.5, 2.0)
+    assert result == 0.0
+
+
+def test_discount_report_max_downstream():
+    report = DiscountReport(
+        origin_node="n1",
+        origin_agent="a",
+        origin_confidence=0.9,
+        discounts=[
+            DiscountEdge(src="n1", dst="n2", discount=0.1),
+            DiscountEdge(src="n2", dst="n3", discount=0.35),
+        ],
+    )
+    assert report.max_downstream_discount == 0.35
+
+
+def test_discount_empty_dag_returns_empty_report():
+    dag = InterAgentDAG()
+    prop = ConfidenceDiscountPropagator()
+    report = prop.propagate(dag, "nonexistent", "agent-x", 0.5)
+    assert report.discounts == []
+    assert report.depth == 0
