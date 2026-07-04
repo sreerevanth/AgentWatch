@@ -31,7 +31,7 @@ async def before_provider_call(prompt: str, cache: SemanticCache | None = None) 
     cache_instance = cache or _global_semantic_cache
     if not cache_instance:
         return None
-        
+
     try:
         hit = await cache_instance.get(prompt)
         if hit:
@@ -39,12 +39,15 @@ async def before_provider_call(prompt: str, cache: SemanticCache | None = None) 
             return hit
     except Exception as e:
         logger.warning(f"Error checking semantic cache: {e}")
-        
+
     return None
 
 
 async def after_provider_call(
-    prompt: str, response: str, metadata: dict[str, Any] | None = None, cache: SemanticCache | None = None
+    prompt: str,
+    response: str,
+    metadata: dict[str, Any] | None = None,
+    cache: SemanticCache | None = None,
 ) -> None:
     """
     Store the response in the semantic cache after a provider call.
@@ -52,7 +55,7 @@ async def after_provider_call(
     cache_instance = cache or _global_semantic_cache
     if not cache_instance:
         return
-        
+
     try:
         await cache_instance.set(prompt, response, metadata)
     except Exception as e:

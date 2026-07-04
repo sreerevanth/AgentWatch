@@ -11,6 +11,7 @@ agentwatch.scoring.drift._st_model = agentwatch.scoring.drift._ST_UNAVAILABLE
 # Mock EmbeddingProvider._load to prevent downloading SentenceTransformer weights in tests
 import agentwatch.memory.engine
 
+
 async def mock_load(self):
     self._disabled = True
 

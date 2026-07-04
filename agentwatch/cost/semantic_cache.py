@@ -50,7 +50,7 @@ class SemanticCache:
         if not self._cache:
             return None
 
-        now = datetime.datetime.now(datetime.timezone.utc)
+        now = datetime.datetime.now(datetime.UTC)
 
         async with self._lock:
             best_match: CacheEntry | None = None

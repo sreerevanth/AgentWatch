@@ -1,9 +1,11 @@
 import datetime
+
 import pytest
 
+from agentwatch.adapters.base import after_provider_call, before_provider_call, set_semantic_cache
 from agentwatch.cost.semantic_cache import SemanticCache
-from agentwatch.adapters.base import before_provider_call, after_provider_call, set_semantic_cache
 from agentwatch.memory.engine import EmbeddingProvider
+
 
 @pytest.mark.asyncio
 async def test_semantic_cache_exact_match(monkeypatch):
@@ -71,7 +73,7 @@ async def test_semantic_cache_ttl(monkeypatch):
     await cache.set("test", "test response")
     
     # Force expiration by rewriting created_at
-    cache._cache[0].created_at = datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=2)
+    cache._cache[0].created_at = datetime.datetime.now(datetime.UTC) - datetime.timedelta(days=2)
     
     hit = await cache.get("test")
     assert hit is None
