@@ -7,9 +7,12 @@ import { Modal } from '../../components/Modal'
 import { useSession, useSessionReplay, useSessionConfidence, useSessionCheckpoints, useRollback } from '../../lib/api/hooks/useSessions'
 
 const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "short",
+  day: "2-digit",
   hour: "2-digit",
   minute: "2-digit",
-  second: "2-digit",
+  hour12: false,
 })
 
 function safeFormat(ts: string | null | undefined): string {
