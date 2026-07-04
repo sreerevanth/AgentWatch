@@ -37,6 +37,9 @@ dependencies = [
   "python-multipart>=0.0.12",
   "mcp>=1.0.0",
   "prometheus-client>=0.21.0",
+  "litellm>=1.0.0",
+  "tenacity>=8.0.0",
+  "PyYAML>=6.0",
 ]
 
 [project.optional-dependencies]

@@ -10,7 +10,6 @@ from agentwatch.cost.comparator import estimate, estimate_for_text
 from agentwatch.cost.governance import BudgetAction, BudgetGovernance
 from agentwatch.cost.predictor import TaskCostPredictor
 from agentwatch.cost.roi import DAMAGE_BY_SEVERITY, ROILedger
-from agentwatch.cost.router import ModelRouter
 from agentwatch.cost.tracker import CostTracker
 
 # ─────────────────────────────────────────────
@@ -70,71 +69,6 @@ def test_comparator_returns_cheapest_model():
 def test_comparator_from_text():
     report = estimate_for_text("hello world", "summary")
     assert len(report.estimates) >= 5
-
-
-# ─────────────────────────────────────────────
-# CST-003 — Model router
-# ─────────────────────────────────────────────
-
-
-def test_router_picks_primary_when_healthy():
-    r = ModelRouter(["primary", "backup1", "backup2"])
-    r.observe("primary", confidence=0.9, latency_ms=500)
-    decision = r.choose()
-    assert decision.chosen == "primary"
-
-
-def test_router_failover_on_confidence_drop():
-    r = ModelRouter(["primary", "backup"])
-    for _ in range(10):
-        r.observe("primary", confidence=0.2)
-    r.observe("backup", confidence=0.9)
-    decision = r.choose()
-    assert decision.chosen == "backup"
-    assert "primary" in decision.bypassed
-
-
-def test_router_failover_on_errors():
-    r = ModelRouter(["primary", "backup"], error_ceiling=3)
-    for _ in range(5):
-        r.observe("primary", error=True)
-    r.observe("backup", confidence=0.9)
-    assert r.choose().chosen == "backup"
-
-
-def test_router_per_model_timeout():
-    r = ModelRouter(
-        ["primary", "backup"],
-        latency_ceiling_ms=6000.0,
-        route_timeouts={"primary": 2000.0},
-    )
-    r.observe("primary", latency_ms=2100.0, confidence=0.9)
-    r.observe("backup", latency_ms=500.0, confidence=0.9)
-    decision = r.choose()
-    assert decision.chosen == "backup"
-    assert "primary" in decision.bypassed
-
-
-def test_router_global_fallback():
-    r = ModelRouter(["primary", "backup"], latency_ceiling_ms=3000.0)
-    r.observe("primary", latency_ms=2500.0, confidence=0.9)
-    r.observe("backup", latency_ms=2500.0, confidence=0.9)
-    decision = r.choose()
-    assert decision.chosen == "primary"
-
-
-def test_router_mixed_timeouts():
-    r = ModelRouter(
-        ["primary", "backup", "slow"],
-        latency_ceiling_ms=5000.0,
-        route_timeouts={"primary": 1000.0},
-    )
-    r.observe("primary", latency_ms=1500.0, confidence=0.9)
-    r.observe("backup", latency_ms=3000.0, confidence=0.9)
-    r.observe("slow", latency_ms=4000.0, confidence=0.9)
-    decision = r.choose()
-    assert decision.chosen == "backup"
-    assert "primary" in decision.bypassed
 
 
 # ─────────────────────────────────────────────
