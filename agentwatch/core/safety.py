@@ -438,7 +438,7 @@ def is_remote_code_execution(text: str) -> bool:
     # C: fetch written to a file, then that exact file executed by an
     #    interpreter (``curl -o /tmp/x ... && bash /tmp/x``).
     match = re.search(
-        _RCE_FETCH + r"[^\n]*?\s(?:-[oO]\s*|--output(?:-document)?[=\s]\s*)(\S+)",
+        _RCE_FETCH + r"[^\n]*?\s(?:-[A-Za-z]*[oO]\s*|--output(?:-document)?[=\s]\s*)(\S+)",
         text,
         re.IGNORECASE,
     )

