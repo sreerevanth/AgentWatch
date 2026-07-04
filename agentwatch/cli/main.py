@@ -1414,16 +1414,39 @@ def _license_public_key() -> str | None:
     when no key is configured, in which case the CLI behaves as free tier.
     """
     import os
+    import sys
+
+    from agentwatch.security.license import LicenseError
 
     inline = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY")
     if inline:
         return inline
+
     key_file = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY_FILE")
     if key_file:
         try:
             return Path(key_file).read_text(encoding="utf-8")
         except FileNotFoundError:
-            pass
+            print(f"Warning: License public key file not found: {key_file}", file=sys.stderr)
+            return None
+        except PermissionError:
+            print(
+                f"Error: Permission denied reading license public key file: {key_file}",
+                file=sys.stderr,
+            )
+            return None
+        except UnicodeDecodeError:
+            print(
+                f"Error: Failed to decode license public key file {key_file}: invalid encoding.",
+                file=sys.stderr,
+            )
+            return None
+        except OSError as exc:
+            print(
+                f"Error: OS error reading license public key file {key_file}: {exc}",
+                file=sys.stderr,
+            )
+            return None
     return None
 
 

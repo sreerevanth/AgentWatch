@@ -125,3 +125,70 @@ def test_eu_ai_act_report_gated(monkeypatch, keypair):
     )
     assert ok.status_code == 200
     assert ok.json()["article"] == "EU AI Act Article 15"
+
+
+def test_bearer_token_model_spoofed_machine_id_succeeds(monkeypatch, keypair):
+    """
+    Verify that an entitlement token bound to a specific machine can be verified
+    with the matching X-Machine-Id header supplied by the client (since it's a bearer
+    token model, not cryptographically bound to the device).
+    """
+    private_pem, public_pem = keypair
+    ent = _configure(monkeypatch, public_pem)
+    bound_token = _token(private_pem, machine_id="target-machine")
+
+    # An attacker spoofing the machine ID header with the correct value
+    # gets verified successfully, confirming we treat X-Machine-Id as a metadata check
+    # rather than a cryptographic device binding or proof-of-possession.
+    verified = ent.authenticate_entitlement(
+        x_entitlement_token=bound_token,
+        x_machine_id="target-machine"
+    )
+    assert verified is not None
+    assert verified.machine_id == "target-machine"
+
+
+def test_public_key_loading_robustness(monkeypatch, tmp_path):
+    """
+    Verify that _public_key gracefully handles:
+    - missing files
+    - permission errors
+    - invalid encoding
+    without raising exceptions (returning None) and producing clear log messages.
+    """
+    from pathlib import Path
+
+    # 1. Clear env to test files
+    monkeypatch.delenv("AGENTWATCH_LICENSE_PUBLIC_KEY", raising=False)
+
+    # 3. File not found
+    monkeypatch.setenv("AGENTWATCH_LICENSE_PUBLIC_KEY_FILE", str(tmp_path / "non_existent_key.pem"))
+    assert entitlement._public_key() is None
+
+    # 4. Permission error
+    key_file = tmp_path / "key.pem"
+    key_file.touch()
+    monkeypatch.setenv("AGENTWATCH_LICENSE_PUBLIC_KEY_FILE", str(key_file))
+
+    def mock_read_text_permission_error(*args, **kwargs):
+        raise PermissionError("Access Denied")
+
+    monkeypatch.setattr(Path, "read_text", mock_read_text_permission_error)
+    assert entitlement._public_key() is None
+
+    # 5. UnicodeDecodeError
+    def mock_read_text_decode_error(*args, **kwargs):
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(Path, "read_text", mock_read_text_decode_error)
+    assert entitlement._public_key() is None
+
+    # 6. Generic OSError
+    def mock_read_text_os_error(*args, **kwargs):
+        raise OSError("Disk failure")
+
+    monkeypatch.setattr(Path, "read_text", mock_read_text_os_error)
+    assert entitlement._public_key() is None
+
+
+

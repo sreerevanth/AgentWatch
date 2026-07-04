@@ -9,6 +9,7 @@ production.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -21,16 +22,29 @@ from agentwatch.security.license import (
     verify_entitlement,
 )
 
+logger = logging.getLogger(__name__)
+
 
 def _public_key() -> str | None:
     inline = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY")
     if inline:
         return inline
+
     key_file = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY_FILE")
     if key_file:
         try:
             return Path(key_file).read_text(encoding="utf-8")
         except FileNotFoundError:
+            logger.warning("License public key file not found: %s", key_file)
+            return None
+        except PermissionError:
+            logger.error("Permission denied reading license public key file: %s", key_file)
+            return None
+        except UnicodeDecodeError:
+            logger.error("Failed to decode license public key file %s: invalid encoding.", key_file)
+            return None
+        except OSError as exc:
+            logger.error("OS error reading license public key file %s: %s", key_file, str(exc))
             return None
     return None
 
@@ -52,8 +66,10 @@ def authenticate_entitlement(
     """
     Verify the entitlement token, or return None when enforcement is off.
 
-    A machine-bound token is checked against the caller's X-Machine-Id, since
-    the server is not the bound device.
+    This uses a bearer-token model where x_machine_id is passed as a metadata
+    consistency check (sanity check) rather than cryptographic device binding or
+    proof-of-possession. Since the client supplies both the token and the
+    X-Machine-Id, anyone with a valid token can supply the matching machine ID.
     """
     if _LICENSE_PUBLIC_KEY is None:
         return None
