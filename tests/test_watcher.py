@@ -307,3 +307,71 @@ def test_watch_allows_safe_command_async():
         assert res == "executed echo hello"
 
     asyncio.run(run_test())
+
+
+# ─────────────────────────────────────────────
+# Issue #147 — Custom session metadata enrichment
+# ─────────────────────────────────────────────
+
+
+def test_watch_metadata_attached_to_events():
+    bus = EventBus()
+    events: list[Any] = []
+
+    bus.subscribe_fn(lambda e: events.append(e))
+    agent = _UnknownAgent()
+    watch(agent, event_bus=bus, metadata={"user_id": "u-123", "tenant": "acme"})
+    asyncio.run(asyncio.sleep(0.01))
+
+    session_events = [e for e in events if e.event_type == EventType.SESSION_START]
+    assert session_events
+    assert session_events[0].metadata["user_id"] == "u-123"
+    assert session_events[0].metadata["tenant"] == "acme"
+
+
+def test_watch_metadata_merged_with_call_metadata():
+    bus = EventBus()
+    events: list[Any] = []
+
+    bus.subscribe_fn(lambda e: events.append(e))
+    agent = _UnknownAgent()
+    watch(agent, event_bus=bus, metadata={"user_id": "u-123"})
+    asyncio.run(asyncio.sleep(0.01))
+
+    agent.run("hello")
+    asyncio.run(asyncio.sleep(0.01))
+
+    run_events = [e for e in events if e.event_type != EventType.SESSION_START]
+    assert run_events
+    for event in run_events:
+        assert event.metadata.get("user_id") == "u-123"
+
+
+def test_watch_no_metadata_empty_dict():
+    bus = EventBus()
+    events: list[Any] = []
+
+    bus.subscribe_fn(lambda e: events.append(e))
+    agent = _UnknownAgent()
+    watch(agent, event_bus=bus)
+    asyncio.run(asyncio.sleep(0.01))
+
+    agent.run("hello")
+    asyncio.run(asyncio.sleep(0.01))
+
+    run_events = [e for e in events if e.event_type != EventType.SESSION_START]
+    assert run_events
+    for event in run_events:
+        assert "user_id" not in event.metadata
+
+
+def test_generic_adapter_metadata_stored():
+    agent = _UnknownAgent()
+    adapter = GenericAdapter(agent, metadata={"env": "prod", "region": "us-east"})
+    assert adapter._session_metadata == {"env": "prod", "region": "us-east"}
+
+
+def test_generic_adapter_empty_metadata():
+    agent = _UnknownAgent()
+    adapter = GenericAdapter(agent)
+    assert adapter._session_metadata == {}

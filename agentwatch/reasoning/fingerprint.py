@@ -71,6 +71,11 @@ def fingerprint(events: list[AgentEvent]) -> StyleFingerprint:
     )
 
 
+def _has_planner_output(events: list[AgentEvent]) -> bool:
+    """True if the slice contains at least one PLANNER_OUTPUT event."""
+    return any(e.event_type == EventType.PLANNER_OUTPUT for e in events)
+
+
 def detect_mid_session_change(
     events: list[AgentEvent],
     *,
@@ -81,8 +86,18 @@ def detect_mid_session_change(
     if len(events) < 6:
         return False, 0.0
     cut = int(len(events) * split_ratio)
-    a = fingerprint(events[:cut])
-    b = fingerprint(events[cut:])
+    first, second = events[:cut], events[cut:]
+    # A half with no PLANNER_OUTPUT has no reasoning style to fingerprint:
+    # fingerprint() returns the all-zeros sentinel, which means "no signal",
+    # not a real style. Comparing a genuine fingerprint against that sentinel
+    # yields a large distance and falsely reports a mid-session model change —
+    # e.g. for an agent that plans up front and then only calls tools, so the
+    # planner events all land in one half. Treat this as "not enough signal to
+    # compare" rather than "the model changed".
+    if not _has_planner_output(first) or not _has_planner_output(second):
+        return False, 0.0
+    a = fingerprint(first)
+    b = fingerprint(second)
     dist = a.distance(b)
     return dist >= distance_threshold, dist
 

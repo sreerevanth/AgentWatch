@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import platform
+import sys
 import time
 from enum import Enum
 from pathlib import Path
@@ -57,9 +59,24 @@ _IN_REPL = False
 
 
 @app.callback(invoke_without_command=True)
-def main_callback(ctx: typer.Context):
+def main_callback(
+    ctx: typer.Context,
+    version: bool = typer.Option(False, "--version", "-V", help="Show version and exit."),
+):
     """AgentWatch CLI with ASCII Animation"""
     global _IN_REPL
+
+    if version:
+        import platform
+        import sys
+
+        from agentwatch import __version__
+
+        console.print(f"AgentWatch CLI version: {__version__}")
+        console.print(f"Python: {sys.version.split()[0]}")
+        console.print(f"Platform: {platform.platform()}")
+        raise typer.Exit()
+
     if _IN_REPL:
         return
 
@@ -126,7 +143,9 @@ def _start_repl_session():
                 break
 
             if cmd_lower in ("clear", "cls"):
-                os.system("cls" if os.name == "nt" else "clear")  # nosec # noqa: S605, S607
+                os.system(  # noqa: S605, S607
+                    "cls" if os.name == "nt" else "clear"
+                )  # nosec
                 continue
 
             args = shlex.split(cmd_line)
@@ -882,7 +901,9 @@ def top(
         def generate_dashboard(data, error_msg=None):
             if error_msg:
                 return Panel(
-                    f"[red]{error_msg}[/red]", title="AgentWatch Top Error", border_style="red"
+                    f"[red]{error_msg}[/red]",
+                    title="AgentWatch Top Error",
+                    border_style="red",
                 )
 
             table = Table(show_header=True, header_style="bold magenta", expand=True)
@@ -910,7 +931,9 @@ def top(
                 )
 
             return Panel(
-                table, title="[cyan]AgentWatch Top - Active Agent Loops[/cyan]", border_style="cyan"
+                table,
+                title="[cyan]AgentWatch Top - Active Agent Loops[/cyan]",
+                border_style="cyan",
             )
 
         async def poll_loop(live_display: Any) -> None:
@@ -931,7 +954,8 @@ def top(
                     await asyncio.sleep(refresh_rate)
 
         with Live(
-            generate_dashboard({"top_sessions": []}), refresh_per_second=1.0 / refresh_rate
+            generate_dashboard({"top_sessions": []}),
+            refresh_per_second=1.0 / refresh_rate,
         ) as live:
             await poll_loop(live)
 
@@ -983,7 +1007,9 @@ def status(
         def generate_dashboard(data, error_msg=None):
             if error_msg:
                 return Panel(
-                    f"[red]{error_msg}[/red]", title="AgentWatch Error", border_style="red"
+                    f"[red]{error_msg}[/red]",
+                    title="AgentWatch Error",
+                    border_style="red",
                 )
 
             # Create sub-panels
@@ -1004,7 +1030,9 @@ def status(
             resources.add_row("Total Tokens:", f"[bold]{tokens:,}[/bold]")
             resources.add_row("Est. Cost:", f"[green]${cost:.4f}[/green]")
             p2 = Panel(
-                resources, title="[magenta]Resource Utilization[/magenta]", border_style="magenta"
+                resources,
+                title="[magenta]Resource Utilization[/magenta]",
+                border_style="magenta",
             )
 
             safety_stats = data.get("safety_stats", {})
@@ -1015,7 +1043,9 @@ def status(
             pipeline.add_row("Event T-Put:", f"{eb_stats.get('total_published', 0):,} processed")
             pipeline.add_row("Subscribers:", f"{eb_stats.get('active_subscribers', 0)}")
             p3 = Panel(
-                pipeline, title="[yellow]Safety & Event Pipeline[/yellow]", border_style="yellow"
+                pipeline,
+                title="[yellow]Safety & Event Pipeline[/yellow]",
+                border_style="yellow",
             )
 
             layout = Layout()
@@ -1036,7 +1066,9 @@ def status(
 
         async with httpx.AsyncClient() as client:
             with Live(
-                generate_dashboard({}), refresh_per_second=1 / refresh_rate, console=console
+                generate_dashboard({}),
+                refresh_per_second=1 / refresh_rate,
+                console=console,
             ) as live:
                 while True:
                     try:
@@ -1233,11 +1265,15 @@ def compare(
         table.add_column("Session B", justify="center", width=12)
 
         table.add_row(
-            "Overall Confidence", format_score(m1["overall"]), format_score(m2["overall"])
+            "Overall Confidence",
+            format_score(m1["overall"]),
+            format_score(m2["overall"]),
         )
         table.add_row("Hallucination Risk", m1["hrisk"], m2["hrisk"])
         table.add_row(
-            "Goal Alignment", format_score(m1["alignment"]), format_score(m2["alignment"])
+            "Goal Alignment",
+            format_score(m1["alignment"]),
+            format_score(m2["alignment"]),
         )
         table.add_row("Failed Steps", str(m1["failed"]), str(m2["failed"]))
         table.add_row("Safety Blocks", str(m1["blocks"]), str(m2["blocks"]))
@@ -1810,7 +1846,8 @@ def session_prune(
         table.add_row("Database Sessions", str(data.get("pruned_db_sessions", 0)))
         table.add_row("Trace Files (.json)", str(data.get("pruned_trace_files", 0)))
         table.add_row(
-            "Checkpoints (Snapshots + Metadata)", str(data.get("pruned_checkpoint_files", 0))
+            "Checkpoints (Snapshots + Metadata)",
+            str(data.get("pruned_checkpoint_files", 0)),
         )
 
         console.print(table)
@@ -1826,6 +1863,33 @@ def session_prune(
 
 
 # ─────────────────────────────────────────────
+# Version
+# ---------------------------------------------
+
+
+@app.command()
+def version() -> None:
+    """Show AgentWatch version and diagnostics."""
+    from agentwatch import __version__
+
+    table = Table(title="AgentWatch Diagnostics", box=box.ROUNDED)
+    table.add_column("Key", style="cyan")
+    table.add_column("Value")
+
+    table.add_row("Version", __version__)
+    table.add_row("Python", sys.version.split()[0])
+    table.add_row("Platform", platform.platform())
+    table.add_row("Executable", sys.executable)
+
+    try:
+        table.add_row("Package Location", str(Path(__file__).resolve().parent.parent.parent))
+    except Exception:
+        table.add_row("Package Location", "N/A")
+
+    console.print(table)
+
+
+# ─────────────────────────────────────────────
 # Entrypoint
 # ---------------------------------------------
 
@@ -1836,3 +1900,41 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+@app.command(name="doctor")
+def doctor() -> None:
+    """[bold]Doctor[/bold]: Check AgentWatch installation health."""
+    import os
+    import shutil
+    import subprocess  # nosec B404
+
+    table = Table(title="Health Diagnostics")
+    table.add_column("Component", style="cyan")
+    table.add_column("Status", style="green")
+
+    db_path = Path("agentwatch.db")
+    if db_path.exists():
+        table.add_row("Database", "OK")
+    else:
+        table.add_row("Database", "[yellow]Not initialized[/yellow]")
+
+    if "AGENTWATCH_API_KEY" in os.environ:
+        table.add_row("API Key", "Configured")
+    else:
+        table.add_row("API Key", "[red]Missing[/red]")
+
+    try:
+        docker_path = shutil.which("docker")
+        if docker_path:
+            res = subprocess.run([docker_path, "info"], capture_output=True, check=False)  # noqa: S603 # nosec B603
+            if res.returncode == 0:
+                table.add_row("Docker", "Running")
+            else:
+                table.add_row("Docker", "[red]Not running[/red]")
+        else:
+            table.add_row("Docker", "[red]Not installed[/red]")
+    except Exception:
+        table.add_row("Docker", "[red]Not installed[/red]")
+
+    console.print(table)

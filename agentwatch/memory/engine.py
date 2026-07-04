@@ -15,7 +15,7 @@ from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from agentwatch.memory.temporal_decay import TemporalDecayManager
+    from agentwatch.memory.decay import ForgettingEngine
 
 logger = logging.getLogger(__name__)
 
@@ -243,16 +243,16 @@ class MemoryEngine:
         self,
         embedding_provider: EmbeddingProvider | None = None,
         max_entries_per_agent: int = 10_000,
-        decay_manager: TemporalDecayManager | None = None,
+        decay_manager: ForgettingEngine | None = None,
     ):
-        # Imported lazily: TemporalDecayManager imports from this module.
-        from agentwatch.memory.temporal_decay import TemporalDecayManager
+        # Imported lazily: ForgettingEngine imports from this module.
+        from agentwatch.memory.decay import ForgettingEngine
 
         self._store = MemoryStore()
         self._embedder = embedding_provider or EmbeddingProvider()
         self._max_entries = max_entries_per_agent
         self._contradiction_reports: list[ContradictionReport] = []
-        self._decay = decay_manager or TemporalDecayManager()
+        self._decay = decay_manager or ForgettingEngine()
 
     async def store(
         self,
@@ -338,7 +338,7 @@ class MemoryEngine:
                 # weighted forgetting curve. Read strength before the rehearsal
                 # bump below so older memories score lower; decay_factor is
                 # refreshed afterwards to reflect the post-access state.
-                strength = self._decay.strength(entry, now)
+                strength = self._decay.entry_strength(entry, now)
                 score = score * 0.7 + strength * 0.3
 
             importance_boost = {
@@ -358,7 +358,7 @@ class MemoryEngine:
 
             entry.last_accessed = now
             entry.access_count += 1
-            self._decay.refresh(entry, now)
+            self._decay.refresh_entry(entry, now)
             self._store.update(entry)
 
         results.sort(key=lambda r: r.similarity_score, reverse=True)

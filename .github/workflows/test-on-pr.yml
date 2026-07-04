@@ -4,24 +4,34 @@ on:
   pull_request:
     branches: [main]
 
+# 1. Harden token permissions to read-only as flagged by CodeRabbit
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test & lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        uses: actions/checkout@v4
         with:
           persist-credentials: false
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: pip
 
+      # 2. Crucial Fix: Include 'crypto' extra so pip-audit can evaluate cryptography
       - name: Install package
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,crypto]"
+
+      - name: Security Vulnerability Audit
+        run: |
+          pip install pip-audit
+          pip-audit
 
       - name: Run tests with coverage
         id: pytest
@@ -53,13 +63,12 @@ jobs:
 
       - name: Upload results artifact
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        uses: actions/upload-artifact@v4
         with:
           name: pr_results
           path: pr_results/
 
-      # Tests gate the PR. Lint runs and is reported above but is not a hard
-      # blocker (the repo carries pre-existing lint debt outside the package).
+      # 3. Clean syntax: Hard blocker check correctly configured without trailing text
       - name: Fail if tests failed
         if: steps.pytest.outcome != 'success'
         run: |
