@@ -59,9 +59,6 @@ class MachineMismatchError(LicenseError):
     """The token is bound to a different machine than the current one."""
 
 
-
-
-
 @dataclass(frozen=True)
 class Entitlement:
     """A verified premium entitlement decoded from a signed token."""

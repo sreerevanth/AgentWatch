@@ -1,7 +1,8 @@
+import pytest
+
 from agentwatch.adapters.openai_agents import AgentWatchOpenAIAgentsAdapter
 from agentwatch.core.event_bus import EventBus
 from agentwatch.core.schema import EventType, ExecutionStatus
-import pytest
 
 
 def _make_bus():
@@ -86,7 +87,7 @@ def test_tool_call_populates_tool_call_data():
     adapter.on_tool_call("bash", input={"command": "rm -rf /"})
 
     assert len(captured) == 2
-    
+
     # Check first tool call (string input)
     event1 = captured[0]
     assert event1.tool_call is not None
@@ -104,32 +105,34 @@ def test_tool_call_populates_tool_call_data():
 
 @pytest.mark.asyncio
 async def test_openai_agents_safety_bypass_regression():
-    from agentwatch.core.safety import SafetyEngine
     from agentwatch.core.event_bus import EventBus
-    
+    from agentwatch.core.safety import SafetyEngine
+
     bus = EventBus()
     safety = SafetyEngine()
-    
+
     # Intercept tool calls through safety engine
     captured = []
+
     async def safety_handler(event):
         checked = await safety.check_event(event)
         captured.append(checked)
-        
+
     bus.subscribe_fn(safety_handler, handler_id="test.safety")
-    
+
     adapter = AgentWatchOpenAIAgentsAdapter(event_bus=bus)
-    
+
     # Trigger a highly dangerous command
     adapter.on_tool_call("bash", input={"command": "rm -rf /"})
-    
+
     # Wait a brief moment for async subscription
     import asyncio
+
     await asyncio.sleep(0.05)
-    
+
     assert len(captured) == 1
     event = captured[0]
-    
+
     # The event must be blocked by the safety engine!
     assert event.status == ExecutionStatus.BLOCKED
     assert event.safety is not None

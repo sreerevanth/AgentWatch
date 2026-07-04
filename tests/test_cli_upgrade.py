@@ -134,7 +134,7 @@ def test_cli_license_public_key_loading_robustness(monkeypatch, tmp_path):
     - invalid encoding
     """
     import sys
-    import agentwatch.cli.main
+
     cli_main = sys.modules["agentwatch.cli.main"]
     from pathlib import Path
 
@@ -169,7 +169,3 @@ def test_cli_license_public_key_loading_robustness(monkeypatch, tmp_path):
 
     monkeypatch.setattr(Path, "read_text", mock_read_text_os_error)
     assert cli_main._license_public_key() is None
-
-
-
-

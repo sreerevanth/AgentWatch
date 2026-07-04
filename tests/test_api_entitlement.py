@@ -115,6 +115,7 @@ def test_eu_ai_act_report_gated(monkeypatch, keypair):
     from agentwatch.api.server import app
 
     monkeypatch.setattr("agentwatch.api.server._API_KEY", None)
+    monkeypatch.setattr("agentwatch.api.server._IS_PROD", False)
     monkeypatch.setattr(entitlement, "_LICENSE_PUBLIC_KEY", public_pem)
     client = TestClient(app)
 
@@ -141,8 +142,7 @@ def test_bearer_token_model_spoofed_machine_id_succeeds(monkeypatch, keypair):
     # gets verified successfully, confirming we treat X-Machine-Id as a metadata check
     # rather than a cryptographic device binding or proof-of-possession.
     verified = ent.authenticate_entitlement(
-        x_entitlement_token=bound_token,
-        x_machine_id="target-machine"
+        x_entitlement_token=bound_token, x_machine_id="target-machine"
     )
     assert verified is not None
     assert verified.machine_id == "target-machine"
@@ -189,6 +189,3 @@ def test_public_key_loading_robustness(monkeypatch, tmp_path):
 
     monkeypatch.setattr(Path, "read_text", mock_read_text_os_error)
     assert entitlement._public_key() is None
-
-
-

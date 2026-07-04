@@ -1416,8 +1416,6 @@ def _license_public_key() -> str | None:
     import os
     import sys
 
-    from agentwatch.security.license import LicenseError
-
     inline = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY")
     if inline:
         return inline

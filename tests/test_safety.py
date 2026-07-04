@@ -294,7 +294,7 @@ def test_loop_detector_invalid_threshold_falls_back(monkeypatch):
 def test_loop_detector_invalid_explicit_threshold_raises():
     with pytest.raises(ValueError, match="min_reps must be >= 1"):
         LoopDetector(min_reps=0)
-    
+
     with pytest.raises(ValueError, match="min_reps must be >= 1"):
         LoopDetector(min_reps=-5)
 
@@ -449,7 +449,6 @@ async def test_safety_engine_sync_check_honors_block_by_default():
 
 
 def test_owasp_scanner_handles_cycles():
-
 
     # Create a self-referential dictionary
     data = {"name": "malicious"}
