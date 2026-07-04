@@ -76,40 +76,11 @@ class BudgetGovernance:
         team_id = self._agent_to_team.get(agent_id)
         team_b = self._teams.get(team_id) if team_id else None
 
-        # Team cap check
-        if team_b and team_b.used_usd + cost_dec > team_b.monthly_cap_usd:
-            return BudgetDecision(
-                action=BudgetAction.BLOCK,
-                reason="team_monthly_cap_exceeded",
-                remaining_team_usd=float(
-                    max(Decimal("0.0"), team_b.monthly_cap_usd - team_b.used_usd)
-                ),
-                remaining_agent_usd=float(
-                    max(Decimal("0.0"), agent_b.daily_cap_usd - agent_b.used_usd)
-                ),
-            )
-
-        # Agent cap check
-        if agent_b.used_usd + cost_dec > agent_b.daily_cap_usd:
-            return BudgetDecision(
-                action=BudgetAction.BLOCK,
-                reason="agent_daily_cap_exceeded",
-                remaining_team_usd=float(team_b.monthly_cap_usd - team_b.used_usd)
-                if team_b
-                else 0.0,
-                remaining_agent_usd=float(
-                    max(Decimal("0.0"), agent_b.daily_cap_usd - agent_b.used_usd)
-                ),
-            )
-
-        # Hard-block on cost
-        if team_b and cost_dec > team_b.hard_block_ceiling_usd:
-            return BudgetDecision(
-                action=BudgetAction.BLOCK,
-                reason="action_above_hard_block_ceiling",
-                remaining_team_usd=float(team_b.monthly_cap_usd - team_b.used_usd),
-                remaining_agent_usd=float(agent_b.daily_cap_usd - agent_b.used_usd),
-            )
+        # Team monthly cap, agent daily cap, and hard-block ceiling. Shared with
+        # commit_human_approval() so both entry points enforce identical limits.
+        violation = self._validate_caps(team_b, agent_b, cost_dec)
+        if violation is not None:
+            return violation
 
         # Auto-approve small actions
         if team_b and cost_dec <= team_b.auto_approve_ceiling_usd:
@@ -123,12 +94,69 @@ class BudgetGovernance:
             remaining_agent_usd=float(agent_b.daily_cap_usd - agent_b.used_usd),
         )
 
+    def _validate_caps(
+        self,
+        team_b: TeamBudget | None,
+        agent_b: AgentBudget,
+        cost_dec: Decimal,
+    ) -> BudgetDecision | None:
+        """Return a BLOCK decision if the action breaches a cap, else None.
+
+        Enforces, in order: the team monthly cap, the agent daily cap, and the
+        team hard-block ceiling. Shared by request() and commit_human_approval()
+        so a human-approved action is held to the same limits as an auto-checked
+        one.
+        """
+        # Team monthly cap
+        if team_b and team_b.used_usd + cost_dec > team_b.monthly_cap_usd:
+            return BudgetDecision(
+                action=BudgetAction.BLOCK,
+                reason="team_monthly_cap_exceeded",
+                remaining_team_usd=float(
+                    max(Decimal("0.0"), team_b.monthly_cap_usd - team_b.used_usd)
+                ),
+                remaining_agent_usd=float(
+                    max(Decimal("0.0"), agent_b.daily_cap_usd - agent_b.used_usd)
+                ),
+            )
+
+        # Agent daily cap
+        if agent_b.used_usd + cost_dec > agent_b.daily_cap_usd:
+            return BudgetDecision(
+                action=BudgetAction.BLOCK,
+                reason="agent_daily_cap_exceeded",
+                remaining_team_usd=float(team_b.monthly_cap_usd - team_b.used_usd)
+                if team_b
+                else 0.0,
+                remaining_agent_usd=float(
+                    max(Decimal("0.0"), agent_b.daily_cap_usd - agent_b.used_usd)
+                ),
+            )
+
+        # Hard-block ceiling on the single action cost
+        if team_b and cost_dec > team_b.hard_block_ceiling_usd:
+            return BudgetDecision(
+                action=BudgetAction.BLOCK,
+                reason="action_above_hard_block_ceiling",
+                remaining_team_usd=float(team_b.monthly_cap_usd - team_b.used_usd),
+                remaining_agent_usd=float(agent_b.daily_cap_usd - agent_b.used_usd),
+            )
+
+        return None
+
     def commit_human_approval(
         self, agent_id: str, action_cost_usd: float | Decimal
     ) -> BudgetDecision:
         cost_dec = Decimal(str(action_cost_usd))
         agent_b = self._agents[agent_id]
         team_b = self._teams[self._agent_to_team[agent_id]]
+        # Re-validate caps at commit time. request() returns REQUIRE_HUMAN without
+        # reserving the funds, so arbitrary other spend can land between the
+        # request and the human's approval. Without re-checking, _commit() would
+        # apply the spend unconditionally and drive used_usd past the hard cap.
+        violation = self._validate_caps(team_b, agent_b, cost_dec)
+        if violation is not None:
+            return violation
         return self._commit(team_b, agent_b, cost_dec, BudgetAction.APPROVE, "human_approved")
 
     def _commit(

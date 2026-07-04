@@ -70,6 +70,8 @@ class TelemetryProvider:
     def __init__(self, config: TelemetryConfig | None = None):
         self._config = config or TelemetryConfig()
         self._tracer = None
+        self._tracer_provider: Any = None
+        self._emitted_trace_ids: set[str] = set()
         self._meter = None
         self._initialized = False
         self._buffer: list[Any] = []
@@ -146,6 +148,18 @@ class TelemetryProvider:
             self.export(span)
         self._buffer.clear()
 
+    def _flush_exported_spans(self, timeout_millis: int = 30000) -> bool:
+        """Force-flush queued spans and report whether the export completed."""
+        provider = self._tracer_provider
+        if self._exporter is None or provider is None or not hasattr(provider, "force_flush"):
+            return False
+
+        try:
+            return bool(provider.force_flush(timeout_millis))
+        except Exception as exc:
+            logger.warning("Telemetry span flush failed: %s", exc)
+            return False
+
     def grafana_dashboard_template(self) -> dict[str, Any]:
         """Return a basic Grafana dashboard template for AgentWatch."""
         return {
@@ -198,6 +212,8 @@ class TelemetryProvider:
             if not self._exporter:
                 self._exporter = console_exporter
             tracer_provider.add_span_processor(BatchSpanProcessor(console_exporter))
+
+        self._tracer_provider = tracer_provider
 
         try:
             trace.set_tracer_provider(tracer_provider)
@@ -361,6 +377,10 @@ class TelemetryProvider:
         if not trace_id_int:
             return False
 
+        trace_key = str(trace_data.get("trace_id"))
+        if trace_key in self._emitted_trace_ids:
+            return self._flush_exported_spans()
+
         # Create a fake root context to enforce trace_id
         dummy_span_id = _safe_int_from_id(trace_data.get("trace_id", "root"), 64) or 1
         root_span_context = SpanContext(
@@ -417,7 +437,8 @@ class TelemetryProvider:
             span.end(end_time=end_time_ns)
             otel_contexts[aw_span_id] = set_span_in_context(span, Context())
 
-        return True
+        self._emitted_trace_ids.add(trace_key)
+        return self._flush_exported_spans()
 
 
 # Compatibility alias for OBS tests

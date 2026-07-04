@@ -237,7 +237,7 @@ def test_budget_governance_requires_human_above_auto_approve():
 def test_tracker_decimal_precision_accumulation():
     tracker = CostTracker(default_token_budget=10000, default_usd_budget=1.0)
     tracker.configure_session("prec-session", token_budget=10000, usd_budget=0.3)
-    
+
     # 0.1 + 0.1 + 0.1 in float accumulates precision error: 0.30000000000000004
     # Using Decimal, this stays exactly 0.3 and does not exceed the 0.3 budget.
     for _ in range(3):
@@ -248,7 +248,7 @@ def test_tracker_decimal_precision_accumulation():
             token_usage=TokenUsage(total_tokens=100, estimated_cost_usd=0.1),
         )
         budget = tracker.ingest_event(ev)
-    
+
     # usd_used is converted back to float in to_dict() or we can check usd_used directly
     assert budget.to_dict()["usd_used"] == 0.3
     assert not budget.exceeded
@@ -258,12 +258,12 @@ def test_budget_governance_decimal_precision():
     g = BudgetGovernance()
     g.configure_team("team-prec", monthly_cap_usd=0.3, auto_approve_ceiling_usd=0.5)
     g.configure_agent("agent-prec", "team-prec", daily_cap_usd=0.3)
-    
+
     # Three events costing 0.1 should fit exactly in the 0.3 budget.
     for _ in range(3):
         dec = g.request("agent-prec", action_cost_usd=0.1)
         assert dec.action == BudgetAction.APPROVE
-    
+
     # A fourth event should exceed the budget and be blocked.
     dec = g.request("agent-prec", action_cost_usd=0.1)
     assert dec.action == BudgetAction.BLOCK

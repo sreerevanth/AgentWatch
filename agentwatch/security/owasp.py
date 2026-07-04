@@ -119,26 +119,23 @@ _PATTERNS: dict[OwaspVector, list[tuple[re.Pattern, str]]] = {
 }
 
 
-class OwaspScanner:
-    """Run all 10 vectors against a stream of events."""
-
-    def scan(self, events: list[AgentEvent]) -> OwaspScan:
-        scan = OwaspScan()
-        for event in events:
-            blob = self._blob_of(event)
-            if not blob:
-                continue
-            for vector, patterns in _PATTERNS.items():
-                for pat, severity in patterns:
-                    if pat.search(blob):
-                        scan.findings.append(
-                            OwaspFinding(
-                                vector=vector,
-                                severity=severity,
-                                detail=f"matched: {pat.pattern}",
-                                event_id=event.event_id,
-                            )
+def validate_owasp(events: list[AgentEvent]) -> OwaspScan:
+    scan = OwaspScan()
+    for event in events:
+        blob = _blob_of(event)
+        if not blob:
+            continue
+        for vector, patterns in _PATTERNS.items():
+            for pat, severity in patterns:
+                if pat.search(blob):
+                    scan.findings.append(
+                        OwaspFinding(
+                            vector=vector,
+                            severity=severity,
+                            detail=f"matched: {pat.pattern}",
+                            event_id=event.event_id,
                         )
+
         return scan
 
     def _flatten_values(self, data: Any, visited: set[int] | None = None) -> list[str]:
@@ -183,3 +180,59 @@ class OwaspScanner:
 
 
 __all__ = ["OwaspVector", "OwaspFinding", "OwaspScan", "OwaspScanner"]
+
+                    )
+    return scan
+
+
+def _flatten_values(data: Any, visited: set[int] | None = None) -> list[str]:
+    """Recursively extract all string-like values from a data structure."""
+    if visited is None:
+        visited = set()
+
+    parts: list[str] = []
+
+    # Track containers to avoid infinite recursion
+    if isinstance(data, (dict, list, tuple, set)):
+        if id(data) in visited:
+            return []
+        visited.add(id(data))
+
+    if isinstance(data, str):
+        parts.append(data)
+    elif isinstance(data, dict):
+        for v in data.values():
+            parts.extend(_flatten_values(v, visited))
+
+    elif isinstance(data, (list, tuple, set)):
+        for item in data:
+            parts.extend(_flatten_values(item, visited))
+    elif data is not None:
+        parts.append(str(data))
+    return parts
+
+
+def _blob_of(event: AgentEvent) -> str:
+    parts: list[str] = []
+
+    if event.tool_call:
+        if event.tool_call.raw_command:
+            parts.append(event.tool_call.raw_command)
+
+        if event.tool_call.arguments:
+            parts.extend(_flatten_values(event.tool_call.arguments))
+
+    if event.tool_result and event.tool_result.output:
+        parts.append(str(event.tool_result.output))
+
+    if event.planner_output_preview:
+        parts.append(event.planner_output_preview)
+
+    if event.prompt_preview:
+        parts.append(event.prompt_preview)
+
+    return "\n".join(parts)
+
+
+__all__ = ["OwaspVector", "OwaspFinding", "OwaspScan", "validate_owasp"]
+
