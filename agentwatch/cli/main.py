@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import platform
 import sys
 import time
@@ -108,7 +109,6 @@ def main_callback(
 
 def _start_repl_session():
     """Run an interactive REPL shell for the CLI."""
-    import os
     import shlex
 
     from rich.panel import Panel
@@ -143,9 +143,7 @@ def _start_repl_session():
                 break
 
             if cmd_lower in ("clear", "cls"):
-                os.system(  # noqa: S605, S607
-                    "cls" if os.name == "nt" else "clear"
-                )  # nosec
+                console.clear()
                 continue
 
             args = shlex.split(cmd_line)
@@ -1921,7 +1919,7 @@ def compliance_export_csv(
     asyncio.run(_run())
 
 
-_DEFAULT_AUDIT_LOG_PATH = Path("data/audit-log.jsonl")
+_DEFAULT_AUDIT_LOG_PATH = Path(os.getenv("AGENTWATCH_AUDIT_LOG_PATH", "data/audit-log.jsonl"))
 
 
 @compliance_app.command(name="export-local")
