@@ -20,6 +20,8 @@ from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Any
 
+from agentwatch.security.redaction import MASK, default_redactor
+
 
 class ShareScope(str, Enum):
     FULL = "full"
@@ -130,9 +132,73 @@ def render_for_viewer(
     return redacted
 
 
+# Community endpoint the CLI ``share`` command uploads to; overridable per call.
+DEFAULT_SHARE_URL = "https://share.agentwatch.dev"
+
+# Keys whose values are secrets that free-text regexes cannot reliably detect
+# (API tokens, raw ``.env`` dumps); their values are masked structurally.
+_SECRET_KEYS = frozenset(
+    {
+        "api_key",
+        "api_keys",
+        "apikey",
+        "access_key",
+        "secret_key",
+        "authorization",
+        "auth_token",
+        "credential",
+        "credentials",
+        "env",
+        "environ",
+        "environment",
+        "environment_vars",
+        "password",
+        "passwd",
+        "secret",
+        "secrets",
+        "token",
+    }
+)
+
+
+def sanitize_trace(payload: Any) -> Any:
+    """
+    Return a deep copy of a trace made safe to upload to a public viewer.
+
+    Sanitization is unconditional — there is no "full" escape hatch — because a
+    shared link is world-readable. Two passes are applied:
+
+    1. Structural: any mapping key naming a secret (API keys, raw environment
+       dumps, credentials; see :data:`_SECRET_KEYS`) has its value replaced
+       with the redaction mask.
+    2. Content: every remaining string is run through the PII/PHI
+       :class:`~agentwatch.security.redaction.Redactor`, masking emails, SSNs,
+       cloud keys, medical identifiers, and similar in place.
+    """
+    return default_redactor().redact_payload(_strip_secret_keys(payload))
+
+
+def _strip_secret_keys(value: Any) -> Any:
+    """Recursively mask values filed under a secret-bearing key."""
+    if isinstance(value, dict):
+        return {
+            k: MASK
+            if isinstance(k, str) and k.lower() in _SECRET_KEYS
+            else _strip_secret_keys(v)
+            for k, v in value.items()
+        }
+    if isinstance(value, list):
+        return [_strip_secret_keys(v) for v in value]
+    if isinstance(value, tuple):
+        return tuple(_strip_secret_keys(v) for v in value)
+    return value
+
+
 __all__ = [
     "ShareScope",
     "ShareLink",
     "ShareLinkRegistry",
     "render_for_viewer",
+    "sanitize_trace",
+    "DEFAULT_SHARE_URL",
 ]
