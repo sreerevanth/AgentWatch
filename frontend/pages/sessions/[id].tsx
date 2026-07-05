@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/router'
 import { AlertTriangle, ArrowLeft, ChevronDown, ChevronUp, RotateCcw } from 'lucide-react'
-import { format } from 'date-fns'
+
 
 import { FailureAnalysis, ReplayStep } from '../../lib/api'
 import { Modal } from '../../components/Modal'
@@ -9,7 +9,17 @@ import { useSession, useSessionReplay, useSessionConfidence, useSessionCheckpoin
 
 function safeFormat(ts: string | null | undefined, fmt: string): string {
   if (!ts) return '—'
-  try { return format(new Date(ts), fmt) } catch { return '—' }
+  try {
+    const date = new Date(ts)
+    if (fmt === 'HH:mm:ss.SSS') {
+      const time = new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(date)
+      return `${time}.${String(date.getMilliseconds()).padStart(3, '0')}`
+    }
+    if (fmt === 'HH:mm:ss') {
+      return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(date)
+    }
+    return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(date)
+  } catch { return '—' }
 }
 
 const STATUS_COLORS: Record<string, string> = {

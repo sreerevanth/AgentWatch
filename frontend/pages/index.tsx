@@ -4,7 +4,7 @@ import { useRouter } from 'next/router'
 import { useQueryClient } from '@tanstack/react-query'
 import { Activity, AlertTriangle, ChevronRight, DollarSign, Loader2, RefreshCw, Shield, Zap } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { format, formatDistanceToNow } from 'date-fns'
+
 
 import { AgentEvent, AgentSession, DashboardSummary } from '../lib/api'
 import { useLiveEventSocket } from '../lib/useLiveEventSocket'
@@ -27,12 +27,29 @@ function cn(...classes: Array<string | false | null | undefined>) {
 
 function safeFormat(ts: string | null | undefined, fmt: string): string {
   if (!ts) return '—'
-  try { return format(new Date(ts), fmt) } catch { return '—' }
+  try {
+    const date = new Date(ts)
+    if (fmt === 'HH:mm:ss') {
+      return new Intl.DateTimeFormat('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(date)
+    }
+    return new Intl.DateTimeFormat('en-US', { dateStyle: 'medium' }).format(date)
+  } catch { return '—' }
 }
 
 function safeDistanceToNow(ts: string | null | undefined): string {
   if (!ts) return '—'
-  try { return formatDistanceToNow(new Date(ts), { addSuffix: true }) } catch { return '—' }
+  try {
+    const now = Date.now()
+    const then = new Date(ts).getTime()
+    const diffSec = Math.round((now - then) / 1000)
+    if (diffSec < 60) return `${diffSec} seconds ago`
+    const diffMin = Math.round(diffSec / 60)
+    if (diffMin < 60) return `${diffMin} minutes ago`
+    const diffHr = Math.round(diffMin / 60)
+    if (diffHr < 24) return `${diffHr} hours ago`
+    const diffDay = Math.round(diffHr / 24)
+    return `${diffDay} days ago`
+  } catch { return '—' }
 }
 
 function statusBadge(status: string) {
