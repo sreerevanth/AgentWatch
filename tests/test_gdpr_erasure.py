@@ -1,139 +1,151 @@
-"""Tests for GDPR erasure persistence and HMAC-SHA256 receipts."""
+﻿"""Tests for GDPR cross-session erasure (CMP-002).
+
+Covers:
+- ErasureRequest / ErasureReceipt / ErasureScope schema models.
+- CrossSessionErasureService orchestration with mock targets.
+- Receipt HMAC signature integrity.
+- Fail-fast on empty signing_secret.
+- Per-target failure surfacing through ErasureReceipt.failure_count / failed_targets.
+"""
 
 from __future__ import annotations
-
-from datetime import UTC, datetime
 
 import pytest
 
 from agentwatch.governance.gdpr import (
-    SIGNATURE_PREFIX,
-    SIGNING_KEY_ENV,
+    CrossSessionErasureService,
     ErasureReceipt,
-    ErasureStore,
-    GDPREngine,
-    resolve_signing_key,
-    sign_receipt,
-    verify_receipt,
+    ErasureRequest,
+    ErasureScope,
+    ErasureTarget,
 )
 
 
-class _FakeStore:
-    """In-memory ErasureStore recording calls and returning a fixed count."""
+class _MockTarget:
+    """In-memory ErasureTarget for testing the orchestration layer."""
 
-    def __init__(self, count: int) -> None:
-        self.count = count
-        self.calls: list[tuple[str, str]] = []
+    name = "mock_target"
 
-    async def erase_user_data(self, user_id: str, *, scope: str = "all") -> int:
-        self.calls.append((user_id, scope))
-        return self.count
+    def __init__(self, records: list[str] | None = None, *, fail: str | None = None):
+        self._records = list(records or [])
+        self._fail_message = fail
 
+    async def count_matching(self, identifier: str, scope: ErasureScope) -> int:
+        return sum(1 for r in self._records if identifier in r)
 
-def _receipt(**overrides) -> ErasureReceipt:
-    base = {
-        "user_id": "u1",
-        "submitted_at": datetime(2026, 1, 1, tzinfo=UTC),
-        "completed_at": datetime(2026, 1, 1, 0, 0, 1, tzinfo=UTC),
-        "items_erased": 3,
-        "scope": "all",
-    }
-    base.update(overrides)
-    return ErasureReceipt(**base)
+    async def erase_matching(self, identifier: str, scope: ErasureScope) -> int:
+        if self._fail_message is not None:
+            raise RuntimeError(self._fail_message)
+        before = len(self._records)
+        self._records = [r for r in self._records if identifier not in r]
+        return before - len(self._records)
 
 
-def test_resolve_signing_key_prefers_explicit(monkeypatch):
-    monkeypatch.setenv(SIGNING_KEY_ENV, "from-env")
-    assert resolve_signing_key("explicit") == b"explicit"
+def _make_service(targets: list[ErasureTarget]) -> CrossSessionErasureService:
+    return CrossSessionErasureService(
+        targets=targets, signing_secret=b"test-key-32-bytes-long-sig\x00\x00\x00"
+    )
 
 
-def test_resolve_signing_key_falls_back_to_env(monkeypatch):
-    monkeypatch.setenv(SIGNING_KEY_ENV, "from-env")
-    assert resolve_signing_key() == b"from-env"
+def test_erasure_request_scope_defaults():
+    request = ErasureRequest(identifier="user_abc")
+    assert request.scope == ErasureScope.USER_ID
+    assert request.reason == "right_to_erasure"
 
 
-def test_resolve_signing_key_raises_when_missing(monkeypatch):
-    monkeypatch.delenv(SIGNING_KEY_ENV, raising=False)
-    with pytest.raises(RuntimeError, match="signing key"):
-        resolve_signing_key()
+async def test_single_target_erase():
+    target = _MockTarget(["user_abc_event_1", "user_xyz_event_2"])
+    service = _make_service([target])
+    receipt = await service.erase(ErasureRequest(identifier="user_abc"))
+    assert isinstance(receipt, ErasureReceipt)
+    assert receipt.items_erased == 1
 
 
-def test_signature_is_hmac_sha256_shaped():
-    sig = sign_receipt(_receipt(), key="secret")
-    assert sig.startswith(SIGNATURE_PREFIX)
-    assert len(sig.removeprefix(SIGNATURE_PREFIX)) == 64
+async def test_receipt_has_hmac_signature():
+    target = _MockTarget(["user_abc_event"])
+    service = _make_service([target])
+    receipt = await service.erase(ErasureRequest(identifier="user_abc"))
+    assert len(receipt.audit_signature) == 64
+    assert receipt.audit_signature != ""
 
 
-def test_signing_is_deterministic_across_processes():
-    # Stable regardless of process hash randomization (the old hash() flaw).
-    assert sign_receipt(_receipt(), key="k") == sign_receipt(_receipt(), key="k")
+async def test_receipt_signature_is_deterministic():
+    service1 = _make_service([_MockTarget(["user_abc_event"])])
+    service2 = _make_service([_MockTarget(["user_abc_event"])])
+    r1 = await service1.erase(ErasureRequest(identifier="user_abc"))
+    r2 = await service2.erase(ErasureRequest(identifier="user_abc"))
+    assert r1.audit_signature == r2.audit_signature
 
 
-def test_verify_accepts_matching_signature():
-    r = _receipt()
-    r.audit_signature = sign_receipt(r, key="k")
-    assert verify_receipt(r, key="k") is True
+async def test_receipt_signature_changes_with_content():
+    t1 = _MockTarget(["user_a_target_1"])
+    t2 = _MockTarget(["user_b_target_2"])
+    service = _make_service([t1, t2])
+    r1 = await service.erase(ErasureRequest(identifier="user_a"))
+    r2 = await service.erase(ErasureRequest(identifier="user_b"))
+    assert r1.audit_signature != r2.audit_signature
 
 
-def test_verify_rejects_wrong_key():
-    r = _receipt()
-    r.audit_signature = sign_receipt(r, key="k")
-    assert verify_receipt(r, key="other") is False
-
-
-def test_verify_rejects_tampered_field():
-    r = _receipt()
-    r.audit_signature = sign_receipt(r, key="k")
-    r.items_erased = 999
-    assert verify_receipt(r, key="k") is False
-
-
-def test_erase_filters_records_and_signs_receipt():
-    engine = GDPREngine(signing_key="k")
-    records = [
-        {"user_id": "u1", "text": "a"},
-        {"user_id": "u2", "text": "b"},
-        {"user_id": "u1", "text": "c"},
-    ]
-    kept, receipt = engine.erase("u1", records, scope="all")
-
-    assert [r["user_id"] for r in kept] == ["u2"]
+async def test_multiple_targets():
+    t1 = _MockTarget(["user_abc_data_1"])
+    t2 = _MockTarget(["user_abc_data_2"])
+    service = _make_service([t1, t2])
+    receipt = await service.erase(ErasureRequest(identifier="user_abc"))
     assert receipt.items_erased == 2
-    assert verify_receipt(receipt, key="k") is True
 
 
-def test_engine_reads_key_from_env(monkeypatch):
-    monkeypatch.setenv(SIGNING_KEY_ENV, "env-key")
-    engine = GDPREngine()
-    _, receipt = engine.erase("u1", [{"user_id": "u1"}])
-    assert verify_receipt(receipt, key="env-key") is True
+async def test_target_error_produces_result_with_error():
+    failing = _MockTarget(["user_abc_data"], fail="database connection lost")
+    ok = _MockTarget(["user_abc_data"])
+    service = _make_service([failing, ok])
+    receipt = await service.erase(ErasureRequest(identifier="user_abc"))
+    assert receipt.items_erased == 1
+    assert receipt.audit_signature
 
 
-async def test_erase_persisted_delegates_to_store_and_signs():
-    engine = GDPREngine(signing_key="k")
-    store = _FakeStore(count=7)
-
-    receipt = await engine.erase_persisted(store, "u1", scope="memories")
-
-    assert store.calls == [("u1", "memories")]
-    assert receipt.items_erased == 7
-    assert receipt.scope == "memories"
-    assert verify_receipt(receipt, key="k") is True
+async def test_session_id_scope():
+    target = _MockTarget(["user_abc_session"])
+    service = _make_service([target])
+    receipt = await service.erase(
+        ErasureRequest(identifier="user_abc", scope=ErasureScope.SESSION_ID)
+    )
+    assert receipt.scope == "session_id"
 
 
-def test_fake_store_satisfies_protocol():
-    assert isinstance(_FakeStore(0), ErasureStore)
+async def test_empty_targets():
+    service = _make_service([])
+    receipt = await service.erase(ErasureRequest(identifier="user_nonexistent"))
+    assert receipt.items_erased == 0
 
 
-def test_repository_satisfies_erasure_store_protocol():
-    from agentwatch.core.models import Repository
+def test_targets_property():
+    t = _MockTarget()
+    service = _make_service([t])
+    assert len(service.targets) == 1
+    assert service.targets[0] is t
 
-    assert isinstance(Repository(session=None), ErasureStore)  # type: ignore[arg-type]
+
+def test_empty_signing_secret_raises():
+    """Empty signing_secret is rejected at construction time (fail-fast)."""
+    with pytest.raises(ValueError, match="non-empty signing_secret"):
+        CrossSessionErasureService(targets=[], signing_secret=b"")
 
 
-async def test_repository_rejects_unknown_scope():
-    from agentwatch.core.models import Repository
+async def test_target_failure_count_zero_on_success():
+    """Successful erasure leaves failure_count at 0 with empty failed_targets."""
+    service = _make_service([_MockTarget(["user_abc_event"])])
+    receipt = await service.erase(ErasureRequest(identifier="user_abc"))
+    assert receipt.failure_count == 0
+    assert receipt.failed_targets == []
 
-    repo = Repository(session=None)  # type: ignore[arg-type]
-    with pytest.raises(ValueError, match="unknown erasure scope"):
-        await repo.erase_user_data("u1", scope="everything")
+
+async def test_per_target_failure_surfaced_in_receipt():
+    """Failed targets surface in ErasureReceipt.failure_count + failed_targets."""
+    failing = _MockTarget(["user_abc_data"], fail="db unavailable")
+    ok = _MockTarget(["user_abc_data"])
+    service = _make_service([failing, ok])
+    receipt = await service.erase(ErasureRequest(identifier="user_abc"))
+    assert receipt.failure_count == 1
+    assert receipt.failed_targets == ["mock_target"]
+    assert receipt.audit_signature
+

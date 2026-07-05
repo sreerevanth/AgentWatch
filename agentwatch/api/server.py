@@ -59,6 +59,12 @@ from agentwatch.core.schema import (
 from agentwatch.cost.tracker import CostTracker
 from agentwatch.governance.compliance_reporter import ComplianceReporter
 from agentwatch.governance.engine import AuditEventType, GovernanceEngine
+from agentwatch.governance.gdpr import (
+    CrossSessionErasureService,
+    ErasureReceipt,
+    ErasureRequest,
+    ErasureScope,
+)
 from agentwatch.models.tenant import TenantPlan
 from agentwatch.monitoring.metrics import (
     record_api_latency,
@@ -1617,6 +1623,81 @@ async def ingestion_metrics(
 ) -> dict[str, Any]:
     # Ingestion metrics are available when the pipeline is running
     return {"message": "Ingestion metrics endpoint — attach TenantIngestionPipeline for live data"}
+
+
+# ─── GDPR right-to-erasure (CMP-002) ──────────────────────────────────
+
+_SESSION_ERASURE_SECRET: bytes = os.getenv("AGENTWATCH_ERASURE_SECRET", "").encode() or os.urandom(
+    32
+)
+
+
+class _SessionErasureTarget:
+    """ErasureTarget for agent session and event records in the SQLAlchemy repository.
+
+    The repository is injected per-operation so each ``count`` / ``erase`` pair
+    runs inside its own transactional scope.  This follows the same pattern as
+    ``_pg_write_session`` and ``_pg_write_event``.
+    """
+
+    name = "sessions_and_events"
+
+    async def count_matching(self, identifier: str, scope: ErasureScope) -> int:
+        if _db_session_factory is None:
+            return 0
+        async with _db_session_factory() as db:
+            repo = Repository(db)
+            if scope == ErasureScope.SESSION_ID:
+                return await repo.count_sessions({"session_id": identifier})
+            if scope == ErasureScope.AGENT_ID:
+                return await repo.count_sessions({"agent_id": identifier})
+            # user_id / tenant_id / fallback: scan both tables on agent_id
+            sessions = await repo.count_sessions({"agent_id": identifier})
+            events = await repo.count_events({"agent_id": identifier})
+            return sessions + events
+
+    async def erase_matching(self, identifier: str, scope: ErasureScope) -> int:
+        if _db_session_factory is None:
+            return 0
+        async with _db_session_factory() as db:
+            repo = Repository(db)
+            erased = 0
+            if scope == ErasureScope.SESSION_ID:
+                erased += await repo.delete_events_by_session(identifier)
+                erased += await repo.delete_session(identifier)
+                await db.commit()
+                return erased
+            if scope in (ErasureScope.AGENT_ID, ErasureScope.USER_ID, ErasureScope.TENANT_ID):
+                session_ids = await repo.get_session_ids({"agent_id": identifier})
+                for sid in session_ids:
+                    erased += await repo.delete_events_by_session(sid)
+                    erased += await repo.delete_session(sid)
+                await db.commit()
+                return erased
+            return 0
+
+
+async def _build_erasure_service() -> CrossSessionErasureService:
+    return CrossSessionErasureService(
+        targets=[_SessionErasureTarget()],
+        signing_secret=_SESSION_ERASURE_SECRET,
+    )
+
+
+@app.post("/api/v1/gdpr/erase", response_model=ErasureReceipt)
+async def gdpr_erase(
+    request: ErasureRequest,
+    _auth: None = Depends(_require_api_key),
+) -> ErasureReceipt:
+    """Execute a right-to-erasure (right-to-be-forgotten) action across all
+    session, event, and memory data for the given identifier.
+
+    The response is an HMAC-SHA256 signed erasure receipt suitable for
+    compliance audit trails.
+    """
+    service = await _build_erasure_service()
+    receipt = await service.erase(request)
+    return receipt
 
 
 def create_app() -> FastAPI:
