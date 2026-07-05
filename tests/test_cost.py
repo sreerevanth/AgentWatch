@@ -3,6 +3,10 @@
 from __future__ import annotations
 
 import time
+from collections import deque
+from datetime import UTC, datetime, timedelta
+
+import pytest
 
 from agentwatch.core.schema import AgentEvent, EventType, TokenUsage
 from agentwatch.cost.anomaly import CostAnomalyDetector
@@ -100,6 +104,26 @@ def test_router_failover_on_errors():
         r.observe("primary", error=True)
     r.observe("backup", confidence=0.9)
     assert r.choose().chosen == "backup"
+
+
+def test_router_recovers_after_error_window():
+    """Errors age out of the trailing window, so a model recovers automatically."""
+    r = ModelRouter(["primary", "backup"], error_ceiling=3, error_window_seconds=60.0)
+    for _ in range(5):
+        r.observe("primary", error=True)
+    assert not r.is_healthy("primary")
+
+    # Age the recorded failures past the window; stale errors should be pruned.
+    stale = datetime.now(UTC) - timedelta(seconds=61)
+    r._health["primary"].error_times = deque([stale] * 5)
+    assert r.is_healthy("primary")
+    assert r.health_snapshot()["primary"]["error_count"] == 0
+
+
+def test_router_error_window_validation():
+    """A non-positive error window is rejected at construction."""
+    with pytest.raises(ValueError, match="error_window_seconds must be"):
+        ModelRouter(["primary"], error_window_seconds=0.0)
 
 
 def test_router_per_model_timeout():

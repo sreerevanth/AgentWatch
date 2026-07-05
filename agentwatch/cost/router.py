@@ -12,7 +12,7 @@ import math
 import statistics
 from collections import deque
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -23,7 +23,7 @@ class ModelHealth:
     model: str
     samples: deque[float] = field(default_factory=lambda: deque(maxlen=50))
     latencies_ms: deque[float] = field(default_factory=lambda: deque(maxlen=50))
-    error_count: int = 0
+    error_times: deque[datetime] = field(default_factory=deque)
     last_seen: datetime = field(default_factory=lambda: datetime.now(UTC))
 
     @property
@@ -33,6 +33,13 @@ class ModelHealth:
     @property
     def mean_latency_ms(self) -> float:
         return statistics.mean(self.latencies_ms) if self.latencies_ms else 0.0
+
+    def error_count(self, window_seconds: float) -> int:
+        """Number of failures within the trailing window, pruning older ones."""
+        cutoff = datetime.now(UTC) - timedelta(seconds=window_seconds)
+        while self.error_times and self.error_times[0] < cutoff:
+            self.error_times.popleft()
+        return len(self.error_times)
 
 
 @dataclass
@@ -55,14 +62,18 @@ class ModelRouter:
         confidence_floor: float = 0.55,
         latency_ceiling_ms: float = 6000.0,
         error_ceiling: int = 5,
+        error_window_seconds: float = 300.0,
         route_timeouts: dict[str, float] | None = None,
     ):
         if not priority:
             raise ValueError("priority list must be non-empty")
+        if not math.isfinite(error_window_seconds) or error_window_seconds <= 0:
+            raise ValueError("error_window_seconds must be a finite positive number")
         self.priority = priority
         self.confidence_floor = confidence_floor
         self.latency_ceiling_ms = latency_ceiling_ms
         self.error_ceiling = error_ceiling
+        self.error_window_seconds = error_window_seconds
         route_timeouts = dict(route_timeouts or {})
         unknown = set(route_timeouts) - set(priority)
         if unknown:
@@ -90,18 +101,18 @@ class ModelRouter:
         if latency_ms is not None:
             h.latencies_ms.append(float(latency_ms))
         if error:
-            h.error_count += 1
+            h.error_times.append(h.last_seen)
 
     def reset_errors(self, model: str) -> None:
         h = self._health.get(model)
         if h:
-            h.error_count = 0
+            h.error_times.clear()
 
     def is_healthy(self, model: str) -> bool:
         h = self._health.get(model)
         if h is None:
             return False
-        if h.error_count >= self.error_ceiling:
+        if h.error_count(self.error_window_seconds) >= self.error_ceiling:
             return False
         if h.samples and h.mean_confidence < self.confidence_floor:
             return False
@@ -142,7 +153,7 @@ class ModelRouter:
             m: {
                 "mean_confidence": h.mean_confidence,
                 "mean_latency_ms": h.mean_latency_ms,
-                "error_count": h.error_count,
+                "error_count": h.error_count(self.error_window_seconds),
                 "healthy": float(self.is_healthy(m)),
                 "latency_ceiling_ms": self.route_timeouts.get(m, self.latency_ceiling_ms),
             }
