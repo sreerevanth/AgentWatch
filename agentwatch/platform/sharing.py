@@ -183,7 +183,7 @@ def _strip_secret_keys(value: Any) -> Any:
     if isinstance(value, dict):
         return {
             k: MASK
-            if isinstance(k, str) and k.lower() in _SECRET_KEYS
+            if isinstance(k, str) and any(sk in k.lower() for sk in _SECRET_KEYS)
             else _strip_secret_keys(v)
             for k, v in value.items()
         }

@@ -708,7 +708,12 @@ def share(
                 console.print(f"[red]Failed to reach share service at {base}: {exc}[/red]")
                 raise typer.Exit(1)
 
-        data = resp.json()
+        try:
+            data = resp.json()
+        except Exception:
+            console.print("[red]Share service returned an invalid response (not JSON).[/red]")
+            raise typer.Exit(1)
+
         url = data.get("url")
         if not url:
             token = data.get("id") or data.get("token")
@@ -717,12 +722,18 @@ def share(
             console.print("[red]Share service did not return a link.[/red]")
             raise typer.Exit(1)
 
+        from rich.markup import escape
+
+        safe_url = escape(str(url))
+        expires_at = data.get("expires_at")
+        safe_expires = escape(str(expires_at)) if expires_at else ""
+
         console.print(
             Panel(
                 f"[bold green]Trace shared![/bold green]\n"
                 f"[dim]PII and secrets were redacted before upload.[/dim]\n\n"
-                f"Link: [link]{url}[/link]"
-                + (f"\n[dim]Expires:[/dim] {data['expires_at']}" if data.get("expires_at") else ""),
+                f"Link: [link]{safe_url}[/link]"
+                + (f"\n[dim]Expires:[/dim] {safe_expires}" if safe_expires else ""),
                 border_style="green",
                 title="AgentWatch share",
             )
