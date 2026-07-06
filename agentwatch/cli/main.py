@@ -1939,9 +1939,11 @@ def doctor() -> None:
 
     console.print(table)
 
+
 # ─────────────────────────────────────────────
 # export-pdf command
 # ─────────────────────────────────────────────
+
 
 @session_app.command(name="export-pdf")
 def export_pdf(
@@ -1970,11 +1972,17 @@ def export_pdf(
                     console.print(f"[red]Session {session_id} not found.[/red]")
                     raise typer.Exit(1)
                 resp.raise_for_status()
-            except Exception as exc:
-                console.print(f"[red]API error: {exc}[/red]")
+            except httpx.HTTPStatusError as exc:
+                _handle_http_status_error(exc, api_url)
+            except httpx.HTTPError as exc:
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
 
-        data = resp.json()
+        try:
+            _data = resp.json()
+        except ValueError as exc:
+            console.print(f"[red]Unexpected API response: {exc}[/red]")
+            raise typer.Exit(1)
 
         try:
             # Mock PDF generation, since actual ReportLab dependency might not be present
@@ -1982,7 +1990,9 @@ def export_pdf(
                 f.write(b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
             console.print(f"[green]{out} created successfully[/green]")
         except PermissionError:
-            console.print(f"[red]Cannot write to {out}. Please ensure the file is closed and try again.[/red]")
+            console.print(
+                f"[red]Cannot write to {out}. Please ensure the file is closed and try again.[/red]"
+            )
             raise typer.Exit(1)
 
     asyncio.run(_run())
