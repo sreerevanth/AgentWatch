@@ -184,10 +184,12 @@ class OwaspScanner:
 
 __all__ = ["OwaspVector", "OwaspFinding", "OwaspScan", "OwaspScanner"]
 
+
 def validate_owasp(payload: dict) -> dict:
     """Validate payload for OWASP vulnerabilities."""
     try:
         import jwt
+
         token = payload.get("token")
         if token:
             # Just decode to validate format
@@ -196,5 +198,5 @@ def validate_owasp(payload: dict) -> dict:
         return {"status": "error", "error": f"Invalid JWT format: {e}"}
     except Exception as e:
         return {"status": "error", "error": f"JWT decode error: {e}"}
-        
+
     return {"status": "success", "message": "Payload is safe"}
