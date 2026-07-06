@@ -1,10 +1,3 @@
-// NEXT_PUBLIC_API_HOST is baked into the bundle at build time via Dockerfile ARG.
-// In production it resolves to the full API origin; in local dev it falls back
-// to the Next.js proxy route so no CORS config is needed locally.
-const BASE = process.env.NEXT_PUBLIC_API_HOST
-  ? `https://${process.env.NEXT_PUBLIC_API_HOST}/api/v1`
-  : (process.env.NEXT_PUBLIC_API_URL ?? '/api/v1')
-
 export type ExecutionStatus = 'pending' | 'running' | 'success' | 'failure' | 'blocked' | 'rolled_back' | 'timeout'
 
 export interface TokenUsage {
@@ -117,35 +110,6 @@ export interface FailureAnalysis {
   blocked_action_count: number
   summary: string
   recommendations: string[]
-}
-
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
-    ...init,
-  })
-  if (!response.ok) {
-    throw new Error(await response.text())
-  }
-  return response.json()
-}
-
-export const api = {
-  rollback: (sessionId: string, body: { checkpoint_id?: string; to_step?: number; restore_filesystem?: boolean; restore_git?: boolean }) =>
-    request(`/sessions/${sessionId}/rollback`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-  simulate: (sessionId: string, body: { rewind_to_step: number; tool_id?: string; replacement?: any; notes?: string }) =>
-    request(`/sessions/${sessionId}/simulate`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
-  checkSafety: (body: { command: string; tool_name?: string; arguments?: Record<string, unknown>; affected_resources?: string[] }) =>
-    request<SafetyCheckResponse>('/safety/check', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    }),
 }
 
 export function createEventSocket(onEvent: (event: AgentEvent) => void, wsUrl?: string): WebSocket {

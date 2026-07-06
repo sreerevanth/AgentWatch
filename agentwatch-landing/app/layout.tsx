@@ -6,6 +6,7 @@ import Navbar from "./components/Navbar";
 import Footer from "./components/Footer";
 import Atmosphere from "./components/Atmosphere";
 import ClickRipple from "./components/ClickRipple";
+import CustomCursor from "./components/CustomCursor";
 
 const syne = Syne({
   variable: "--font-syne",
@@ -52,6 +53,7 @@ export default function RootLayout({
           <Atmosphere />
           {/* Click ripple stays site-wide (including /about) */}
           <ClickRipple />
+          <CustomCursor />
           <Navbar />
           {children}
           <Footer />

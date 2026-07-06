@@ -1,37 +1,9 @@
-import useSWR from 'swr'
 import { Users, GitBranch, AlertCircle } from 'lucide-react'
-
-const API_BASE = process.env.NEXT_PUBLIC_API_HOST
-  ? `https://${process.env.NEXT_PUBLIC_API_HOST}/api/v1`
-  : (process.env.NEXT_PUBLIC_API_URL ?? '/api/v1')
-
-const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : null))
-
-interface DagNode {
-  node_id: string
-  agent_id: string
-  action: string
-  timestamp: string
-}
-interface DagEdge {
-  src: string
-  dst: string
-  kind: string
-}
-interface DagPayload {
-  nodes: DagNode[]
-  edges: DagEdge[]
-}
-
-interface DeadlockReport {
-  deadlocked: boolean
-  cycle: string[]
-  detail: string
-}
+import { useOrchestrationDag, useDeadlockDetection } from '../lib/api/hooks/useMultiAgent'
 
 export default function MultiAgentPage() {
-  const { data: dag } = useSWR<DagPayload>(`${API_BASE}/orchestration/dag`, fetcher, { refreshInterval: 5_000 })
-  const { data: deadlock } = useSWR<DeadlockReport>(`${API_BASE}/orchestration/deadlock`, fetcher, { refreshInterval: 5_000 })
+  const { dag } = useOrchestrationDag()
+  const { deadlock } = useDeadlockDetection()
 
   const nodes = dag?.nodes ?? []
   const edges = dag?.edges ?? []

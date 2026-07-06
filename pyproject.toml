@@ -23,17 +23,17 @@ classifiers = [
 ]
 
 dependencies = [
-  "fastapi>=0.115.0",
-  "uvicorn[standard]>=0.30.0",
-  "pydantic>=2.9.0",
+  "fastapi>=0.119.0",
+  "uvicorn[standard]>=0.33.0",
+  "pydantic>=2.11.0",
   "pydantic-settings>=2.5.0",
   "sqlalchemy[asyncio]>=2.0.35",
   "asyncpg>=0.29.0",
-  "redis[hiredis]>=5.1.0",
-  "celery[redis]>=5.4.0",
-  "httpx>=0.27.0",
+  "redis[hiredis]>=5.3.0",
+  "celery[redis]>=5.5.0",
+  "httpx>=0.28.0",
   "typer[all]>=0.12.0",
-  "rich>=13.8.0",
+  "rich>=13.9.0",
   "python-multipart>=0.0.12",
   "mcp>=1.0.0",
   "prometheus-client>=0.21.0",
@@ -50,7 +50,7 @@ otel = [
   "opentelemetry-semantic-conventions>=0.48b0",
 ]
 crypto = [
-  "cryptography>=43.0.0",
+  "cryptography>=43.0.1",
   # RS256 verification of premium entitlement tokens (SAF / CMP licensing).
   "pyjwt>=2.8.0",
 ]
@@ -67,7 +67,7 @@ autogpt = [
   # AutoGPT adapter works standalone; install AutoGPT separately
 ]
 openclaw = [
-  # OpenClaw adapter works standalone; install OpenClaw separately
+  # OpenClaw adapter works standalone; install AutoGPT separately
 ]
 dev = [
   "pytest>=8.3.0",
@@ -75,7 +75,7 @@ dev = [
   "pytest-cov>=5.0.0",
   "mypy>=1.11.0",
   "ruff>=0.6.0",
-  "httpx>=0.27.0",
+  "httpx>=0.28.0",
   "opentelemetry-sdk>=1.27.0",
 ]
 all = [

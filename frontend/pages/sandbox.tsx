@@ -1,21 +1,7 @@
 import { useState } from 'react'
 import { Terminal, Play, ShieldCheck, ShieldX } from 'lucide-react'
-
-const API_BASE = process.env.NEXT_PUBLIC_API_HOST
-  ? `https://${process.env.NEXT_PUBLIC_API_HOST}/api/v1`
-  : (process.env.NEXT_PUBLIC_API_URL ?? '/api/v1')
-
-interface SandboxResult {
-  command: string
-  blocked: boolean
-  risk_score: number
-  blast_radius_score: number
-  policy_action: string
-  exfil_findings: string[]
-  injection_findings: string[]
-  explanation: string
-  threat_path: string[]
-}
+import { useSandboxSimulate } from '../lib/api/hooks/useSecurity'
+import type { SandboxResult } from '../lib/api/hooks/useSecurity'
 
 const PRESETS: Array<{ label: string; tool: string; command: string }> = [
   { label: 'Safe read', tool: 'read_file', command: 'config.yaml' },
@@ -28,34 +14,25 @@ export default function SandboxPage() {
   const [tool, setTool] = useState('bash')
   const [command, setCommand] = useState('rm -rf /tmp/test')
   const [result, setResult] = useState<SandboxResult | null>(null)
-  const [running, setRunning] = useState(false)
+  const { simulateSandbox, isSandboxSimulating: running } = useSandboxSimulate()
 
   const run = async () => {
-    setRunning(true)
     try {
-      const res = await fetch(`${API_BASE}/security/sandbox/simulate`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ tool, command }),
+      const j = await simulateSandbox({ command, environment: { tool } })
+      setResult(j)
+    } catch {
+      const blocked = /rm\s+-rf|curl.*https?:\/\/(?!localhost)/.test(command)
+      setResult({
+        command,
+        blocked,
+        risk_score: /rm\s+-rf/.test(command) ? 95 : 10,
+        blast_radius_score: 0,
+        policy_action: blocked ? 'block' : 'allow',
+        exfil_findings: [],
+        injection_findings: [],
+        explanation: 'Backend offline — using client-side heuristic.',
+        threat_path: [],
       })
-      if (res.ok) {
-        const j: SandboxResult = await res.json()
-        setResult(j)
-      } else {
-        setResult({
-          command,
-          blocked: /rm\s+-rf|curl.*https?:\/\/(?!localhost)/.test(command),
-          risk_score: /rm\s+-rf/.test(command) ? 95 : 10,
-          blast_radius_score: 0,
-          policy_action: 'allow',
-          exfil_findings: [],
-          injection_findings: [],
-          explanation: 'Backend offline — using client-side heuristic.',
-          threat_path: [],
-        })
-      }
-    } finally {
-      setRunning(false)
     }
   }
 
