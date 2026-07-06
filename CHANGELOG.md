@@ -22,6 +22,9 @@ file and uses it as the GitHub Release body, so keep each version's notes here.
 - Auto-updating contributors wall (scheduled workflow + `contributors.json`).
 - PyPI auto-publish workflow on `v*` tags and a PR test/coverage workflow.
 
+### Changed
+- Refactor (`#500`): Inlined `SilenceBaseline` attributes into `SilentFailureDetector`. Reduces file complexity and removes the redundant dataclass abstraction (also addresses `#478` and `#498`).
+
 ## [0.2.0-preview] - 2026-05-27
 
 ### Added

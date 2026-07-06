@@ -28,6 +28,7 @@ if TYPE_CHECKING:
     import httpx
 
     from agentwatch.cost.reporting import CostReport
+    from agentwatch.eval.runner import EvalReport
 
 app = typer.Typer(
     name="agentwatch",
@@ -60,9 +61,17 @@ cost_app = typer.Typer(
     no_args_is_help=True,
 )
 
+eval_app = typer.Typer(
+    name="eval",
+    help="AgentWatch Evaluation. Run an agent against a dataset and score the batch.",
+    rich_markup_mode="rich",
+    no_args_is_help=True,
+)
+
 app.add_typer(server_app)
 app.add_typer(safety_app)
 app.add_typer(cost_app)
+app.add_typer(eval_app)
 
 
 _IN_REPL = False
@@ -650,6 +659,109 @@ def export(
 
 
 # ─────────────────────────────────────────────
+# share command — upload a sanitized trace, get a public link
+# ─────────────────────────────────────────────
+
+
+@app.command()
+def share(
+    session_file: Path = typer.Argument(..., help="Path to the trace/session JSON file to share"),
+    share_url: str | None = typer.Option(
+        None,
+        "--share-url",
+        envvar="AGENTWATCH_SHARE_URL",
+        help="Base URL of the share service (or set AGENTWATCH_SHARE_URL).",
+    ),
+    expires_days: int = typer.Option(
+        7, "--expires-days", min=1, help="Days before the shared link expires."
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Sanitize and preview the payload locally without uploading.",
+    ),
+) -> None:
+    """[bold]Share[/bold] a trace via a temporary public link (PII/secrets redacted)."""
+    from agentwatch.platform.sharing import DEFAULT_SHARE_URL, sanitize_trace
+
+    trace = _load_session_file(session_file)
+    sanitized = sanitize_trace(trace)
+
+    if dry_run:
+        console.print(
+            Panel(
+                "[bold yellow]DRY-RUN MODE[/bold yellow] — Nothing will be uploaded.\n"
+                "[dim]Below is the exact sanitized payload that would be shared.[/dim]",
+                border_style="yellow",
+                title="AgentWatch share --dry-run",
+            )
+        )
+        console.print_json(data=sanitized)
+        console.print("\n[yellow]Dry-run complete. No data left this machine.[/yellow]")
+        raise typer.Exit(0)
+
+    base = (share_url or DEFAULT_SHARE_URL).rstrip("/")
+
+    async def _run() -> None:
+        try:
+            import httpx
+        except ImportError:
+            console.print("[red]httpx not installed. Run: pip install httpx[/red]")
+            raise typer.Exit(1)
+
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.post(
+                    f"{base}/api/v1/share",
+                    json={"trace": sanitized, "expires_days": expires_days},
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                console.print(
+                    f"[red]Share upload failed with status {exc.response.status_code}: "
+                    f"{exc.response.text}[/red]"
+                )
+                raise typer.Exit(1)
+            except httpx.HTTPError as exc:
+                console.print(f"[red]Failed to reach share service at {base}: {exc}[/red]")
+                raise typer.Exit(1)
+
+        try:
+            data = resp.json()
+        except Exception:
+            console.print("[red]Share service returned an invalid response (not JSON).[/red]")
+            raise typer.Exit(1)
+
+        url = data.get("url")
+        if not url:
+            token = data.get("id") or data.get("token")
+            url = f"{base}/t/{token}" if token else None
+        if not url:
+            console.print("[red]Share service did not return a link.[/red]")
+            raise typer.Exit(1)
+
+        from rich.markup import escape
+
+        safe_url = escape(str(url))
+        expires_at = data.get("expires_at")
+        safe_expires = escape(str(expires_at)) if expires_at else ""
+
+        console.print(
+            Panel(
+                f"[bold green]Trace shared![/bold green]\n"
+                f"[dim]PII and secrets were redacted before upload.[/dim]\n\n"
+                f"Link: [link]{safe_url}[/link]"
+                + (f"\n[dim]Expires:[/dim] {safe_expires}" if safe_expires else ""),
+                border_style="green",
+                title="AgentWatch share",
+            )
+        )
+
+    asyncio.run(_run())
+
+
+# ─────────────────────────────────────────────
 # confidence command
 # ---------------------------------------------
 
@@ -931,6 +1043,91 @@ def _print_cost_report_table(report: CostReport) -> None:
     console.print(table)
     if not report.rows:
         console.print("[dim]No sessions found in the selected window.[/dim]")
+
+
+# ---------------------------------------------
+# eval run command
+# ---------------------------------------------
+
+
+@eval_app.command(name="run")
+def eval_run(
+    dataset: Path = typer.Argument(
+        ..., help="Path to the dataset JSON: a list of {id, prompt, expected?}."
+    ),
+    agent: Path = typer.Option(
+        ..., "--agent", help="Path to an agent script exposing run(prompt) -> list[AgentEvent]."
+    ),
+    threshold: float = typer.Option(
+        0.5, "--threshold", min=0.0, max=1.0, help="Minimum confidence for a case to pass."
+    ),
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
+) -> None:
+    """
+    [bold]Run[/bold] a batch evaluation of an agent against a dataset of prompts.
+
+    [b]Example Usage:[/b]
+    [dim]python -m agentwatch.cli.main eval run dataset.json --agent my_agent.py[/dim]
+    """
+    from agentwatch.eval.runner import run_eval
+
+    try:
+        report = run_eval(dataset, agent, threshold=threshold)
+    except (FileNotFoundError, ImportError, AttributeError, ValueError, OSError) as exc:
+        console.print(f"[red]{exc}[/red]")
+        raise typer.Exit(1)
+
+    if as_json:
+        console.print_json(data=report.to_dict())
+        return
+
+    _print_eval_report(report)
+
+
+def _print_eval_report(report: EvalReport) -> None:
+    from rich import box
+
+    table = Table(
+        title=(
+            f"[bold green]E V A L U A T I O N[/bold green]  "
+            f"[dim](pass threshold {report.threshold:.2f})[/dim]"
+        ),
+        box=box.DOUBLE_EDGE,
+        border_style="bold cyan",
+    )
+    table.add_column("Case", style="bold cyan")
+    table.add_column("Result", justify="center")
+    table.add_column("Confidence", justify="right", style="green")
+    table.add_column("Halluc. risk", justify="right", style="yellow")
+    table.add_column("Note", style="dim white")
+
+    for r in report.results:
+        if r.error is not None:
+            result_cell = "[red]ERROR[/red]"
+            note = r.error
+        elif r.passed:
+            result_cell = "[green]PASS[/green]"
+            note = "hallucinated" if r.hallucinated else ""
+        else:
+            result_cell = "[red]FAIL[/red]"
+            note = "hallucinated" if r.hallucinated else ""
+        table.add_row(
+            r.id,
+            result_cell,
+            f"{r.confidence:.2f}",
+            f"{r.hallucination_risk:.2f}",
+            note,
+        )
+
+    table.add_section()
+    table.add_row(
+        f"[bold]{report.passed}/{report.total} passed[/bold]",
+        f"[bold]{report.pass_rate * 100:.0f}%[/bold]",
+        f"[bold]{report.avg_confidence:.2f}[/bold]",
+        f"[bold]{report.avg_hallucination_risk:.2f}[/bold]",
+        f"{report.num_hallucinated} hallucinated, {report.num_errored} errored",
+    )
+    console.print(table)
 
 
 # ---------------------------------------------

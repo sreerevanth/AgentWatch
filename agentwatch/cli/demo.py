@@ -43,30 +43,37 @@ from agentwatch.tracing.collector import TraceCollector
 
 
 def green(s: str) -> str:
+    """Wrap ``s`` in ANSI codes to render it green."""
     return f"\033[92m{s}\033[0m"
 
 
 def red(s: str) -> str:
+    """Wrap ``s`` in ANSI codes to render it red."""
     return f"\033[91m{s}\033[0m"
 
 
 def yellow(s: str) -> str:
+    """Wrap ``s`` in ANSI codes to render it yellow."""
     return f"\033[93m{s}\033[0m"
 
 
 def blue(s: str) -> str:
+    """Wrap ``s`` in ANSI codes to render it blue."""
     return f"\033[94m{s}\033[0m"
 
 
 def bold(s: str) -> str:
+    """Wrap ``s`` in ANSI codes to render it bold."""
     return f"\033[1m{s}\033[0m"
 
 
 def dim(s: str) -> str:
+    """Wrap ``s`` in ANSI codes to render it dim."""
     return f"\033[2m{s}\033[0m"
 
 
 def section(title: str) -> None:
+    """Print a bold, rule-bracketed section header for a demo scenario."""
     print(f"\n{bold('─' * 60)}")
     print(f"{bold(blue('  ' + title))}")
     print(bold("─" * 60))
@@ -77,7 +84,7 @@ def section(title: str) -> None:
 # ─────────────────────────────────────────────
 
 
-def build_demo_session():
+def build_demo_session() -> tuple[AgentSession, list[AgentEvent]]:
     """Construct a dummy active session stream containing simulated hazardous operations.
 
     Returns:
