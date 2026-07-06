@@ -1939,9 +1939,11 @@ def doctor() -> None:
 
     console.print(table)
 
+
 # ─────────────────────────────────────────────
 # export-csv command
 # ─────────────────────────────────────────────
+
 
 @session_app.command(name="export-csv")
 def export_csv(
@@ -1954,8 +1956,9 @@ def export_csv(
 
     async def _run() -> None:
         try:
-            import httpx
             import csv
+
+            import httpx
         except ImportError:
             console.print("[red]httpx not installed.[/red]")
             raise typer.Exit(1)
@@ -1971,22 +1974,30 @@ def export_csv(
                     console.print(f"[red]Session {session_id} not found.[/red]")
                     raise typer.Exit(1)
                 resp.raise_for_status()
-            except Exception as exc:
-                console.print(f"[red]API error: {exc}[/red]")
+            except httpx.HTTPStatusError as exc:
+                _handle_http_status_error(exc, api_url)
+            except httpx.HTTPError as exc:
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
                 raise typer.Exit(1)
 
-        data = resp.json()
-        steps = data.get("steps", [])
+        try:
+            data = resp.json()
+            steps = data.get("steps", [])
+        except (ValueError, AttributeError) as exc:
+            console.print(f"[red]Unexpected API response: {exc}[/red]")
+            raise typer.Exit(1)
 
         try:
-            with open(out, "w", newline='', encoding='utf-8') as f:
+            with open(out, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 writer.writerow(["step", "action", "status"])
                 for i, step in enumerate(steps):
                     writer.writerow([i, step.get("action", ""), step.get("status", "")])
             console.print(f"[green]{out} created successfully[/green]")
         except PermissionError:
-            console.print(f"[red]Cannot write to {out}. Please ensure the file is closed and try again.[/red]")
+            console.print(
+                f"[red]Cannot write to {out}. Please ensure the file is closed and try again.[/red]"
+            )
             raise typer.Exit(1)
 
     asyncio.run(_run())
