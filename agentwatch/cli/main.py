@@ -659,6 +659,109 @@ def export(
 
 
 # ─────────────────────────────────────────────
+# share command — upload a sanitized trace, get a public link
+# ─────────────────────────────────────────────
+
+
+@app.command()
+def share(
+    session_file: Path = typer.Argument(..., help="Path to the trace/session JSON file to share"),
+    share_url: str | None = typer.Option(
+        None,
+        "--share-url",
+        envvar="AGENTWATCH_SHARE_URL",
+        help="Base URL of the share service (or set AGENTWATCH_SHARE_URL).",
+    ),
+    expires_days: int = typer.Option(
+        7, "--expires-days", min=1, help="Days before the shared link expires."
+    ),
+    dry_run: bool = typer.Option(
+        False,
+        "--dry-run",
+        help="Sanitize and preview the payload locally without uploading.",
+    ),
+) -> None:
+    """[bold]Share[/bold] a trace via a temporary public link (PII/secrets redacted)."""
+    from agentwatch.platform.sharing import DEFAULT_SHARE_URL, sanitize_trace
+
+    trace = _load_session_file(session_file)
+    sanitized = sanitize_trace(trace)
+
+    if dry_run:
+        console.print(
+            Panel(
+                "[bold yellow]DRY-RUN MODE[/bold yellow] — Nothing will be uploaded.\n"
+                "[dim]Below is the exact sanitized payload that would be shared.[/dim]",
+                border_style="yellow",
+                title="AgentWatch share --dry-run",
+            )
+        )
+        console.print_json(data=sanitized)
+        console.print("\n[yellow]Dry-run complete. No data left this machine.[/yellow]")
+        raise typer.Exit(0)
+
+    base = (share_url or DEFAULT_SHARE_URL).rstrip("/")
+
+    async def _run() -> None:
+        try:
+            import httpx
+        except ImportError:
+            console.print("[red]httpx not installed. Run: pip install httpx[/red]")
+            raise typer.Exit(1)
+
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.post(
+                    f"{base}/api/v1/share",
+                    json={"trace": sanitized, "expires_days": expires_days},
+                    timeout=30.0,
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                console.print(
+                    f"[red]Share upload failed with status {exc.response.status_code}: "
+                    f"{exc.response.text}[/red]"
+                )
+                raise typer.Exit(1)
+            except httpx.HTTPError as exc:
+                console.print(f"[red]Failed to reach share service at {base}: {exc}[/red]")
+                raise typer.Exit(1)
+
+        try:
+            data = resp.json()
+        except Exception:
+            console.print("[red]Share service returned an invalid response (not JSON).[/red]")
+            raise typer.Exit(1)
+
+        url = data.get("url")
+        if not url:
+            token = data.get("id") or data.get("token")
+            url = f"{base}/t/{token}" if token else None
+        if not url:
+            console.print("[red]Share service did not return a link.[/red]")
+            raise typer.Exit(1)
+
+        from rich.markup import escape
+
+        safe_url = escape(str(url))
+        expires_at = data.get("expires_at")
+        safe_expires = escape(str(expires_at)) if expires_at else ""
+
+        console.print(
+            Panel(
+                f"[bold green]Trace shared![/bold green]\n"
+                f"[dim]PII and secrets were redacted before upload.[/dim]\n\n"
+                f"Link: [link]{safe_url}[/link]"
+                + (f"\n[dim]Expires:[/dim] {safe_expires}" if safe_expires else ""),
+                border_style="green",
+                title="AgentWatch share",
+            )
+        )
+
+    asyncio.run(_run())
+
+
+# ─────────────────────────────────────────────
 # confidence command
 # ---------------------------------------------
 
