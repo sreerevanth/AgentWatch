@@ -10,10 +10,10 @@ from agentwatch.orchestration.crew_context import CrewContext
 from agentwatch.orchestration.dag import InterAgentDAG
 from agentwatch.orchestration.deadlock import DeadlockDetector
 from agentwatch.orchestration.propagation import trace_propagation
+from agentwatch.orchestration.race_condition import AccessType, RaceConditionDetector
 from agentwatch.orchestration.shapley import shapley_attribution
 from agentwatch.orchestration.spawning import SpawningTracker, SpawnLimitExceeded
 from agentwatch.orchestration.trust import InterAgentTrust
-from agentwatch.orchestration.race_condition import AccessType, RaceConditionDetector
 
 # ─────────────────────────────────────────────
 # MAG-001 — Inter-Agent DAG
@@ -92,6 +92,7 @@ def test_low_trust_influences_high_trust():
 
 def _race_ts(offset_seconds: float):
     from datetime import datetime, timedelta
+
     base = datetime(2026, 1, 1, 0, 0, 0)
     return base + timedelta(seconds=offset_seconds)
 
@@ -178,8 +179,6 @@ def test_race_invalid_window_raises():
     det = RaceConditionDetector()
     with pytest.raises(ValueError):
         det.record_access("agent-a", "db:orders", AccessType.WRITE, _race_ts(10), _race_ts(5))
-
-
 
 
 # ─────────────────────────────────────────────
