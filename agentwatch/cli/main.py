@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, NoReturn
 import typer
 from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -27,6 +28,8 @@ if TYPE_CHECKING:
     # type-only import keeps the annotation without a hard runtime import.
     import httpx
 
+    from agentwatch.core.policy_loader import CombinedVerdict
+    from agentwatch.core.schema import RiskLevel, ToolCallData
     from agentwatch.cost.reporting import CostReport
     from agentwatch.eval.runner import EvalReport
 
@@ -53,6 +56,15 @@ safety_app = typer.Typer(
     rich_markup_mode="rich",
     no_args_is_help=True,
 )
+
+policies_app = typer.Typer(
+    name="policies", help="Inspect the effective safety policy set.", no_args_is_help=True
+)
+config_app = typer.Typer(
+    name="config", help="Manage the local safety policy file.", no_args_is_help=True
+)
+safety_app.add_typer(policies_app, name="policies")
+safety_app.add_typer(config_app, name="config")
 
 cost_app = typer.Typer(
     name="cost",
@@ -860,6 +872,7 @@ def safety(
     from rich.progress import Progress, SpinnerColumn, TextColumn
 
     from agentwatch.cli.animator import matrix_type_print
+    from agentwatch.core.policy_loader import PolicyOutcome
     from agentwatch.core.safety import RiskScorer
     from agentwatch.core.schema import ToolCallData
 
@@ -880,6 +893,12 @@ def safety(
         time.sleep(0.3)
 
     level, score, reasons, policies = scorer.score(tool)
+
+    # Overlay any local .agentwatch-safety.yml policy on top of the builtin verdict.
+    verdict = _local_policy_verdict(tool, level)
+    if verdict is not None and verdict.outcome is not PolicyOutcome.UNCHANGED:
+        level = verdict.effective_risk
+
     color = _risk_color(level.value)
 
     matrix_type_print("THREAT ANALYSIS COMPLETE", color="1;96m", delay=0.02)
@@ -907,6 +926,20 @@ def safety(
     else:
         details.append("[green][+] No heuristic violations detected.[/green]")
 
+    if verdict is not None and verdict.matched_label is not None:
+        label = escape(verdict.matched_label)
+        note = escape(verdict.note) if verdict.note else None
+        if verdict.outcome is PolicyOutcome.UNCHANGED:
+            if note:
+                details.append(f"[dim]Local policy ({label}): {note}[/dim]")
+        else:
+            details.append(
+                f"[bold magenta]LOCAL POLICY:[/bold magenta] "
+                f"{verdict.outcome.value.upper()} (rule: {label})"
+            )
+            if note:
+                details.append(f"[dim]{note}[/dim]")
+
     details.append("")
     details.append("[bold cyan]WHAT-IF SIMULATION:[/bold cyan]")
     details.append(f"[italic]{what_if}[/italic]")
@@ -918,6 +951,107 @@ def safety(
             title=f"[{color}]Security Report[/{color}]",
             padding=(1, 2),
         )
+    )
+
+
+def _local_policy_verdict(tool: ToolCallData, risk_level: RiskLevel) -> CombinedVerdict | None:
+    """Evaluate a command against the local policy file, if one is present."""
+    from agentwatch.core.policy_loader import combine, discover_policy_file, load_policy_engine
+    from agentwatch.core.schema import AgentEvent, EventType
+
+    path = discover_policy_file()
+    if path is None:
+        return None
+    try:
+        engine = load_policy_engine(path)
+    except (ValueError, OSError) as exc:
+        console.print(f"[yellow]Ignoring invalid policy file {path}: {escape(str(exc))}[/yellow]")
+        return None
+    event = AgentEvent(
+        session_id="cli", agent_id="cli", event_type=EventType.TOOL_CALL, tool_call=tool
+    )
+    return combine(risk_level, engine.evaluate(event))
+
+
+@policies_app.command(name="list")
+def safety_policies_list() -> None:
+    """
+    [bold]List[/bold] the effective safety policy set: builtin patterns + local rules.
+    """
+    from rich import box
+
+    from agentwatch.core.policy_loader import discover_policy_file, load_policy_engine
+    from agentwatch.core.safety import BUILTIN_RISK_PATTERNS
+
+    builtin = Table(
+        title="[bold green]B U I L T I N   P A T T E R N S[/bold green]",
+        box=box.DOUBLE_EDGE,
+        border_style="bold cyan",
+    )
+    builtin.add_column("Policy ID", style="bold cyan")
+    builtin.add_column("Risk", style="yellow")
+    builtin.add_column("Blocks", justify="center")
+    builtin.add_column("Reason", style="dim white")
+    for pat in BUILTIN_RISK_PATTERNS:
+        builtin.add_row(
+            pat.policy_id,
+            pat.risk_level.value.upper(),
+            "yes" if pat.block_by_default else "-",
+            pat.reason,
+        )
+    console.print(builtin)
+
+    path = discover_policy_file()
+    if path is None:
+        console.print(
+            "[dim]No local policy file found (checked ./.agentwatch-safety.yml and "
+            "~/.agentwatch/.agentwatch-safety.yml). Run `agentwatch safety config generate`.[/dim]"
+        )
+        return
+    try:
+        engine = load_policy_engine(path)
+    except (ValueError, OSError) as exc:
+        console.print(f"[red]Invalid policy file {path}: {escape(str(exc))}[/red]")
+        raise typer.Exit(1)
+
+    custom = Table(
+        title=f"[bold green]L O C A L   R U L E S[/bold green]  [dim]({escape(str(path))})[/dim]",
+        box=box.DOUBLE_EDGE,
+        border_style="bold magenta",
+    )
+    custom.add_column("Label", style="bold magenta")
+    custom.add_column("Action", style="yellow")
+    custom.add_column("Condition", style="dim white")
+    for rule in engine.rules:
+        custom.add_row(escape(rule.label or "-"), rule.action.value, escape(rule.condition))
+    console.print(custom)
+    if not engine.rules:
+        console.print("[dim]The policy file has no rules.[/dim]")
+
+
+@config_app.command(name="generate")
+def safety_config_generate(
+    path: Path = typer.Option(
+        Path(".agentwatch-safety.yml"), "--path", help="Where to write the policy file."
+    ),
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing file."),
+) -> None:
+    """
+    [bold]Generate[/bold] a starter .agentwatch-safety.yml policy file.
+    """
+    from agentwatch.core.policy_loader import DEFAULT_POLICY_YAML
+
+    if path.exists() and not force:
+        console.print(
+            f"[yellow]{escape(str(path))} already exists. Use --force to overwrite.[/yellow]"
+        )
+        raise typer.Exit(1)
+    path.write_text(DEFAULT_POLICY_YAML, encoding="utf-8")
+    console.print(
+        f"[green]Wrote safety policy scaffold to[/green] [bold]{escape(str(path))}[/bold]"
+    )
+    console.print(
+        "[dim]Edit the rules, then run `agentwatch safety policies list` to review them.[/dim]"
     )
 
 
