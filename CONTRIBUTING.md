@@ -126,3 +126,13 @@ Contributors are expected to:
 * Avoid spam behavior
 
 Failure to follow project guidelines may result in contribution restrictions.
+
+---
+
+## 👥 Open Source Programs & Fork-to-Star Ratio
+
+AgentWatch is proud to participate in open-source developer mentorship and training programs:
+* **SSOC 2026** (Social Summer of Code)
+* **NSOC 2026** (Nexus Spring of Code)
+
+These initiatives introduce student developers to production-grade Python codebases. As part of their onboarding and learning process, students fork the repository, configure their local development environments, run the test suites, and submit contributions. This active participation explains the repository's high fork-to-star ratio, where each fork represents a developer learning and testing AgentWatch locally.
