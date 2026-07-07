@@ -12,12 +12,18 @@ from agentwatch.core.schema import AgentEvent
 from agentwatch.reasoning.auditor import ReasoningAuditor
 
 
+import math
+from pathlib import Path
+
+
 def safe_div(n, d):
     return n / d if d else 0.0
 
 
 async def mock_judge(prompt: str, event: AgentEvent) -> dict:
-    # A simple mock judge that simulates LLM analysis by checking for known dangerous substrings
+    # A simple mock judge that simulates LLM analysis by checking for known dangerous substrings.
+    # Note: This is explicitly a SMOKE TEST for the evaluation pipeline, not a true test of
+    # the auditor's reasoning capability, as it checks exact keywords.
     raw_cmd = event.tool_call.raw_command if event.tool_call and event.tool_call.raw_command else ""
     dangerous_keywords = ["rm -rf", "DROP", "chmod", "curl", "prune"]
 
@@ -27,7 +33,7 @@ async def mock_judge(prompt: str, event: AgentEvent) -> dict:
         return {
             "score": 0.1,
             "verdict": "weak",
-            "rationale": "Detected destructive action.",
+            "rationale": "Detected destructive action (Smoke test mode).",
             "evidence": [],
         }
     return {"score": 0.9, "verdict": "sound", "rationale": "Appears safe.", "evidence": []}
@@ -38,7 +44,12 @@ async def run_evaluation():
     console = Console()
     console.print(f"[bold cyan]Loading test cases (Mock Judge: {use_mock_judge})...[/bold cyan]")
 
-    with open("benchmarks/test_cases.json") as f:
+    base_dir = Path(__file__).parent
+    input_path = base_dir / "test_cases.json"
+    results_dir = base_dir / "results"
+    output_path = results_dir / "eval_latest.json"
+
+    with open(input_path) as f:
         cases = json.load(f)
 
     if use_mock_judge:
@@ -79,7 +90,10 @@ async def run_evaluation():
     avg_lat = mean(latencies) * 1000
     p50_lat = median(latencies) * 1000
     latencies.sort()
-    p99_lat = latencies[int(len(latencies) * 0.99)] * 1000
+
+    # Ceiling-based rank for P99
+    p99_idx = min(len(latencies) - 1, math.ceil(len(latencies) * 0.99) - 1)
+    p99_lat = latencies[p99_idx] * 1000
 
     table = Table(title="Reasoning Auditor Benchmark Results")
     table.add_column("Metric", justify="right", style="cyan")
@@ -96,8 +110,9 @@ async def run_evaluation():
     console.print(table)
 
     # Save results
-    os.makedirs("benchmarks/results", exist_ok=True)
+    os.makedirs(results_dir, exist_ok=True)
     results = {
+        "metadata": {"judge_mode": "mock_judge" if use_mock_judge else "heuristic"},
         "metrics": {
             "precision": precision,
             "recall": recall,
@@ -108,10 +123,10 @@ async def run_evaluation():
         "confusion_matrix": {"tp": tp, "fp": fp, "tn": tn, "fn": fn},
     }
 
-    with open("benchmarks/results/eval_latest.json", "w") as f:
+    with open(output_path, "w") as f:
         json.dump(results, f, indent=2)
 
-    console.print("[green]Results saved to benchmarks/results/eval_latest.json[/green]")
+    console.print(f"[green]Results saved to {output_path}[/green]")
 
 
 if __name__ == "__main__":
