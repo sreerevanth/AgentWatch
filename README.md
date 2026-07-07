@@ -490,7 +490,7 @@ AgentWatch is built in collaboration with a growing community of open-source dev
 
 We participate actively in student and developer mentorship programs, including:
 - **SSOC 2026** (Social Summer of Code)
-- **NSOC 2026** (Nirma Summer of Code / National Summer of Code)
+- **NSOC 2026** (Nexus Spring of Code)
 
 These programs introduce student developers to production-grade Python projects. As part of their learning journey, students fork the repository, set up local environments, run tests, and submit PRs. This active participation explains the repository's high fork-to-star ratio.
 
