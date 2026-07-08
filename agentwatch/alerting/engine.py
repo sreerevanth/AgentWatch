@@ -10,6 +10,7 @@ import httpx
 
 from agentwatch.alerting.channels import validate_channels
 from agentwatch.core.schema import AgentEvent, RiskLevel
+from agentwatch.security.abuse_detection import AbuseEvent
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +45,51 @@ class AlertingEngine:
                 payload["pagerduty"],
             )
         return sent
+
+    async def alert_abuse(self, event: AbuseEvent) -> dict[str, bool]:
+        """Surface an entitlement-abuse event to the configured admin channels."""
+        payload = self._build_abuse_payload(event)
+        sent = {"slack": False, "pagerduty": False}
+        if self._config.slack_webhook_url:
+            sent["slack"] = await self._post(self._config.slack_webhook_url, payload["slack"])
+        if self._config.pagerduty_webhook_url:
+            sent["pagerduty"] = await self._post(
+                self._config.pagerduty_webhook_url, payload["pagerduty"]
+            )
+        return sent
+
+    def _build_abuse_payload(self, event: AbuseEvent) -> dict[str, dict[str, Any]]:
+        summary = (
+            f"AgentWatch entitlement abuse: {event.subject} used on "
+            f"{event.distinct_devices} devices within {event.window_seconds}s"
+        )
+        devices = ", ".join(f"`{mid}`" for mid in event.machine_ids)
+        return {
+            "slack": {
+                "text": summary,
+                "blocks": [
+                    {"type": "section", "text": {"type": "mrkdwn", "text": f"*{summary}*"}},
+                    {
+                        "type": "section",
+                        "text": {"type": "mrkdwn", "text": f"*Devices:* {devices}"},
+                    },
+                ],
+            },
+            "pagerduty": {
+                "routing_key": self._config.pagerduty_routing_key or "",
+                "event_action": "trigger",
+                "payload": {
+                    "summary": summary,
+                    "source": "agentwatch",
+                    "severity": "error",
+                    "custom_details": {
+                        "subject": event.subject,
+                        "machine_ids": list(event.machine_ids),
+                        "distinct_devices": event.distinct_devices,
+                    },
+                },
+            },
+        }
 
     def _should_page(self, risk_level: RiskLevel) -> bool:
         order = [
@@ -118,21 +164,21 @@ class AlertingEngine:
             return False
 
         delay = 0.5
-        for attempt in range(max_retries):
-            try:
-                async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            for attempt in range(max_retries):
+                try:
                     response = await client.post(url, content=payload_bytes, headers=headers)
                     response.raise_for_status()
                     return True
-            except Exception as exc:
-                logger.warning(
-                    "Alert delivery failed for %s (attempt %d/%d): %s",
-                    url,
-                    attempt + 1,
-                    max_retries,
-                    exc,
-                )
-                if attempt < max_retries - 1:
-                    await asyncio.sleep(delay)
-                    delay *= 2
+                except Exception as exc:
+                    logger.warning(
+                        "Alert delivery failed for %s (attempt %d/%d): %s",
+                        url,
+                        attempt + 1,
+                        max_retries,
+                        exc,
+                    )
+                    if attempt < max_retries - 1:
+                        await asyncio.sleep(delay)
+                        delay *= 2
         return False

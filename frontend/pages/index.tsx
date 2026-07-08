@@ -1,29 +1,13 @@
 import type { ComponentType } from 'react'
 import { useState } from 'react'
 import { useRouter } from 'next/router'
-import useSWR from 'swr'
+import { useQueryClient } from '@tanstack/react-query'
 import { Activity, AlertTriangle, ChevronRight, DollarSign, Loader2, RefreshCw, Shield, Zap } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { format, formatDistanceToNow } from 'date-fns'
-
 import { AgentEvent, AgentSession, DashboardSummary } from '../lib/api'
 import { useLiveEventSocket } from '../lib/useLiveEventSocket'
 import type { LiveFeedStatus } from '../lib/wsReconnect'
-
-// Resolved at build time from the NEXT_PUBLIC_API_HOST Docker build arg.
-// In production the browser calls the API origin directly (no proxy hop).
-// In local dev falls back to the Next.js proxy route at /api/v1.
-const API_BASE = process.env.NEXT_PUBLIC_API_HOST
-  ? `https://${process.env.NEXT_PUBLIC_API_HOST}/api/v1`
-  : '/api/v1'
-
-const fetcher = async (url: string) => {
-  const response = await fetch(url)
-  if (!response.ok) {
-    throw new Error(`Request failed: ${response.status}`)
-  }
-  return response.json()
-}
+import { useDashboardSummary, useSessions, useBlockedEvents } from '../lib/api/hooks/useDashboard'
 
 const STATUS_COLORS: Record<string, string> = {
   success: '#22c55e',
@@ -38,15 +22,41 @@ const STATUS_COLORS: Record<string, string> = {
 function cn(...classes: Array<string | false | null | undefined>) {
   return classes.filter(Boolean).join(' ')
 }
+const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
+  hour: "2-digit",
+  minute: "2-digit",
+  second: "2-digit",
+  hour12: false,
+})
 
-function safeFormat(ts: string | null | undefined, fmt: string): string {
-  if (!ts) return '—'
-  try { return format(new Date(ts), fmt) } catch { return '—' }
+function safeFormat(ts: string | null | undefined): string {
+  if (!ts) return "—"
+
+  try {
+    return dateTimeFormatter.format(new Date(ts))
+  } catch {
+    return "—"
+  }
 }
 
 function safeDistanceToNow(ts: string | null | undefined): string {
-  if (!ts) return '—'
-  try { return formatDistanceToNow(new Date(ts), { addSuffix: true }) } catch { return '—' }
+  if (!ts) return "—"
+
+  const date = new Date(ts)
+  const now = new Date()
+
+  const diff = Math.floor((now.getTime() - date.getTime()) / 1000)
+
+  if (diff < 60) return `${diff} seconds ago`
+
+  const minutes = Math.floor(diff / 60)
+  if (minutes < 60) return `${minutes} minutes ago`
+
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours} hours ago`
+
+  const days = Math.floor(hours / 24)
+  return `${days} days ago`
 }
 
 function statusBadge(status: string) {
@@ -175,7 +185,7 @@ function LiveEventFeed({
                 <div className="truncate font-medium text-zinc-200">{event.event_type}</div>
                 <div className="truncate font-mono text-zinc-500">{event.tool_call?.raw_command ?? event.tool_call?.tool_name ?? event.agent_id}</div>
               </div>
-              <div className="shrink-0 text-zinc-500">{safeFormat(event.timestamp, 'HH:mm:ss')}</div>
+              <div className="shrink-0 text-zinc-500">{safeFormat(event.timestamp)}</div>
             </div>
           </div>
         ))}
@@ -285,7 +295,7 @@ function SafetyPanel({ blockedEvents, loading }: { blockedEvents: AgentEvent[]; 
             <div key={event.event_id} className="rounded-xl border border-amber-500/10 bg-black/10 p-3 text-xs">
               <div className="flex items-center justify-between gap-3">
                 <div className="font-medium text-zinc-200">{event.tool_call?.tool_name ?? event.event_type}</div>
-                <div className="text-zinc-500">{safeFormat(event.timestamp, 'HH:mm:ss')}</div>
+                <div className="text-zinc-500">{safeFormat(event.timestamp)}</div>
               </div>
               <div className="mt-1 truncate font-mono text-zinc-500">{event.tool_call?.raw_command}</div>
               <div className="mt-2 text-amber-300">{event.safety?.reasons?.[0] ?? 'Blocked by policy'}</div>
@@ -298,22 +308,21 @@ function SafetyPanel({ blockedEvents, loading }: { blockedEvents: AgentEvent[]; 
 }
 
 export default function DashboardPage() {
-  const { data: summary, mutate: refreshSummary, isLoading: summaryLoading } = useSWR<DashboardSummary>(`${API_BASE}/dashboard/summary`, fetcher, { refreshInterval: 15000 })
-  const { data: sessionsData, mutate: refreshSessions, isLoading: sessionsLoading } = useSWR<{ sessions: AgentSession[]; total: number }>(`${API_BASE}/sessions?limit=20`, fetcher, { refreshInterval: 15000 })
-  const { data: blockedData, isLoading: blockedLoading } = useSWR<{ blocked_events: AgentEvent[]; total: number }>(`${API_BASE}/safety/blocked?limit=20`, fetcher, { refreshInterval: 15000 })
+  const queryClient = useQueryClient()
+  const { summary, isSummaryLoading: summaryLoading } = useDashboardSummary()
+  const { sessions, isSessionsLoading } = useSessions()
+  const { blockedEvents, isBlockedLoading } = useBlockedEvents()
   const [liveEvents, setLiveEvents] = useState<AgentEvent[]>([])
   const { status: wsStatus, reconnectElapsedSec } = useLiveEventSocket(
     (event) => {
       setLiveEvents((previous) => [event, ...previous].slice(0, 200))
     },
     () => {
-      refreshSummary()
-      refreshSessions()
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
+      queryClient.invalidateQueries({ queryKey: ['sessions'] })
     },
   )
 
-  const sessions = sessionsData?.sessions ?? []
-  const blockedEvents = blockedData?.blocked_events ?? []
   const confidenceTrend = sessions
     .slice(0, 12)
     .reverse()
@@ -330,7 +339,7 @@ export default function DashboardPage() {
             <div className="text-xs uppercase tracking-[0.32em] text-zinc-500">AgentWatch</div>
             <h1 className="text-2xl font-semibold text-white">Reliability, safety, and observability</h1>
           </div>
-          <button onClick={() => { refreshSummary(); refreshSessions() }} aria-label="Refresh dashboard data" className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/10 hover:text-white">
+          <button onClick={() => { queryClient.invalidateQueries({ queryKey: ['dashboard'] }); queryClient.invalidateQueries({ queryKey: ['sessions'] }) }} aria-label="Refresh dashboard data" className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/10 hover:text-white">
             <RefreshCw size={14} />
             Refresh
           </button>
@@ -347,11 +356,11 @@ export default function DashboardPage() {
 
         <section className="grid gap-6 lg:grid-cols-[1.05fr_1.95fr]">
           <LiveEventFeed events={liveEvents} wsStatus={wsStatus} reconnectElapsedSec={reconnectElapsedSec} />
-          <SessionsTable sessions={sessions} loading={sessionsLoading} />
+          <SessionsTable sessions={sessions} loading={isSessionsLoading} />
         </section>
 
         <section className="grid gap-6 lg:grid-cols-[1fr_1.6fr]">
-          <SafetyPanel blockedEvents={blockedEvents} loading={blockedLoading} />
+          <SafetyPanel blockedEvents={blockedEvents} loading={isBlockedLoading} />
           <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
             <div className="mb-4 flex items-center justify-between">
               <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-300">Confidence Trend</h2>
@@ -360,7 +369,7 @@ export default function DashboardPage() {
                 recent sessions
               </div>
             </div>
-            {sessionsLoading ? (
+            {isSessionsLoading ? (
               <div className="flex h-48 animate-pulse items-center justify-center rounded-xl bg-white/5">
                 <div className="flex h-32 w-full flex-col justify-end px-4">
                   <div className="flex items-end gap-2 h-full">

@@ -13,6 +13,14 @@ valid token (see issue #405). What it provides is a single, cryptographically
 checked entry point (:func:`verify_entitlement`) so that premium gating is a
 signature check rather than a patchable ``if is_premium()`` boolean.
 
+Security Model:
+This system uses a bearer-token entitlement model. The entitlement token is a JWT
+which acts as a bearer credential. The machine_id (passed in client headers) is used purely as
+a metadata consistency and basic sanity check for concurrent use tracking/abuse detection,
+rather than secure cryptographic proof-of-possession or hardware device binding. Since the
+client supplies the machine ID value, anyone possessing a valid entitlement token can also
+send the matching machine ID.
+
 PyJWT is an optional dependency (the ``crypto`` extra). Verification raises a
 clear :class:`LicenseError` if it is missing rather than failing open.
 """
@@ -70,9 +78,10 @@ def current_machine_id() -> str:
     """Return a stable, non-reversible fingerprint for this machine.
 
     Derived from the hostname and the primary network interface's MAC address.
-    Used for device binding so a single token cannot be shared freely across
-    machines; the backend flags concurrent use of one license on unlinked
-    fingerprints as abuse (see issue #406 acceptance criteria).
+    Used as client-side metadata check for license consistency. Note that this
+    fingerprint is supplied by the client and does not serve as a cryptographic
+    proof-of-possession or secure device binding; the backend uses it for
+    concurrency tracking and abuse detection (see issue #406 acceptance criteria).
     """
     raw = f"{platform.node()}:{uuid.getnode():012x}".encode()
     return hashlib.sha256(raw).hexdigest()
@@ -85,6 +94,10 @@ def verify_entitlement(
     machine_id: str | None = None,
 ) -> Entitlement:
     """Verify a signed entitlement token and return the decoded entitlement.
+
+    Note that the entitlement model is a bearer-token model. The machine_id
+    check serves as a client-side consistency sanity check rather than a
+    secure, cryptographically-enforced device binding.
 
     Args:
         token: The compact JWS entitlement token issued by the backend.
