@@ -36,19 +36,27 @@ class SafetyResult:
 
 
 class BaseStreamInterceptor(ABC):
+    """Abstract base for all streaming interceptors"""
+    
     def __init__(self, buffer_size: int = 1000):
-        self.buffer: list[str] = []
         self.buffer_size = buffer_size
+        self.reset_state()
+
+    def reset_state(self) -> None:
+        """Reset interceptor state for a new stream"""
+        self.buffer: list[str] = []
         self.total_tokens = 0
         self.is_blocked = False
 
     @abstractmethod
     async def intercept_stream(
-        self, prompt: str, model: str = None, **kwargs
+        self, prompt: str, model: str | None = None, **kwargs
     ) -> AsyncGenerator[TokenChunk, None]:
+        """Intercept and process token stream"""
         pass
 
     async def process_token(self, token: str) -> SafetyResult:
+        """Process a single token incrementally"""
         self.buffer.append(token)
         self.total_tokens += 1
         if len(self.buffer) > self.buffer_size:
@@ -57,19 +65,26 @@ class BaseStreamInterceptor(ABC):
 
     @abstractmethod
     async def _safety_check(self) -> SafetyResult:
+        """Implement safety logic per provider"""
         pass
 
     def _build_partial_command(self) -> str:
+        """Build partial command from recent tokens"""
         return "".join(self.buffer[-50:])
 
     def _detect_dangerous_patterns(self, text: str) -> str | None:
+        """Check for dangerous patterns incrementally"""
         patterns = [
             r"rm\s+-rf\s+/?",
+            r"rm\s+-r\s+-f\s+/?",
+            r"rm\s+--recursive\s+--force\s+/?",
             r"DROP\s+TABLE",
-            r"DELETE\s+FROM",
-            r"curl\s+.*\|\s*bash",
-            r"sudo\s+",
-            r"chmod\s+777",
+            r"DELETE\s+FROM\s+\w+\s+WHERE\s+1=1",
+            r"curl\s+.*\s*\|\s*(?:bash|sh)",
+            r"wget\s+.*\s*\|\s*(?:bash|sh)",
+            r"sudo\s+.*",
+            r"chmod\s+777\s+/?",
+            r"chmod\s+0777\s+/?",
             r"/etc/passwd",
             r"base64\s+-d",
             r"eval\s*\(",
@@ -77,6 +92,8 @@ class BaseStreamInterceptor(ABC):
             r"__import__\s*\(",
             r"subprocess\.",
             r"os\.system",
+            r"dd\s+of=/dev/",
+            r":\(\)\s*\{\s*:\|:&\s*\};:",
         ]
         for pattern in patterns:
             if re.search(pattern, text, re.IGNORECASE):
@@ -84,6 +101,7 @@ class BaseStreamInterceptor(ABC):
         return None
 
     def _detect_suspicious_patterns(self, text: str) -> str | None:
+        """Check for suspicious patterns (partial matches)"""
         patterns = [
             r"rm\s+-",
             r"DELETE\s+",
@@ -92,6 +110,11 @@ class BaseStreamInterceptor(ABC):
             r"wget\s+",
             r"sudo\s+",
             r"chmod\s+",
+            r"chown\s+",
+            r"kill\s+",
+            r"pkill\s+",
+            r"systemctl\s+stop",
+            r"service\s+.*\s+stop",
         ]
         for pattern in patterns:
             if re.search(pattern, text, re.IGNORECASE):
