@@ -9,11 +9,12 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 import agentwatch.api.server as _server_module
-from agentwatch.api.server import app
+from agentwatch.api.server import app, reset_rate_limiter_for_tests
 
 
 @pytest.fixture
 def client():
+    reset_rate_limiter_for_tests
     return TestClient(app)
 
 
@@ -169,7 +170,7 @@ def test_health_response_structure(client, mock_db_session, mock_redis_healthy):
     assert data["redis"]["status"] in ["ok", "degraded", "not_configured"]
 
 
-def test_health_check(client):
+def test_health_check(client, mock_db_session):
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"

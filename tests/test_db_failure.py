@@ -3,11 +3,12 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from agentwatch.api.server import app
+from agentwatch.api.server import app, reset_rate_limiter_for_tests
 
 
 @pytest.fixture
 def client():
+    reset_rate_limiter_for_tests()
     return TestClient(app)
 
 
