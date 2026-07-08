@@ -13,12 +13,16 @@ def client():
 
 
 def test_health_check_reports_db_status(client):
-    # Depending on current state, it might be True or False
     response = client.get("/health")
-    assert response.status_code == 200
     data = response.json()
+
     assert "database_connected" in data
     assert isinstance(data["database_connected"], bool)
+
+    assert data["status"] in {"ok", "degraded"}
+    expected_http = 200 if data["status"] == "ok" else 503
+    assert response.status_code == expected_http
+
 
 
 def test_system_status_endpoint(client):
