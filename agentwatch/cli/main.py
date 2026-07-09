@@ -2067,6 +2067,12 @@ def _print_live_event(event) -> None:
         console.print(f"[dim]{ts}[/dim] {icon} [bold]{name}[/bold]{risk_str}{status_str}")
         if cmd:
             console.print(f"         [dim]{cmd}[/dim]")
+        if event.is_blocked:
+            from agentwatch.reasoning.auditor import ReasoningAuditor
+
+            signals = ReasoningAuditor.detect_risk_signals(event)
+            if signals:
+                console.print(f"         [red]⚠ risk signals: {', '.join(signals)}[/red]")
 
     elif event.event_type == EventType.SAFETY_BLOCK:
         console.print(f"[dim]{ts}[/dim] {icon} [bold red]SAFETY BLOCK[/bold red]")
