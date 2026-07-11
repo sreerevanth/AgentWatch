@@ -8,8 +8,9 @@ Welcome to the central reference for the AgentWatch observability, safety, and r
 
 To start monitoring your AI agents, make sure you import the core functions from the root package:
 
-```python
-import agentwatch
+'''python
+import agentwatch'''
+
 Core SDK Methods
 1. agentwatch.watch
 What it does: This is the primary entry point for AgentWatch. It dynamically attaches monitoring hooks to an active AI agent instance. Once wrapped, it automatically streams execution trace events, logs performance metrics, and applies active safety policies in real time.
@@ -122,12 +123,12 @@ Endpoint: POST /api/v1/sessions
 Description: Pre-registers an agent execution trace context block tracker before running tracking sequences.
 
 Fetch Session Details
-Endpoint: GET /api/v1/sessions/session_id
+Endpoint: GET /api/v1/sessions/{session_id}
 
 Description: Grabs complete high level summary logs and metadata for a single target session.
 
 Retrieve Trace Events
-Endpoint: GET /api/v1/sessions/session_id/events
+Endpoint: GET /api/v1/sessions/{session_id}/events
 
 Description: Returns the granular timeline of events belonging to a session.
 
@@ -160,43 +161,43 @@ Description: Retrieves real time data processing performance, throughput rates, 
 
 Advanced Analysis and Evaluation Tools
 Evaluate Session Traces
-Endpoint: GET /api/v1/sessions/session_id/trace
+Endpoint: GET /api/v1/sessions/{session_id}/trace
 
 Description: Extracts raw step by step latency, path sequencing, and execution flows.
 
 Trace Session Confidence Scoring
-Endpoint: GET /api/v1/sessions/session_id/confidence
+Endpoint: GET /api/v1/sessions/{session_id}/confidence
 
 Description: Analyzes agent actions against expected alignment goals to discover hidden anomalies.
 
 Evaluate Agent Reasoning
-Endpoint: GET /api/v1/sessions/session_id/reasoning
+Endpoint: GET /api/v1/sessions/{session_id}/reasoning
 
 Description: Evaluates the context, system prompts, and logic chains utilized by the large language model during execution.
 
 Budget and Cost Allocation Logs
-Endpoint: GET /api/v1/sessions/session_id/cost
+Endpoint: GET /api/v1/sessions/{session_id}/cost
 
 Description: Tracks total financial spend and token distribution profiles tied to a specific session run.
 
 Counterfactual Scenario Replay
-Endpoint: GET /api/v1/sessions/session_id/replay
+Endpoint: GET /api/v1/sessions/{session_id}/replay
 
 Description: Prepares the system state to interactively review and run testing adjustments based on past failures.
 
 Simulate Experiment Trials
-Endpoint: POST /api/v1/sessions/session_id/simulate
+Endpoint: POST /api/v1/sessions/{session_id}/simulate
 
 Description: Runs offline execution alternatives against a past session path to check for performance variance.
 
 Guardrails and Safety Management
 Enumerate Git or File State Checkpoints
-Endpoint: GET /api/v1/sessions/session_id/checkpoints
+Endpoint: GET /api/v1/sessions/{session_id}/checkpoints
 
 Description: Looks up isolated filesystem checkpointing logs captured during runtime tracking.
 
 Trigger State Rollback
-Endpoint: POST /api/v1/sessions/session_id/rollback
+Endpoint: POST /api/v1/sessions/{session_id}/rollback
 
 Description: Automatically rolls back file adjustments and system actions to reverse unwanted or destructive agent behaviors.
 
@@ -206,9 +207,8 @@ Endpoint: POST /api/v1/safety/check
 Description: Validates terminal commands and scripts inside an offline simulation layer to catch threats before real execution occurs.
 
 Manage Active Safety Policies
-GET /api/v1/safety/policy — Returns currently active compliance rules.
-
-PUT /api/v1/safety/policy — Modifies parameters and updates global enforcement behaviors.
+GET /api/v1/safety/policy — Requires `policy:read`; returns the active policy.
+PUT /api/v1/safety/policy — Requires `policy:write`; updates the active policy.
 
 Real Time Data Streaming WebSockets
 Live Event Ingestion Feed
@@ -216,7 +216,7 @@ Endpoint: WS /ws/events
 
 Description: Establishes a persistent, low latency WebSocket connection used to push raw, real time agent framework activities directly to attached browser visualization dashboards.
 
-How to Authenticate: Pass your API key via the standard X-Api-Key header during the initial handshake, or add it directly as a query element named api_key.
+How to Authenticate: Pass a short-lived token or API key via the `X-Api-Key` header during the initial handshake.
 
 Cloud and Multi Tenant Administration
 When running AgentWatch in a multi tenant cloud environment, use these endpoints to isolate teams and handle access controls:
@@ -225,12 +225,12 @@ POST /api/v1/tenants — Create and initialize a new isolated organization space
 
 GET /api/v1/tenants — List all registered organizational spaces.
 
-GET /api/v1/tenants/tenant_id — View configuration settings for a given tenant space.
+GET /api/v1/tenants/{tenant_id} — View configuration settings for a given tenant space.
 
-POST /api/v1/tenants/tenant_id/api-keys — Generate a new secret API token for authentication.
+POST /api/v1/tenants/{tenant_id}/api-keys — Generate a new secret API token for authentication.
 
-GET /api/v1/tenants/tenant_id/api-keys — View all active access tokens for a specific tenant.
+GET /api/v1/tenants/{tenant_id}/api-keys — View all active access tokens for a specific tenant.
 
-DELETE /api/v1/tenants/tenant_id/api-keys/key_id — Instantly revoke an API key to block access.
+DELETE /api/v1/tenants/{tenant_id}/api-keys/{key_id} — Instantly revoke an API key to block access.
 
-GET /api/v1/tenants/tenant_id/usage — Retrieve platform usage logs and api metrics for billing and account limits.
+GET /api/v1/tenants/{tenant_id}/usage — Retrieve platform usage logs and api metrics for billing and account limits.
