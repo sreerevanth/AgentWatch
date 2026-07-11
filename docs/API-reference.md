@@ -210,13 +210,17 @@ Manage Active Safety Policies
 GET /api/v1/safety/policy — Requires `policy:read`; returns the active policy.
 PUT /api/v1/safety/policy — Requires `policy:write`; updates the active policy.
 
-Real Time Data Streaming WebSockets
+Real-Time Data Streaming WebSockets
 Live Event Ingestion Feed
 Endpoint: WS /ws/events
 
-Description: Establishes a persistent, low latency WebSocket connection used to push raw, real time agent framework activities directly to attached browser visualization dashboards.
+Description: Establishes a persistent, low-latency WebSocket connection used to push raw, real-time agent framework activities directly to attached browser visualization dashboards.
 
-How to Authenticate: Pass a short-lived token or API key via the `X-Api-Key` header during the initial handshake.
+How to Authenticate:
+
+For Browser Clients: Pass your API token directly as a query parameter in the connection URL: ws://<host>/ws/events?api_key=your_api_key_here
+
+For Non-Browser Clients (such as backend consumers): Pass a short-lived token or 'API key' via the standard X-Api-Key header during the initial connection handshake.
 
 Cloud and Multi Tenant Administration
 When running AgentWatch in a multi tenant cloud environment, use these endpoints to isolate teams and handle access controls:
