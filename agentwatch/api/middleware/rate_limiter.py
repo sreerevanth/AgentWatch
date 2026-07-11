@@ -101,9 +101,7 @@ class RateLimiter:
         self.user_limit = user_limit
         self.global_limit = global_limit
         self.window_sec = window_sec
-        self.backend: RateLimitBackend = (
-            backend if backend is not None else InMemoryBackend()
-        )
+        self.backend: RateLimitBackend = backend if backend is not None else InMemoryBackend()
 
     @classmethod
     def from_redis_url(
