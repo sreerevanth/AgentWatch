@@ -45,7 +45,9 @@ class SessionRecord(Base):
     framework = Column(String(64), nullable=False, index=True)
     status = Column(String(32), nullable=False, default="running", index=True)
     goal = Column(Text)
-    started_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    started_at = Column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
     ended_at = Column(DateTime(timezone=True))
     total_events = Column(Integer, default=0)
     total_tokens = Column(Integer, default=0)
@@ -54,7 +56,9 @@ class SessionRecord(Base):
     session_metadata = Column(JSONB, default=dict)
 
     events = relationship("EventRecord", back_populates="session", lazy="dynamic")
-    checkpoints = relationship("CheckpointRecord", back_populates="session", lazy="dynamic")
+    checkpoints = relationship(
+        "CheckpointRecord", back_populates="session", lazy="dynamic"
+    )
 
     __table_args__ = (
         Index("ix_sessions_started_at", "started_at"),
@@ -69,7 +73,9 @@ class EventRecord(Base):
     event_id = Column(String(36), primary_key=True)
     tenant_id = Column(String(36), index=True, nullable=True)  # Cloud multi-tenancy
     session_id = Column(
-        String(36), ForeignKey("agent_sessions.session_id", ondelete="CASCADE"), index=True
+        String(36),
+        ForeignKey("agent_sessions.session_id", ondelete="CASCADE"),
+        index=True,
     )
     agent_id = Column(String(128), nullable=False)
     framework = Column(String(64), nullable=False)
@@ -127,11 +133,15 @@ class CheckpointRecord(Base):
 
     checkpoint_id = Column(String(36), primary_key=True)
     session_id = Column(
-        String(36), ForeignKey("agent_sessions.session_id", ondelete="CASCADE"), index=True
+        String(36),
+        ForeignKey("agent_sessions.session_id", ondelete="CASCADE"),
+        index=True,
     )
     step_number = Column(Integer, nullable=False)
     checkpoint_type = Column(String(32), nullable=False)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
     snapshot_path = Column(String(512))
     git_commit_ref = Column(String(40))
     git_stash_ref = Column(String(40))
@@ -152,7 +162,10 @@ class MemoryEntryRecord(Base):
     summary = Column(Text)
     importance = Column(String(16), default="medium")
     created_at = Column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        index=True,
     )
     last_accessed = Column(DateTime(timezone=True))
     access_count = Column(Integer, default=0)
@@ -199,7 +212,9 @@ class TaskRecord(Base):
     title = Column(String(512), nullable=False)
     description = Column(Text)
     status = Column(String(32), default="pending", index=True)
-    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
+    created_at = Column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
+    )
     started_at = Column(DateTime(timezone=True))
     completed_at = Column(DateTime(timezone=True))
     dependencies = Column(JSONB, default=list)
@@ -235,7 +250,9 @@ class Repository:
         await self._session.flush()
 
     async def insert_event(self, event_data: dict[str, Any]) -> None:
-        record = EventRecord(**{k: v for k, v in event_data.items() if hasattr(EventRecord, k)})
+        record = EventRecord(
+            **{k: v for k, v in event_data.items() if hasattr(EventRecord, k)}
+        )
         self._session.add(record)
         await self._session.flush()
 
@@ -331,6 +348,59 @@ class Repository:
         result = await self._session.execute(d)
         await self._session.flush()
         return result.rowcount
+
+    async def erase_user_data(
+        self, user_id: str, *, scope: str = "all", tenant_id: str | None = None
+    ) -> int:
+        """
+        Erase a subject's persisted rows and return the row count.
+
+        ``user_id`` is the agent identity that owns the data. Deletes run on the
+        caller's session (uncommitted), so wrapping the call in
+        ``session.begin()`` makes the erasure atomic. ``scope`` is ``all``,
+        ``sessions`` (sessions + events + tasks), or ``memories``.
+        """
+        valid_scopes = {"all", "sessions", "memories"}
+        if scope not in valid_scopes:
+            raise ValueError(
+                f"unknown erasure scope {scope!r}; expected one of {sorted(valid_scopes)}"
+            )
+
+        from sqlalchemy import delete, select
+
+        deleted = 0
+
+        if scope in ("all", "sessions"):
+            session_q = select(SessionRecord.session_id).where(
+                SessionRecord.agent_id == user_id
+            )
+            event_d = delete(EventRecord).where(EventRecord.agent_id == user_id)
+            session_d = delete(SessionRecord).where(SessionRecord.agent_id == user_id)
+            if tenant_id is not None:
+                session_q = session_q.where(SessionRecord.tenant_id == tenant_id)
+                event_d = event_d.where(EventRecord.tenant_id == tenant_id)
+                session_d = session_d.where(SessionRecord.tenant_id == tenant_id)
+
+            session_ids = list((await self._session.execute(session_q)).scalars())
+            if session_ids:
+                # task_nodes has no ON DELETE CASCADE, so clear it before sessions.
+                await self._session.execute(
+                    delete(TaskRecord).where(TaskRecord.session_id.in_(session_ids))
+                )
+            # Delete events explicitly; a bulk session delete skips the FK cascade.
+            deleted += (await self._session.execute(event_d)).rowcount
+            deleted += (await self._session.execute(session_d)).rowcount
+
+        if scope in ("all", "memories"):
+            memory_d = delete(MemoryEntryRecord).where(
+                MemoryEntryRecord.agent_id == user_id
+            )
+            if tenant_id is not None:
+                memory_d = memory_d.where(MemoryEntryRecord.tenant_id == tenant_id)
+            deleted += (await self._session.execute(memory_d)).rowcount
+
+        await self._session.flush()
+        return deleted
 
 
 class TenantRepository:
@@ -458,11 +528,18 @@ class TenantRepository:
             return 0
         # Verify tenant ownership before pruning
         if self._tenant_id:
-            owned_ids = await self.get_sessions_older_than(datetime.max.replace(tzinfo=UTC))
+            owned_ids = await self.get_sessions_older_than(
+                datetime.max.replace(tzinfo=UTC)
+            )
             # Intersect requested ids with owned ids
             owned_set = set(owned_ids)
             session_ids = [sid for sid in session_ids if sid in owned_set]
         return await self._repo.prune_sessions(session_ids)
+
+    async def erase_user_data(self, user_id: str, *, scope: str = "all") -> int:
+        return await self._repo.erase_user_data(
+            user_id, scope=scope, tenant_id=self._tenant_id
+        )
 
 
 # ─────────────────────────────────────────────
@@ -483,7 +560,8 @@ async def init_db(database_url: str) -> async_sessionmaker:
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
                 # Add embedding column if not exists
                 await conn.execute(
-                    text("""
+                    text(
+                        """
                     DO $$
                     BEGIN
                         IF NOT EXISTS (
@@ -494,14 +572,16 @@ async def init_db(database_url: str) -> async_sessionmaker:
                             CREATE INDEX ON memory_entries USING ivfflat (embedding vector_cosine_ops);
                         END IF;
                     END $$;
-                """)
+                """
+                    )
                 )
             except Exception as exc:
                 # pgvector not installed — fall back to in-memory embeddings
                 import logging
 
                 logging.getLogger(__name__).warning(
-                    "pgvector not available: %s. Memory retrieval uses in-process fallback.", exc
+                    "pgvector not available: %s. Memory retrieval uses in-process fallback.",
+                    exc,
                 )
 
     factory = async_sessionmaker(engine, expire_on_commit=False)
@@ -544,7 +624,9 @@ def get_database_url(
     resolved_port = port or int(_os.getenv("DB_PORT", "5432"))
     resolved_database = database or _os.getenv("DB_NAME", "agentwatch")
     resolved_user = user or _os.getenv("DB_USER", "agentwatch")
-    resolved_password = password or _os.getenv("DB_PASSWORD") or _os.getenv("PGPASSWORD")
+    resolved_password = (
+        password or _os.getenv("DB_PASSWORD") or _os.getenv("PGPASSWORD")
+    )
 
     if not resolved_password:
         raise RuntimeError(
