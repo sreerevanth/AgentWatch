@@ -48,9 +48,7 @@ class SessionRecord(Base):
     framework = Column(String(64), nullable=False, index=True)
     status = Column(String(32), nullable=False, default="running", index=True)
     goal = Column(Text)
-    started_at = Column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
+    started_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
     ended_at = Column(DateTime(timezone=True))
     total_events = Column(Integer, default=0)
     total_tokens = Column(Integer, default=0)
@@ -59,9 +57,7 @@ class SessionRecord(Base):
     session_metadata = Column(JSONB, default=dict)
 
     events = relationship("EventRecord", back_populates="session", lazy="dynamic")
-    checkpoints = relationship(
-        "CheckpointRecord", back_populates="session", lazy="dynamic"
-    )
+    checkpoints = relationship("CheckpointRecord", back_populates="session", lazy="dynamic")
 
     __table_args__ = (
         Index("ix_sessions_started_at", "started_at"),
@@ -142,9 +138,7 @@ class CheckpointRecord(Base):
     )
     step_number = Column(Integer, nullable=False)
     checkpoint_type = Column(String(32), nullable=False)
-    created_at = Column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
     snapshot_path = Column(String(512))
     git_commit_ref = Column(String(40))
     git_stash_ref = Column(String(40))
@@ -215,9 +209,7 @@ class TaskRecord(Base):
     title = Column(String(512), nullable=False)
     description = Column(Text)
     status = Column(String(32), default="pending", index=True)
-    created_at = Column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC)
-    )
+    created_at = Column(DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC))
     started_at = Column(DateTime(timezone=True))
     completed_at = Column(DateTime(timezone=True))
     dependencies = Column(JSONB, default=list)
@@ -272,9 +264,7 @@ class Repository:
         await self._session.flush()
 
     async def insert_event(self, event_data: dict[str, Any]) -> None:
-        record = EventRecord(
-            **{k: v for k, v in event_data.items() if hasattr(EventRecord, k)}
-        )
+        record = EventRecord(**{k: v for k, v in event_data.items() if hasattr(EventRecord, k)})
         self._session.add(record)
         await self._session.flush()
 
@@ -388,15 +378,11 @@ class SqlAlchemyAuditStore:
         from agentwatch.governance.audit_log import GENESIS_HASH
 
         count = (
-            await self._session.execute(
-                select(func.count()).select_from(AuditLogRecord)
-            )
+            await self._session.execute(select(func.count()).select_from(AuditLogRecord))
         ).scalar_one()
         head = (
             await self._session.execute(
-                select(AuditLogRecord.record_hash)
-                .order_by(AuditLogRecord.seq.desc())
-                .limit(1)
+                select(AuditLogRecord.record_hash).order_by(AuditLogRecord.seq.desc()).limit(1)
             )
         ).scalar_one_or_none()
         return count, head or GENESIS_HASH
@@ -422,9 +408,7 @@ class SqlAlchemyAuditStore:
         from agentwatch.governance.audit_log import AuditRecord
 
         rows = (
-            await self._session.execute(
-                select(AuditLogRecord).order_by(AuditLogRecord.seq)
-            )
+            await self._session.execute(select(AuditLogRecord).order_by(AuditLogRecord.seq))
         ).scalars()
         return [
             AuditRecord(
@@ -566,9 +550,7 @@ class TenantRepository:
             return 0
         # Verify tenant ownership before pruning
         if self._tenant_id:
-            owned_ids = await self.get_sessions_older_than(
-                datetime.max.replace(tzinfo=UTC)
-            )
+            owned_ids = await self.get_sessions_older_than(datetime.max.replace(tzinfo=UTC))
             # Intersect requested ids with owned ids
             owned_set = set(owned_ids)
             session_ids = [sid for sid in session_ids if sid in owned_set]
@@ -657,9 +639,7 @@ def get_database_url(
     resolved_port = port or int(_os.getenv("DB_PORT", "5432"))
     resolved_database = database or _os.getenv("DB_NAME", "agentwatch")
     resolved_user = user or _os.getenv("DB_USER", "agentwatch")
-    resolved_password = (
-        password or _os.getenv("DB_PASSWORD") or _os.getenv("PGPASSWORD")
-    )
+    resolved_password = password or _os.getenv("DB_PASSWORD") or _os.getenv("PGPASSWORD")
 
     if not resolved_password:
         raise RuntimeError(

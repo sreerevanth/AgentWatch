@@ -127,9 +127,7 @@ class AuditLog:
                 target=target,
                 details=details,
                 prev_hash=prev_hash,
-                record_hash=_digest(
-                    seq, timestamp, actor, action, target, details, prev_hash
-                ),
+                record_hash=_digest(seq, timestamp, actor, action, target, details, prev_hash),
             )
             self._records.append(record)
             return record.copy()
@@ -245,9 +243,7 @@ class PersistentAuditLog:
             target=target,
             details=details,
             prev_hash=prev_hash,
-            record_hash=_digest(
-                seq, timestamp, actor, action, target, details, prev_hash
-            ),
+            record_hash=_digest(seq, timestamp, actor, action, target, details, prev_hash),
         )
         await self._store.write(record)
         return record.copy()
