@@ -85,17 +85,22 @@ class ErasureReceipt:
 class ErasureStore(Protocol):
     """Persistence-layer contract for GDPR Article 17 erasure."""
 
-    async def erase_user_data(self, user_id: str, *, scope: str = "all") -> int:
-        ...
+    async def erase_user_data(self, user_id: str, *, scope: str = "all") -> int: ...
 
 
 def resolve_signing_key(explicit: str | bytes | None = None) -> bytes:
     """Return the HMAC key from an explicit value or SIGNING_KEY_ENV, else raise."""
     if explicit is not None:
-        return explicit.encode("utf-8") if isinstance(explicit, str) else explicit
-    from_env = os.getenv(SIGNING_KEY_ENV)
-    if from_env:
-        return from_env.encode("utf-8")
+        key = explicit.encode("utf-8") if isinstance(explicit, str) else explicit
+        if key.strip():
+            return key
+    else:
+        from_env = os.getenv(SIGNING_KEY_ENV)
+        if from_env:
+            key = from_env.encode("utf-8")
+            if key.strip():
+                return key
+
     raise RuntimeError(
         f"No GDPR receipt signing key configured. Set {SIGNING_KEY_ENV} "
         "or pass signing_key=... to GDPREngine."
@@ -139,9 +144,7 @@ class GDPREngine:
     def scan_records(self, records: list[dict[str, Any]]) -> dict[str, int]:
         counts: dict[str, int] = {}
         for r in records:
-            blob = " ".join(
-                str(v) for v in r.values() if isinstance(v, (str, int, float))
-            )
+            blob = " ".join(str(v) for v in r.values() if isinstance(v, (str, int, float)))
             for f in detect_pii(blob):
                 counts[f.label] = counts.get(f.label, 0) + 1
         return counts

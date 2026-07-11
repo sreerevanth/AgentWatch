@@ -8,15 +8,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, Protocol, runtime_checkable
+from typing import Any
 
-
-@runtime_checkable
-class ErasureStore(Protocol):
-    """Persistence-layer contract for erasing a subject's stored rows."""
-
-    async def erase_user_data(self, user_id: str, *, scope: str = "all") -> int:
-        ...
+from agentwatch.governance.gdpr import ErasureStore
 
 
 @dataclass
