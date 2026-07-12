@@ -874,9 +874,9 @@ class SafetyEngine:
 
 
 async def cli_approval_handler(
-    event: AgentEvent, 
+    event: AgentEvent,
     safety: SafetyCheckData,
-    renderer: Callable[[AgentEvent, SafetyCheckData], None] | None = None
+    renderer: Callable[[AgentEvent, SafetyCheckData], None] | None = None,
 ) -> bool:
     """Prompt on the TTY to approve or deny a risky tool call.
 
@@ -891,7 +891,7 @@ async def cli_approval_handler(
     import sys
 
     tool = event.tool_call
-    
+
     if renderer:
         renderer(event, safety)
     else:
