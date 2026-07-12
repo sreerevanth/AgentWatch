@@ -230,6 +230,7 @@ class GenericAdapter:
         session_id: str | None = None,
         agent_id: str | None = None,
         safety_engine: SafetyEngine | None = None,
+        metadata: dict[str, Any] | None = None,
         redact: bool = False,
     ):
         self.agent = agent
@@ -241,6 +242,7 @@ class GenericAdapter:
         self._step = 0
         self._wrapped_methods: dict[str, Any] = {}
         self._safety_engine = safety_engine or SafetyEngine()
+        self._session_metadata: dict[str, Any] = dict(metadata) if metadata else {}
         self._exec_logger = ExecutionLogger(
             agent_id=self.agent_id,
             session_id=self.session_id,
@@ -351,6 +353,7 @@ class GenericAdapter:
                         event_type=EventType.TOOL_CALL,
                         step_number=self._step,
                         tool_call=tool_call,
+                        metadata=dict(self._session_metadata),
                     )
                     try:
                         checked = await self._safety_engine.check_event(safety_event)
@@ -444,11 +447,12 @@ class GenericAdapter:
                         tool_call=self._maybe_redact(tool_call),
                         status=ExecutionStatus.BLOCKED if blocked else ExecutionStatus.RUNNING,
                         safety=SafetyCheckData(
-                            risk_level=RiskLevel.CRITICAL if blocked else RiskLevel.SAFE,
+                            risk_level=(RiskLevel.CRITICAL if blocked else RiskLevel.SAFE),
                             risk_score=1.0 if blocked else 0.0,
                             blocked=blocked,
                             reasons=reasons,
                         ),
+                        metadata=dict(self._session_metadata),
                     )
                     self.bus.publish_sync(tc_event)
                     if blocked:
@@ -512,6 +516,7 @@ class GenericAdapter:
     ) -> None:
         """Emit an event without ever raising into the host agent (sync context)."""
         try:
+            merged = {**self._session_metadata, **(metadata or {})}
             event = AgentEvent(
                 session_id=self.session_id,
                 agent_id=self.agent_id,
@@ -520,7 +525,7 @@ class GenericAdapter:
                 event_type=event_type,
                 status=status,
                 step_number=self._step,
-                metadata=metadata or {},
+                metadata=merged,
             )
             self.bus.publish_sync(event)
         except Exception as exc:  # noqa: BLE001 — invisible-when-healthy contract
@@ -535,6 +540,7 @@ class GenericAdapter:
     ) -> None:
         """Emit an event in async context, awaiting all handlers so none are dropped."""
         try:
+            merged = {**self._session_metadata, **(metadata or {})}
             event = AgentEvent(
                 session_id=self.session_id,
                 agent_id=self.agent_id,
@@ -543,7 +549,7 @@ class GenericAdapter:
                 event_type=event_type,
                 status=status,
                 step_number=self._step,
-                metadata=metadata or {},
+                metadata=merged,
             )
             await self.bus.publish(event)
         except Exception as exc:  # noqa: BLE001
@@ -555,12 +561,19 @@ class GenericAdapter:
 # ─────────────────────────────────────────────
 
 
-def _attach_langchain(agent: Any, session_id: str | None, bus: EventBus) -> Any:
+def _attach_langchain(
+    agent: Any,
+    session_id: str | None,
+    bus: EventBus,
+    metadata: dict[str, Any] | None = None,
+) -> Any:
     """Attach an AgentWatchCallbackHandler if the agent supports callbacks."""
     try:
         from agentwatch.adapters.langchain import AgentWatchCallbackHandler
 
         handler = AgentWatchCallbackHandler(session_id=session_id, event_bus=bus)
+        if metadata:
+            handler._session_metadata = dict(metadata)
         # Newer LangChain: set on `.callbacks`
         if hasattr(agent, "callbacks"):
             existing = getattr(agent, "callbacks", None) or []
@@ -586,34 +599,58 @@ def _attach_langchain(agent: Any, session_id: str | None, bus: EventBus) -> Any:
         return None
 
 
-def _attach_langgraph(agent: Any, session_id: str | None, bus: EventBus) -> Any:
+def _attach_langgraph(
+    agent: Any,
+    session_id: str | None,
+    bus: EventBus,
+    metadata: dict[str, Any] | None = None,
+) -> Any:
     """LangGraph CompiledGraph exposes `invoke`/`astream` — wrap them generically.
     Also try to install a LangChain callback handler since LangGraph reuses it.
     """
     try:
         from agentwatch.adapters.langgraph import LangGraphAdapter
 
-        return LangGraphAdapter(agent, event_bus=bus, session_id=session_id).attach()
+        adapter = LangGraphAdapter(agent, event_bus=bus, session_id=session_id)
+        if metadata:
+            adapter._session_metadata = dict(metadata)
+        return adapter.attach()
     except Exception as exc:  # noqa: BLE001
         logger.debug("LangGraph attach failed: %s", exc)
         return None
 
 
-def _attach_autogen(agent: Any, session_id: str | None, bus: EventBus) -> Any:
+def _attach_autogen(
+    agent: Any,
+    session_id: str | None,
+    bus: EventBus,
+    metadata: dict[str, Any] | None = None,
+) -> Any:
     try:
         from agentwatch.adapters.autogen import AutoGenAdapter
 
-        return AutoGenAdapter(agent, event_bus=bus, session_id=session_id).attach()
+        adapter = AutoGenAdapter(agent, event_bus=bus, session_id=session_id)
+        if metadata:
+            adapter._session_metadata = dict(metadata)
+        return adapter.attach()
     except Exception as exc:  # noqa: BLE001
         logger.debug("AutoGen attach failed: %s", exc)
         return None
 
 
-def _attach_smolagents(agent: Any, session_id: str | None, bus: EventBus) -> Any:
+def _attach_smolagents(
+    agent: Any,
+    session_id: str | None,
+    bus: EventBus,
+    metadata: dict[str, Any] | None = None,
+) -> Any:
     try:
         from agentwatch.adapters.smolagents import SmolagentsAdapter
 
-        return SmolagentsAdapter(agent, event_bus=bus, session_id=session_id).attach()
+        adapter = SmolagentsAdapter(agent, event_bus=bus, session_id=session_id)
+        if metadata:
+            adapter._session_metadata = dict(metadata)
+        return adapter.attach()
     except Exception as exc:  # noqa: BLE001
         logger.debug("Smolagents attach failed: %s", exc)
         return None
@@ -630,6 +667,7 @@ def watch(
     session_id: str | None = None,
     agent_id: str | None = None,
     event_bus: EventBus | None = None,
+    metadata: dict[str, Any] | None = None,
     redact: bool = False,
 ) -> Any:
     """
@@ -644,6 +682,7 @@ def watch(
         session_id:  optional explicit session ID (auto-generated otherwise)
         agent_id:    optional explicit agent ID
         event_bus:   override the default EventBus (mostly for testing)
+        metadata:    optional custom metadata attached to all session events
         redact:      scrub PII/PHI from tool-call payloads before they are
                      published/persisted (generic-adapter path only)
     """
@@ -657,19 +696,19 @@ def watch(
 
     try:
         if label == "langchain":
-            attached = _attach_langchain(agent, session_id, bus)
+            attached = _attach_langchain(agent, session_id, bus, metadata)
             if attached is not None:
                 return attached
         elif label == "langgraph":
-            attached = _attach_langgraph(agent, session_id, bus)
+            attached = _attach_langgraph(agent, session_id, bus, metadata)
             if attached is not None:
                 return attached
         elif label == "autogen":
-            attached = _attach_autogen(agent, session_id, bus)
+            attached = _attach_autogen(agent, session_id, bus, metadata)
             if attached is not None:
                 return attached
         elif label == "smolagents":
-            attached = _attach_smolagents(agent, session_id, bus)
+            attached = _attach_smolagents(agent, session_id, bus, metadata)
             if attached is not None:
                 return attached
 
@@ -682,6 +721,7 @@ def watch(
             event_bus=bus,
             session_id=session_id,
             agent_id=agent_id,
+            metadata=metadata,
             redact=redact,
         )
         return adapter.attach()

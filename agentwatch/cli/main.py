@@ -27,6 +27,8 @@ if TYPE_CHECKING:
     # type-only import keeps the annotation without a hard runtime import.
     import httpx
 
+    from agentwatch.cost.reporting import CostReport
+
 app = typer.Typer(
     name="agentwatch",
     help="AgentWatch — Reliability, Safety, and Observability Layer for AI Agents",
@@ -51,8 +53,16 @@ safety_app = typer.Typer(
     no_args_is_help=True,
 )
 
+cost_app = typer.Typer(
+    name="cost",
+    help="AgentWatch FinOps. Report token usage and API spend across agents and frameworks.",
+    rich_markup_mode="rich",
+    no_args_is_help=True,
+)
+
 app.add_typer(server_app)
 app.add_typer(safety_app)
+app.add_typer(cost_app)
 
 
 _IN_REPL = False
@@ -800,6 +810,130 @@ def safety(
 
 
 # ---------------------------------------------
+# cost report command
+# ---------------------------------------------
+
+
+@cost_app.command(name="report")
+def cost_report(
+    days: int = typer.Option(30, "--days", help="Reporting window in days (must be >= 1)."),
+    group_by: str = typer.Option(
+        "framework", "--group-by", help="Group by: framework, agent, or status."
+    ),
+    api_url: str = typer.Option("http://localhost:8000", "--api"),
+    api_key: str | None = API_KEY_OPTION,
+    as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
+) -> None:
+    """
+    [bold]Report[/bold] token usage, USD cost, and cost-per-successful-goal.
+
+    Aggregates recent sessions from the AgentWatch API over the last [b]--days[/b],
+    grouped by [b]--group-by[/b].
+
+    [b]Example Usage:[/b]
+    [dim]python -m agentwatch.cli.main cost report --days 30 --group-by framework[/dim]
+    """
+    from agentwatch.cost.reporting import VALID_GROUP_BY, build_cost_report, parse_sessions
+
+    if group_by not in VALID_GROUP_BY:
+        console.print(
+            f"[red]Invalid --group-by {group_by!r}. Choose one of: {', '.join(VALID_GROUP_BY)}.[/red]"
+        )
+        raise typer.Exit(2)
+    if days < 1:
+        console.print("[red]--days must be >= 1.[/red]")
+        raise typer.Exit(2)
+
+    limit = 200  # /api/v1/sessions caps its page size at 200
+
+    async def _fetch() -> list[dict[str, object]]:
+        try:
+            import httpx
+        except ImportError:
+            console.print("[red]httpx not installed. Run: pip install httpx[/red]")
+            raise typer.Exit(1)
+
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(
+                    f"{api_url}/api/v1/sessions",
+                    params={"since_hours": days * 24, "limit": limit},
+                    headers=_api_headers(api_key),
+                    timeout=15.0,
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                _handle_http_status_error(exc, api_url)
+            except httpx.HTTPError as exc:
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
+                raise typer.Exit(1)
+
+        payload = resp.json()
+        items = payload.get("sessions", [])
+        return list(items) if isinstance(items, list) else []
+
+    raw_sessions = asyncio.run(_fetch())
+    if len(raw_sessions) >= limit:
+        console.print(
+            f"[yellow]Note: the API returned its maximum of {limit} sessions, so this "
+            f"report may be incomplete. Narrow the window with a smaller --days.[/yellow]"
+        )
+    sessions, skipped = parse_sessions(raw_sessions)
+    if skipped:
+        console.print(f"[yellow]Skipped {skipped} session record(s) that failed to parse.[/yellow]")
+    report = build_cost_report(sessions, group_by=group_by, days=days)
+
+    if as_json:
+        console.print_json(data=report.to_dict())
+        return
+
+    _print_cost_report_table(report)
+
+
+def _print_cost_report_table(report: CostReport) -> None:
+    table = Table(
+        title=(
+            f"[bold green]C O S T   R E P O R T[/bold green]  "
+            f"[dim](last {report.days}d · by {report.group_by})[/dim]"
+        ),
+        box=box.DOUBLE_EDGE,
+        border_style="bold cyan",
+    )
+    table.add_column(report.group_by.capitalize(), style="bold cyan")
+    table.add_column("Sessions", justify="right", style="dim white")
+    table.add_column("Tokens", justify="right", style="green")
+    table.add_column("USD", justify="right", style="yellow")
+    table.add_column("Successful", justify="right", style="cyan")
+    table.add_column("USD / success", justify="right", style="bold yellow")
+
+    for row in report.rows:
+        cps = row.cost_per_successful_goal
+        table.add_row(
+            row.group,
+            str(row.sessions),
+            f"{row.total_tokens:,}",
+            f"${row.total_usd:,.4f}",
+            str(row.successful),
+            "—" if cps is None else f"${cps:,.4f}",
+        )
+
+    if report.rows:
+        table.add_section()
+        table.add_row(
+            "[bold]TOTAL[/bold]",
+            str(report.total_sessions),
+            f"[bold]{report.total_tokens:,}[/bold]",
+            f"[bold]${report.total_usd:,.4f}[/bold]",
+            "",
+            "",
+        )
+
+    console.print(table)
+    if not report.rows:
+        console.print("[dim]No sessions found in the selected window.[/dim]")
+
+
+# ---------------------------------------------
 # serve command
 # ---------------------------------------------
 
@@ -1414,16 +1548,37 @@ def _license_public_key() -> str | None:
     when no key is configured, in which case the CLI behaves as free tier.
     """
     import os
+    import sys
 
     inline = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY")
     if inline:
         return inline
+
     key_file = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY_FILE")
     if key_file:
         try:
             return Path(key_file).read_text(encoding="utf-8")
         except FileNotFoundError:
-            pass
+            print(f"Warning: License public key file not found: {key_file}", file=sys.stderr)
+            return None
+        except PermissionError:
+            print(
+                f"Error: Permission denied reading license public key file: {key_file}",
+                file=sys.stderr,
+            )
+            return None
+        except UnicodeDecodeError:
+            print(
+                f"Error: Failed to decode license public key file {key_file}: invalid encoding.",
+                file=sys.stderr,
+            )
+            return None
+        except OSError as exc:
+            print(
+                f"Error: OS error reading license public key file {key_file}: {exc}",
+                file=sys.stderr,
+            )
+            return None
     return None
 
 
