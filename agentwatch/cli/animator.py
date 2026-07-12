@@ -1,3 +1,15 @@
+"""Terminal animation helpers for the AgentWatch CLI.
+
+This module is an internal presentation layer: a small collection of Rich/ANSI
+animation utilities used by the CLI commands to render cinematic output (the
+matrix-style "decryption" text effect, the animated logo reveal, and the
+systematic command menu). It exposes **no user-facing command** of its own; the
+functions here are called by the commands defined in :mod:`agentwatch.cli.main`.
+
+All functions write directly to stdout or the shared Rich ``console`` and are
+side-effecting (they sleep and animate in place); none returns a value.
+"""
+
 from __future__ import annotations
 
 import random

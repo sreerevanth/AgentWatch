@@ -177,7 +177,9 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install pip-audit
-        run: pip install pip-audit
+        run: |
+          pip install -e ".[crypto]"
+          pip install pip-audit
       - name: Audit dependencies
-        run: pip-audit --desc --requirement <(pip-compile pyproject.toml --quiet 2>/dev/null || echo "")
+        run: pip-audit --desc
         continue-on-error: true

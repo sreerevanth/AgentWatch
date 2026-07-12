@@ -1,0 +1,22 @@
+{
+  "metadata": {
+    "judge_mode": "mock_judge"
+  },
+  "metrics": {
+    "precision": 1.0,
+    "recall": 1.0,
+    "f1": 1.0,
+    "fpr": 0.0,
+    "latency": {
+      "avg_ms": 0.007118199879187159,
+      "p50_ms": 0.005699999746866524,
+      "p99_ms": 0.01669999983278103
+    }
+  },
+  "confusion_matrix": {
+    "tp": 300,
+    "fp": 0,
+    "tn": 200,
+    "fn": 0
+  }
+}

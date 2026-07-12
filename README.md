@@ -6,15 +6,16 @@
 
 <img width="130" height="130" alt="AgentWatch logo" src="https://github.com/user-attachments/assets/4e6fd818-2458-4ac2-bb9c-25542622dd00" />
 
-**Your AI agent is lying to you.**
-**AgentWatch catches it — before it deletes your database.**
+**AI agents are prone to silent failures, hallucinated tool parameters, and unintended side effects.**
+**AgentWatch acts as an active, pre-execution guardrail — auditing reasoning and blocking risky actions before they hit your production stack.**
 
 <br/>
 
+[![PyPI Version](https://img.shields.io/pypi/v/agentwatch-ai?style=flat-square&color=blue)](https://pypi.org/project/agentwatch-ai/)
 [![Tests](https://img.shields.io/badge/tests-205_passing-brightgreen?style=flat-square)](https://github.com/sreerevanth/AgentWatch)
 [![Coverage](https://img.shields.io/codecov/c/github/sreerevanth/AgentWatch?style=flat-square)](https://codecov.io/gh/sreerevanth/AgentWatch)
 [![License](https://img.shields.io/badge/license-Apache_2.0-blue?style=flat-square)](LICENSE)
-[![Python](https://img.shields.io/badge/python-3.10+-blue?style=flat-square&logo=python)](https://python.org)
+[![Python](https://img.shields.io/badge/python-3.12+-blue?style=flat-square&logo=python)](https://python.org)
 [![Discord](https://img.shields.io/badge/Discord-Join_Community-5865F2?style=flat-square&logo=discord)](https://discord.gg/n2RzUmZ4)
 [![Stars](https://img.shields.io/github/stars/sreerevanth/AgentWatch?style=flat-square&color=gold)](https://github.com/sreerevanth/AgentWatch/stargazers)
 [![Forks](https://img.shields.io/github/forks/sreerevanth/AgentWatch?style=flat-square&color=orange)](https://github.com/sreerevanth/AgentWatch/network)
@@ -357,18 +358,26 @@ Full Swagger docs at `localhost:8000/docs`.
 
 ---
 
-## 🏆 What Nobody Else Has Built
+## 🤝 How AgentWatch Fits Into Your Stack
 
-| Feature | AgentWatch | Langfuse | Phoenix | Datadog |
-|---|:---:|:---:|:---:|:---:|
-| Pre-execution blocking | ✅ | ❌ | ❌ | ❌ |
-| Independent reasoning auditor | ✅ | ❌ | ❌ | ❌ |
-| Git-backed rollback | ✅ | ❌ | ❌ | ❌ |
-| Inter-agent causal DAG | ✅ | ❌ | ❌ | ❌ |
-| Cross-session memory | ✅ | ❌ | ❌ | ❌ |
-| Session replay | ✅ | ❌ | ✅ | ⚠️ |
-| Goal drift detection | ✅ | ❌ | ❌ | ❌ |
-| Hallucination risk per step | ✅ | ❌ | ❌ | ❌ |
+AgentWatch is designed to run alongside and complement your existing tracing and observability tools rather than replace them. 
+
+While platforms like **Langfuse**, **Phoenix**, and **Datadog** are excellent at post-hoc tracing, logging, and performance metrics, AgentWatch focuses specifically on **pre-execution guardrails and runtime safety interventions**.
+
+Here is how AgentWatch complements your monitoring stack:
+
+| Capability | AgentWatch (Pre-Execution Safety) | Langfuse / Phoenix (Post-Hoc Tracing) | Datadog (APM & Metrics) |
+|---|:---:|:---:|:---:|
+| **Primary Goal** | **Prevent damage** (Block/Hold/Veto) | **Debug & Optimize** (Trace/Analyze) | **System Health** (Metrics/Logs) |
+| Pre-execution blocking | ✅ | ❌ | ❌ |
+| Independent reasoning auditor | ✅ | ❌ | ❌ |
+| Git-backed state rollback | ✅ | ❌ | ❌ |
+| Inter-agent causal DAG | ✅ | ❌ | ❌ |
+| Cross-session memory | ✅ | ❌ | ❌ |
+| Goal drift & Hallucination veto | ✅ | ❌ | ❌ |
+| Detailed execution traces | ⚠️ *(Minimal)* | ✅ *(Deep & Comprehensive)* | ⚠️ *(Generic Logs)* |
+| User feedback & evaluation loops | ❌ | ✅ | ❌ |
+| Infrastructure & APM metrics | ❌ | ❌ | ✅ |
 
 ---
 
@@ -475,11 +484,35 @@ Every open issue on the roadmap is available to contributors. [Browse them here.
 
 ---
 
+## 👥 Contributors & Open Source Programs
+
+AgentWatch is built in collaboration with a growing community of open-source developers. 
+
+We participate actively in student and developer mentorship programs, including:
+- **SSOC 2026** (Social Summer of Code)
+- **NSOC 2026** (Nexus Spring of Code)
+
+These programs introduce student developers to production-grade Python projects. As part of their learning journey, students fork the repository, set up local environments, run tests, and submit PRs. This active participation explains the repository's high fork-to-star ratio.
+
+For a full list of program details and the contributors who make AgentWatch possible, please check out our [CONTRIBUTING.md](CONTRIBUTING.md).
+
+---
+
+## 🔍 Similar & Complementary Projects
+
+We believe in fostering a collaborative, transparent AI engineering ecosystem. If you are building agentic workflows, we recommend checking out these excellent projects to round out your stack:
+
+* [Langfuse](https://langfuse.com) — Open-source LLM engineering platform for tracing, evaluation, prompt management, and metrics.
+* [Arize Phoenix](https://phoenix.arize.com) — AI observability platform for tracing, evaluating, and troubleshooting LLM applications.
+* [Arize](https://arize.com) — Enterprise-grade ML observability for monitoring model performance, drift, and data quality.
+
+---
+
 ## 💬 Community
 
 **Discord** — [discord.gg/n2RzUmZ4](https://discord.gg/n2RzUmZ4)
 
-Contributors discuss issues, get unblocked, and ship together. Your name on the landing page after your first PR merges.
+Contributors discuss issues, get unblocked, and ship together. Get your name on the landing page after your first PR merges!
 
 ---
 

@@ -265,12 +265,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="OWASP Agentic Top 10 automated test harness for AgentWatch"
     )
-    parser.add_argument(
-        "--json", action="store_true", help="Output JSON report instead of text"
-    )
-    parser.add_argument(
-        "--fail-fast", action="store_true", help="Stop on first critical finding"
-    )
+    parser.add_argument("--json", action="store_true", help="Output JSON report instead of text")
+    parser.add_argument("--fail-fast", action="store_true", help="Stop on first critical finding")
     args = parser.parse_args()
 
     result = run_harness(fail_fast=args.fail_fast)
