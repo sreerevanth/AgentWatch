@@ -360,7 +360,29 @@ def watch(
                     require_approval_on_medium=True,
                 )
             safety = SafetyEngine(policy=p)
-            safety.set_approval_callback(cli_approval_handler)
+
+            def cli_renderer(event, safety):
+                tool = event.tool_call
+                print("\n" + "=" * 60)
+                print("⚠️  AGENTWATCH SAFETY CHECK")
+                print("=" * 60)
+                print(f"Agent:      {event.agent_name or event.agent_id}")
+                print(f"Action:     {tool.tool_name if tool else 'unknown'}")
+                if tool and tool.raw_command:
+                    print(f"Command:    {tool.raw_command}")
+                if tool and tool.affected_resources:
+                    print(f"Resources:  {', '.join(tool.affected_resources)}")
+                print(f"Risk Level: {safety.risk_level.value.upper()}")
+                print(f"Risk Score: {safety.risk_score:.2f}")
+                print("Reasons:")
+                for r in safety.reasons:
+                    print(f"  • {r}")
+                print("=" * 60)
+
+            async def wrapped_handler(event, check_safety):
+                return await cli_approval_handler(event, check_safety, renderer=cli_renderer)
+
+            safety.set_approval_callback(wrapped_handler)
 
         adapter = ClaudeCodeAdapter(safety_engine=safety)
 

@@ -873,12 +873,17 @@ class SafetyEngine:
 # ─────────────────────────────────────────────
 
 
-async def cli_approval_handler(event: AgentEvent, safety: SafetyCheckData) -> bool:
+async def cli_approval_handler(
+    event: AgentEvent, 
+    safety: SafetyCheckData,
+    renderer: Callable[[AgentEvent, SafetyCheckData], None] | None = None
+) -> bool:
     """Prompt on the TTY to approve or deny a risky tool call.
 
     Args:
         event: Event containing the tool call under review.
         safety: Risk metadata to display to the operator.
+        renderer: Optional callback to render the prompt UI.
 
     Returns:
         True if the user confirms; False in non-interactive mode or on deny.
@@ -886,24 +891,31 @@ async def cli_approval_handler(event: AgentEvent, safety: SafetyCheckData) -> bo
     import sys
 
     tool = event.tool_call
-    print("\n" + "=" * 60)
-    print("⚠️  AGENTWATCH SAFETY CHECK")
-    print("=" * 60)
-    print(f"Agent:      {event.agent_name or event.agent_id}")
-    print(f"Action:     {tool.tool_name if tool else 'unknown'}")
-    if tool and tool.raw_command:
-        print(f"Command:    {tool.raw_command}")
-    if tool and tool.affected_resources:
-        print(f"Resources:  {', '.join(tool.affected_resources)}")
-    print(f"Risk Level: {safety.risk_level.value.upper()}")
-    print(f"Risk Score: {safety.risk_score:.2f}")
-    print("Reasons:")
-    for r in safety.reasons:
-        print(f"  • {r}")
-    print("=" * 60)
+    
+    if renderer:
+        renderer(event, safety)
+    else:
+        logger.info("\n" + "=" * 60)
+        logger.info("⚠️  AGENTWATCH SAFETY CHECK")
+        logger.info("=" * 60)
+        logger.info(f"Agent:      {event.agent_name or event.agent_id}")
+        logger.info(f"Action:     {tool.tool_name if tool else 'unknown'}")
+        if tool and tool.raw_command:
+            logger.info(f"Command:    {tool.raw_command}")
+        if tool and tool.affected_resources:
+            logger.info(f"Resources:  {', '.join(tool.affected_resources)}")
+        logger.info(f"Risk Level: {safety.risk_level.value.upper()}")
+        logger.info(f"Risk Score: {safety.risk_score:.2f}")
+        logger.info("Reasons:")
+        for r in safety.reasons:
+            logger.info(f"  • {r}")
+        logger.info("=" * 60)
 
     if not sys.stdin.isatty():
-        print("Non-interactive session detected. Blocking action.")
+        if renderer:
+            print("Non-interactive session detected. Blocking action.")
+        else:
+            logger.info("Non-interactive session detected. Blocking action.")
         return False
 
     response = await asyncio.to_thread(input, "Allow this action? [y/N]: ")
