@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import gsap from "gsap";
 import ScrollTrigger from "gsap/ScrollTrigger";
@@ -13,8 +13,29 @@ gsap.registerPlugin(ScrollTrigger);
 
 export default function Home() {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [githubStats, setGithubStats] = useState({ stars: "-", issues: "-" });
   
   useEffect(() => {
+    // Fetch stars
+    fetch("https://api.github.com/repos/sreerevanth/agentwatch")
+      .then(r => r.json())
+      .then(d => {
+        if(d.stargazers_count !== undefined) {
+          setGithubStats(prev => ({ ...prev, stars: d.stargazers_count.toLocaleString() }));
+        }
+      })
+      .catch(() => {});
+
+    // Fetch true open issues (excluding PRs)
+    fetch("https://api.github.com/search/issues?q=repo:sreerevanth/agentwatch+type:issue+state:open")
+      .then(r => r.json())
+      .then(d => {
+        if(d.total_count !== undefined) {
+          setGithubStats(prev => ({ ...prev, issues: d.total_count.toLocaleString() }));
+        }
+      })
+      .catch(() => {});
+
     const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (window.innerWidth < 768 || prefersReduced) return; // Skip heavy JS intro on mobile for instant LCP
 
@@ -77,6 +98,17 @@ export default function Home() {
           <Link href="https://github.com/sreerevanth/AgentWatch" className="px-8 py-4 rounded-xl border border-white/10 bg-white/5 backdrop-blur hover:bg-white/10 transition-all font-semibold">
             View Documentation
           </Link>
+        </div>
+
+        <div className="stagger-in mt-10 flex gap-4 text-[#888] font-mono text-sm">
+           <a href="https://github.com/sreerevanth/AgentWatch/stargazers" target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-white/5 px-4 py-2.5 rounded-lg border border-white/10 hover:border-[#e8ff47]/50 hover:text-[#e8ff47] transition-colors">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+              <span>{githubStats.stars} Stars</span>
+           </a>
+           <a href="https://github.com/sreerevanth/AgentWatch/issues" target="_blank" rel="noreferrer" className="flex items-center gap-2 bg-white/5 px-4 py-2.5 rounded-lg border border-white/10 hover:border-[#00f0ff]/50 hover:text-[#00f0ff] transition-colors">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              <span>{githubStats.issues} Issues</span>
+           </a>
         </div>
       </section>
 

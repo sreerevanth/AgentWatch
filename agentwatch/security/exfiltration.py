@@ -12,11 +12,9 @@ from dataclasses import dataclass
 from agentwatch.core.schema import AgentEvent
 
 _EXFIL_PATTERNS = [
-    re.compile(
-        r"curl\s+(?:-X\s+POST\s+)?(?:--data\S*\s+)?https?://(?!localhost|127\.|0\.0\.0\.0)", re.I
-    ),
-    re.compile(r"\bnc\s+-w?\s*\d*\s*[a-z0-9.-]+\s+\d+", re.I),  # netcat
-    re.compile(r"wget\s+--post-data", re.I),
+    re.compile(r"curl\b[^\n]*?https?://(?!localhost|127\.|0\.0\.0\.0)", re.I),
+    re.compile(r"\b(?:ncat|nc)\s+(?:-\S+\s+)*[a-z0-9.-]+\s+\d+", re.I),  # netcat / ncat
+    re.compile(r"wget\b[^\n]*?--post-(?:data|file)", re.I),
     re.compile(r"requests\.(post|put)\(", re.I),
     re.compile(r"\b(scp|rsync)\s+\S+\s+\S+@[a-z0-9.-]+:", re.I),
     re.compile(r"aws\s+s3\s+cp\s+\S+\s+s3://(?!internal|local)", re.I),
