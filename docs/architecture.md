@@ -61,7 +61,7 @@ graph TD
 ---
 
 ## Detailed Guides
-- [Detailed Architecture Internals](file:///d:/AgentWatch-Ed/AgentWatch/docs/architecture_detailed.md)
-- [Developer Setup Manual](file:///d:/AgentWatch-Ed/AgentWatch/docs/developer_setup.md)
-- [Custom Adapters Tutorial](file:///d:/AgentWatch-Ed/AgentWatch/docs/custom_adapters_tutorial.md)
-- [Extended Getting Started Guide](file:///d:/AgentWatch-Ed/AgentWatch/docs/getting_started_extended.md)
+- [Detailed Architecture Internals](architecture_detailed.md)
+- [Developer Setup Manual](developer_setup.md)
+- [Custom Adapters Tutorial](custom_adapters_tutorial.md)
+- [Extended Getting Started Guide](getting_started_extended.md)

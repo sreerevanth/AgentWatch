@@ -2,10 +2,10 @@
 
 ## Install
 
-AgentWatch requires Python 3.10+.
+AgentWatch requires Python 3.12 or newer.
 
 ```bash
-pip install agentwatch
+pip install agentwatch-ai
 ```
 
 To work from a checkout of the repository:

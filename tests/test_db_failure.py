@@ -24,7 +24,6 @@ def test_health_check_reports_db_status(client):
     assert response.status_code == expected_http
 
 
-
 def test_system_status_endpoint(client):
     # Protect with API key if needed, but in local dev it's usually None
     response = client.get("/api/v1/system/status")

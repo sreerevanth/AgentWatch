@@ -85,9 +85,7 @@ def test_sanitize_trace_strips_secret_keys_at_any_depth():
 
 def test_sanitize_trace_masks_free_text_pii():
     payload = {
-        "events": [
-            {"tool_call": {"raw_command": "mail bob@acme.com about SSN 123-45-6789"}}
-        ]
+        "events": [{"tool_call": {"raw_command": "mail bob@acme.com about SSN 123-45-6789"}}]
     }
     cmd = sanitize_trace(payload)["events"][0]["tool_call"]["raw_command"]
     assert "bob@acme.com" not in cmd

@@ -68,9 +68,11 @@ def test_sync_vs_async_parity():
     assert (len(reasons_sync) > 0) == blocked_sync, (
         "Metadata discrepancy: blocked is True but no reasons provided"
     )
+
+
 def test_tool_parameter_scope_constraints():
     """
-    Test feature [ELUSOC] from Issue #364: 
+    Test feature [ELUSOC] from Issue #364:
     Ensures policy DSL blocks tool calls if input arguments violate threshold parameters.
     """
     # 1. Define a YAML rule that restricts high-value transfers
@@ -87,23 +89,22 @@ def test_tool_parameter_scope_constraints():
     allowed_tool_call = ToolCallData(
         tool_name="request_funds",
         raw_command="",
-        arguments={"amount": 250}  # Natively parsed by policy_dsl via args.amount
+        arguments={"amount": 250},  # Natively parsed by policy_dsl via args.amount
     )
     blocked_allow, reasons_allow = safety_engine.check_tool_call_sync(allowed_tool_call)
-    
+
     assert blocked_allow is False
     assert len(reasons_allow) == 0
 
     # 3. Test outside safe parameters (amount = 600, blocked)
     blocked_tool_call = ToolCallData(
-        tool_name="request_funds",
-        raw_command="",
-        arguments={"amount": 600}
+        tool_name="request_funds", raw_command="", arguments={"amount": 600}
     )
     blocked_deny, reasons_deny = safety_engine.check_tool_call_sync(blocked_tool_call)
 
     assert blocked_deny is True
     assert "rule_matched:high_value_funds_restriction" in reasons_deny
+
 
 if __name__ == "__main__":
     test_sync_vs_async_parity()

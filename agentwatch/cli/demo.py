@@ -569,7 +569,7 @@ async def run_demo():
     print(
         bold("""
 +--------------------------------------------------------------+
-|         AgentWatch - Demo Suite v0.1.0                       |
+|         AgentWatch - Demo Suite v0.2.0                       |
 |  Reliability, Safety & Observability Layer for AI Agents     |
 +--------------------------------------------------------------+
 """)

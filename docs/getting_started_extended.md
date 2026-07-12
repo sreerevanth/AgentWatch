@@ -1,4 +1,4 @@
-# Extended Getting Started Guide (ELUSoC_2026)
+# Extended Getting Started Guide
 
 ## Setup Configuration
 Declare parameters in a local `.env` file:
