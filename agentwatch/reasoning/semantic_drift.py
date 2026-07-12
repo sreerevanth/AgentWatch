@@ -14,6 +14,11 @@ from datetime import datetime
 from agentwatch.scoring.drift import cosine, embed
 
 
+def _has_signal(vector: list[float]) -> bool:
+    """False for an all-zeros vector (a blank/empty summary with no signal)."""
+    return any(v != 0.0 for v in vector)
+
+
 @dataclass
 class SessionFingerprint:
     session_id: str
@@ -57,14 +62,22 @@ class CrossSessionDrift:
         fps = self._index.get(key, [])
         if len(fps) < 2:
             return None
-        # Compare each fingerprint to the chronologically-first one
-        anchor = fps[0]
-        distances = [1 - cosine(fp.vector, anchor.vector) for fp in fps[1:]]
+        # A zero-vector fingerprint comes from a blank/empty summary and carries
+        # no semantic signal. Because cosine(v, zero) == 0 for any v, folding
+        # such a fingerprint into the comparison — and especially using it as the
+        # anchor — makes every other session read as maximal drift (1.0). Only
+        # compare sessions that actually have signal, and anchor on the first of
+        # those; if fewer than two have signal there is nothing to compare.
+        signal_fps = [fp for fp in fps if _has_signal(fp.vector)]
+        if len(signal_fps) < 2:
+            return None
+        anchor = signal_fps[0]
+        distances = [1 - cosine(fp.vector, anchor.vector) for fp in signal_fps[1:]]
         drift_magnitude = max(distances) if distances else 0.0
         diverged = drift_magnitude >= self.threshold
         examples = [
             (fp.session_id, fp.goal[:120])
-            for fp in fps
+            for fp in signal_fps
             if 1 - cosine(fp.vector, anchor.vector) >= self.threshold
         ]
         return SemanticDriftAlert(

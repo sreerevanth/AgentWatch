@@ -96,108 +96,107 @@ class APIKeyEncryption:
         return hashlib.sha256(api_key.encode()).hexdigest()
 
 
-class KeyRotationManager:
-    """Manages API key rotation and audit trail."""
+def rotate_key(
+    db_session: Any,
+    agent_id: str,
+    new_key: str,
+    rotated_by: str = "system",
+    reason: str | None = None,
+) -> dict[str, Any]:
+    """
+    Rotate an agent's API key.
 
-    def __init__(self, db_session: Any = None) -> None:
-        """Initialize rotation manager with database session."""
-        self.db_session = db_session
+    Args:
+        agent_id: ID of the agent
+        new_key: New API key
+        rotated_by: User or system that initiated rotation
+        reason: Reason for rotation (e.g., "periodic", "security_incident")
 
-    def rotate_key(
-        self, agent_id: str, new_key: str, rotated_by: str = "system", reason: str | None = None
-    ) -> dict[str, Any]:
-        """
-        Rotate an agent's API key.
+    Returns:
+        Rotation audit entry with timestamps and hashes
+    """
+    if not db_session:
+        raise RuntimeError("Database session required for key rotation")
 
-        Args:
-            agent_id: ID of the agent
-            new_key: New API key
-            rotated_by: User or system that initiated rotation
-            reason: Reason for rotation (e.g., "periodic", "security_incident")
+    from agentwatch.security.key_storage import EncryptedAPIKey, KeyRotationAudit
 
-        Returns:
-            Rotation audit entry with timestamps and hashes
-        """
-        if not self.db_session:
-            raise RuntimeError("Database session required for key rotation")
+    # Get current key to retrieve old key hash
+    current_key = (
+        db_session.query(EncryptedAPIKey).filter(EncryptedAPIKey.agent_id == agent_id).first()
+    )
 
-        from agentwatch.security.key_storage import EncryptedAPIKey, KeyRotationAudit
+    old_key_hash = current_key.key_hash if current_key else None
 
-        # Get current key to retrieve old key hash
-        current_key = (
-            self.db_session.query(EncryptedAPIKey)
-            .filter(EncryptedAPIKey.agent_id == agent_id)
-            .first()
-        )
+    # Encrypt new key
+    encryption = APIKeyEncryption()
+    encrypted_key, nonce = encryption.encrypt_key(new_key)
+    new_key_hash = APIKeyEncryption.hash_key(new_key)
 
-        old_key_hash = current_key.key_hash if current_key else None
-
-        # Encrypt new key
-        encryption = APIKeyEncryption()
-        encrypted_key, nonce = encryption.encrypt_key(new_key)
-        new_key_hash = APIKeyEncryption.hash_key(new_key)
-
-        # Update or create key record
-        if current_key:
-            current_key.encrypted_key = encrypted_key
-            current_key.nonce = nonce
-            current_key.key_hash = new_key_hash
-            current_key.rotated_at = datetime.now(UTC)
-        else:
-            current_key = EncryptedAPIKey(
-                agent_id=agent_id,
-                key_hash=new_key_hash,
-                encrypted_key=encrypted_key,
-                nonce=nonce,
-                created_at=datetime.now(UTC),
-            )
-            self.db_session.add(current_key)
-
-        # Create audit entry
-        rotation_entry = KeyRotationAudit(
-            rotation_id=str(uuid4()),
+    # Update or create key record
+    if current_key:
+        current_key.encrypted_key = encrypted_key
+        current_key.nonce = nonce
+        current_key.key_hash = new_key_hash
+        current_key.rotated_at = datetime.now(UTC)
+    else:
+        current_key = EncryptedAPIKey(
             agent_id=agent_id,
-            old_key_hash=old_key_hash,
-            new_key_hash=new_key_hash,
-            rotated_by=rotated_by,
-            rotated_at=datetime.now(UTC),
-            reason=reason,
+            key_hash=new_key_hash,
+            encrypted_key=encrypted_key,
+            nonce=nonce,
+            created_at=datetime.now(UTC),
         )
-        self.db_session.add(rotation_entry)
-        self.db_session.commit()
+        db_session.add(current_key)
 
-        return {
-            "rotation_id": rotation_entry.rotation_id,
-            "agent_id": agent_id,
-            "old_key_hash": old_key_hash,
-            "new_key_hash": new_key_hash,
-            "rotated_at": rotation_entry.rotated_at.isoformat(),
-            "rotated_by": rotated_by,
-            "reason": reason,
+    # Create audit entry
+    rotation_entry = KeyRotationAudit(
+        rotation_id=str(uuid4()),
+        agent_id=agent_id,
+        old_key_hash=old_key_hash,
+        new_key_hash=new_key_hash,
+        rotated_by=rotated_by,
+        rotated_at=datetime.now(UTC),
+        reason=reason,
+    )
+    db_session.add(rotation_entry)
+    db_session.commit()
+
+    return {
+        "rotation_id": rotation_entry.rotation_id,
+        "agent_id": agent_id,
+        "old_key_hash": old_key_hash,
+        "new_key_hash": new_key_hash,
+        "rotated_at": rotation_entry.rotated_at.isoformat(),
+        "rotated_by": rotated_by,
+        "reason": reason,
+    }
+
+
+def get_rotation_history(
+    db_session: Any,
+    agent_id: str,
+) -> list[dict[str, Any]]:
+    """Get rotation history for an agent."""
+    if not db_session:
+        return []
+
+    from agentwatch.security.key_storage import KeyRotationAudit
+
+    rotations = (
+        db_session.query(KeyRotationAudit)
+        .filter(KeyRotationAudit.agent_id == agent_id)
+        .order_by(KeyRotationAudit.rotated_at.desc())
+        .all()
+    )
+
+    return [
+        {
+            "rotation_id": r.rotation_id,
+            "old_key_hash": r.old_key_hash,
+            "new_key_hash": r.new_key_hash,
+            "rotated_at": r.rotated_at.isoformat(),
+            "rotated_by": r.rotated_by,
+            "reason": r.reason,
         }
-
-    def get_rotation_history(self, agent_id: str) -> list[dict[str, Any]]:
-        """Get rotation history for an agent."""
-        if not self.db_session:
-            return []
-
-        from agentwatch.security.key_storage import KeyRotationAudit
-
-        rotations = (
-            self.db_session.query(KeyRotationAudit)
-            .filter(KeyRotationAudit.agent_id == agent_id)
-            .order_by(KeyRotationAudit.rotated_at.desc())
-            .all()
-        )
-
-        return [
-            {
-                "rotation_id": r.rotation_id,
-                "old_key_hash": r.old_key_hash,
-                "new_key_hash": r.new_key_hash,
-                "rotated_at": r.rotated_at.isoformat(),
-                "rotated_by": r.rotated_by,
-                "reason": r.reason,
-            }
-            for r in rotations
-        ]
+        for r in rotations
+    ]
