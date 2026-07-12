@@ -139,12 +139,47 @@ jobs:
           NEXT_TELEMETRY_DISABLED: 1
           NEXT_PUBLIC_API_URL: /api/v1
 
+  # ─── Landing build ────────────────────────────────────────────────────────
+  # agentwatch-landing had no CI coverage at all: it is a full Next.js application with its own
+  # lockfile, and nothing installed it, built it or type-checked it. A dependency break or a type
+  # error landed silently and the first person to find out was whoever deployed. `frontend` has had
+  # a build job all along; the asymmetry looked accidental rather than deliberate.
+  landing-build:
+    name: Landing Build
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: agentwatch-landing
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: agentwatch-landing/package-lock.json
+      - name: Install deps
+        run: npm ci
+      # No separate type-check step: unlike `frontend`, the landing app declares no `type-check`
+      # script — and it doesn't need one. Its next.config sets no `ignoreBuildErrors`, so
+      # `next build` type-checks as part of the build and fails on a type error by itself.
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: 1
+
   # ─── Docker build ─────────────────────────────────────────────────────────
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
     needs: [python-tests, frontend-build]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    # Previously gated to `push` on `main`, which meant the images were only ever built *after* a
+    # change had already merged. A pull request touching Dockerfile.api got no Docker build at all,
+    # so a broken Dockerfile could only be discovered on main — by which point it's everyone's
+    # problem. Running it on pull requests as well makes it a gate rather than a post-mortem.
+    #
+    # The cost is modest: both builds already use the GitHub Actions layer cache (`cache-from:
+    # type=gha`), so unchanged layers are pulled rather than rebuilt.
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     steps:
       - uses: actions/checkout@v4
       - uses: docker/setup-buildx-action@v3
@@ -177,7 +212,9 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install pip-audit
-        run: pip install pip-audit
+        run: |
+          pip install -e ".[crypto]"
+          pip install pip-audit
       - name: Audit dependencies
-        run: pip-audit --desc --requirement <(pip-compile pyproject.toml --quiet 2>/dev/null || echo "")
+        run: pip-audit --desc
         continue-on-error: true
