@@ -1,4 +1,4 @@
-# Custom Adapters Tutorial (ELUSoC_2026)
+# Custom Adapters Tutorial
 
 ## Implementation Steps
 To build a custom wrapper for framework targets:

@@ -15,6 +15,7 @@ build/
 coverage.json
 coverage.xml
 htmlcov/
+site/
 
 # Node
 node_modules/

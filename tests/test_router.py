@@ -58,6 +58,7 @@ def test_circuit_breaker_transitions(mock_sleep, mock_config):
         mock_completion.side_effect = Exception("API error")
 
         import contextlib
+
         for _ in range(5):
             with contextlib.suppress(Exception):
                 router.completion([{"role": "user", "content": "hi"}])

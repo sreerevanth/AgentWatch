@@ -119,6 +119,7 @@ def test_export_gives_up_after_max_retries():
     assert exporter.export.call_count == 3
 
 
+@pytest.mark.skipif(not _OTEL_AVAILABLE, reason="requires opentelemetry-sdk")
 def test_export_reasoning_trace_success():
     provider = TelemetryProvider()
     provider.initialize()
@@ -160,6 +161,7 @@ def test_export_reasoning_trace_success():
     mock_span.set_attribute.assert_any_call("custom", "val")
 
 
+@pytest.mark.skipif(not _OTEL_AVAILABLE, reason="requires opentelemetry-sdk")
 def test_export_reasoning_trace_hierarchy():
     provider = TelemetryProvider()
     provider.initialize()
@@ -190,6 +192,7 @@ def test_export_reasoning_trace_hierarchy():
     # we just need to ensure the call count is 2 and no exceptions occurred
 
 
+@pytest.mark.skipif(not _OTEL_AVAILABLE, reason="requires opentelemetry-sdk")
 def test_export_reasoning_trace_malformed_ids():
     provider = TelemetryProvider()
     provider.initialize()
@@ -214,6 +217,7 @@ def test_export_reasoning_trace_malformed_ids():
     mock_span.set_attribute.assert_any_call("agentwatch.span_id", "also-not-a-uuid")
 
 
+@pytest.mark.skipif(not _OTEL_AVAILABLE, reason="requires opentelemetry-sdk")
 def test_export_reasoning_trace_missing_end_time():
     provider = TelemetryProvider()
     provider.initialize()

@@ -1,4 +1,4 @@
-# Developer Setup Guide (ELUSoC_2026)
+# Developer Setup Guide
 
 ## Environment Requirements
 Prepare a Python environment running version 3.12 or newer:
@@ -9,12 +9,12 @@ python --version
 ## Installation
 1. Clone the repository fork:
    ```bash
-   git clone https://github.com/DebasmitaBose0/AgentWatch-Ed.git
+   git clone https://github.com/sreerevanth/AgentWatch.git
    ```
 2. Navigate and install dependencies:
    ```bash
    cd AgentWatch
-   pip install -e .[dev]
+   pip install -e ".[dev]"
    ```
 3. Run verification tests:
    ```bash

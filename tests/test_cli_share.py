@@ -80,9 +80,7 @@ def test_share_dry_run_does_not_upload(trace_file, mock_post):
 def test_share_custom_url(trace_file, mock_post):
     mock_instance, _ = mock_post
 
-    result = runner.invoke(
-        app, ["share", str(trace_file), "--share-url", "https://my.host/"]
-    )
+    result = runner.invoke(app, ["share", str(trace_file), "--share-url", "https://my.host/"])
     assert result.exit_code == 0
     assert mock_instance.post.call_args[0][0] == "https://my.host/api/v1/share"
 

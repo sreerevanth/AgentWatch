@@ -1,4 +1,4 @@
-# Detailed Architecture Internals (ELUSoC_2026)
+# Detailed Architecture Internals
 
 ## Event Bus Architecture
 The event bus distributes asynchronous task tracing payloads to multiple targets. It runs on a thread-safe registry with reader-writer locks.

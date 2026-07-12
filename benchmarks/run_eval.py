@@ -1,8 +1,10 @@
 import asyncio
 import json
+import math
 import os
 import sys
 import time
+from pathlib import Path
 from statistics import mean, median
 
 from rich.console import Console
@@ -10,10 +12,6 @@ from rich.table import Table
 
 from agentwatch.core.schema import AgentEvent
 from agentwatch.reasoning.auditor import ReasoningAuditor
-
-
-import math
-from pathlib import Path
 
 
 def safe_div(n, d):
@@ -49,7 +47,7 @@ async def run_evaluation():
     results_dir = base_dir / "results"
     output_path = results_dir / "eval_latest.json"
 
-    with open(input_path) as f:
+    with open(input_path, encoding="utf-8") as f:
         cases = json.load(f)
 
     if use_mock_judge:
@@ -123,7 +121,7 @@ async def run_evaluation():
         "confusion_matrix": {"tp": tp, "fp": fp, "tn": tn, "fn": fn},
     }
 
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2)
 
     console.print(f"[green]Results saved to {output_path}[/green]")
