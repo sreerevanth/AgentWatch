@@ -115,3 +115,44 @@ def test_export_404(mock_httpx_client):
     result = runner.invoke(app, ["session", "export", "abc-123"])
     assert result.exit_code == 1
     assert "Session abc-123 not found" in result.stdout
+
+
+def test_export_pdf(mock_httpx_client, tmp_path):
+    mock_instance, mock_response = mock_httpx_client
+    out_file = tmp_path / "out.pdf"
+
+    result = runner.invoke(
+        app, ["session", "export-pdf", "abc-123", "--out", str(out_file)]
+    )
+    assert result.exit_code == 0
+    clean_stdout = result.stdout.replace("\n", "").replace("\r", "")
+    assert "out.pdf" in clean_stdout
+    assert "created successfully" in clean_stdout
+
+    # Verify that the PDF or file exists and is not empty
+    assert out_file.exists()
+    assert out_file.stat().st_size > 0
+
+
+def test_export_pdf_404(mock_httpx_client):
+    mock_instance, mock_response = mock_httpx_client
+    mock_response.status_code = 404
+
+    result = runner.invoke(app, ["session", "export-pdf", "abc-123"])
+    assert result.exit_code == 1
+    assert "Session abc-123 not found" in result.stdout
+
+
+def test_export_pdf_permission_error(mock_httpx_client, tmp_path):
+    mock_instance, mock_response = mock_httpx_client
+    out_file = tmp_path / "out.pdf"
+
+    # Mock open to raise PermissionError
+    with patch("builtins.open", side_effect=PermissionError("Permission denied")):
+        result = runner.invoke(
+            app, ["session", "export-pdf", "abc-123", "--out", str(out_file)]
+        )
+        assert result.exit_code == 1
+        assert "Cannot write to" in result.stdout
+        assert "Please ensure the file is closed" in result.stdout
+

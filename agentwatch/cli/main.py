@@ -2140,9 +2140,83 @@ def export_pdf(
             raise typer.Exit(1)
 
         try:
-            # Mock PDF generation, since actual ReportLab dependency might not be present
-            with open(out, "wb") as f:
-                f.write(b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n")
+            # Build text lines for report
+            lines = [
+                "AgentWatch Session Replay Report",
+                "=================================",
+                f"Session ID: {session_id}",
+                f"Goal: {_data.get('goal', 'n/a')}",
+                f"Status: {_data.get('status', 'n/a')}",
+                f"Total Events: {_data.get('total_events', 0)}",
+                "",
+            ]
+
+            reasoning_audit = _data.get("reasoning_audit")
+            if reasoning_audit:
+                lines.extend([
+                    "Reasoning Audit Summary",
+                    "-----------------------",
+                    f"Overall Score: {reasoning_audit.get('overall_score', 0.0)}",
+                    f"Hallucination Risk: {reasoning_audit.get('hallucination_risk', 0.0)}",
+                    f"Goal Alignment: {reasoning_audit.get('goal_alignment', 0.0)}",
+                    "",
+                ])
+                findings = reasoning_audit.get("findings", [])
+                if findings:
+                    lines.append("Audit Findings:")
+                    for f in findings:
+                        lines.append(f"  - [{f.get('severity', 'medium')}] Step {f.get('step_index')}: {f.get('message')}")
+                    lines.append("")
+
+            lines.extend([
+                "Session Replay Steps",
+                "--------------------",
+            ])
+            for step in _data.get("steps", []):
+                idx = step.get("index", 0)
+                annotations = ", ".join(step.get("annotations", [])) or "n/a"
+                lines.append(f"Step {idx}: Annotations: {annotations}")
+
+                event = step.get("event", {})
+                evt_type = event.get("event_type")
+                lines.append(f"  Event Type: {evt_type}")
+
+                tool_call = event.get("tool_call")
+                if tool_call:
+                    lines.append(f"  Tool: {tool_call.get('tool_name')}")
+                    if tool_call.get("raw_command"):
+                        lines.append(f"  Command: {tool_call.get('raw_command')}")
+
+                tool_result = event.get("tool_result")
+                if tool_result and tool_result.get("output"):
+                    out_snippet = str(tool_result.get("output"))[:100]
+                    lines.append(f"  Result: {out_snippet}...")
+
+                if event.get("planner_output_preview"):
+                    lines.append(f"  Planner Output: {event.get('planner_output_preview')[:100]}...")
+                lines.append("")
+
+            # Render PDF / Text
+            try:
+                from reportlab.lib.pagesizes import letter  # noqa: PLC0415
+                from reportlab.pdfgen import canvas  # noqa: PLC0415
+
+                c = canvas.Canvas(out, pagesize=letter)
+                c.setTitle(f"AgentWatch Session Replay Report — {session_id}")
+                y = 750
+                for line in lines:
+                    wrapped = [line[i:i+90] for i in range(0, len(line), 90)] or [""]
+                    for w in wrapped:
+                        c.drawString(50, y, w)
+                        y -= 14
+                        if y < 50:
+                            c.showPage()
+                            y = 750
+                c.save()
+            except ImportError:
+                with open(out, "w", encoding="utf-8") as f:
+                    f.write("\n".join(lines))
+
             console.print(f"[green]{out} created successfully[/green]")
         except PermissionError:
             console.print(
