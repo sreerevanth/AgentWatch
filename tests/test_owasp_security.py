@@ -74,3 +74,23 @@ def test_owasp_detects_malformed_jwt():
     assert OwaspVector.TRUST_BOUNDARY in vectors
     assert any(f.detail.startswith("Malformed JWT token") for f in scan.findings)
 
+
+def test_owasp_detects_malformed_jwt_in_lists():
+    events = [
+        _tool_event(
+            "bash",
+            "curl http://example.com",
+            args={
+                "headers": [
+                    {"Authorization": "Bearer header.payload.signature_bad"},
+                    "another_jwt.payload.sig_bad"
+                ]
+            }
+        )
+    ]
+    scan = validate_owasp(events)
+    vectors = {f.vector for f in scan.findings}
+    assert OwaspVector.TRUST_BOUNDARY in vectors
+    findings = [f for f in scan.findings if f.vector == OwaspVector.TRUST_BOUNDARY]
+    assert len(findings) >= 1
+

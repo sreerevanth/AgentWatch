@@ -132,21 +132,49 @@ def validate_owasp(events: list[AgentEvent]) -> OwaspScan:
                         if is_token_key or is_jwt_structure:
                             try:
                                 import jwt
-                                jwt.decode(v, options={"verify_signature": False})
-                            except (ValueError, jwt.exceptions.DecodeError, jwt.exceptions.InvalidTokenError) as exc:
-                                if not any(f.event_id == event.event_id and f.detail.startswith("Malformed JWT token") for f in scan.findings):
-                                    scan.findings.append(
-                                        OwaspFinding(
-                                            vector=OwaspVector.TRUST_BOUNDARY,
-                                            severity="high",
-                                            detail=f"Malformed JWT token detected: {exc}",
-                                            event_id=event.event_id,
-                                        )
-                                    )
+                                try:
+                                    jwt.decode(v, options={"verify_signature": False})
+                                except (ValueError, Exception) as exc:
+                                    exc_type = type(exc).__name__
+                                    if isinstance(exc, ValueError) or exc_type in ("DecodeError", "InvalidTokenError"):
+                                        if not any(f.event_id == event.event_id and f.detail.startswith("Malformed JWT token") for f in scan.findings):
+                                            scan.findings.append(
+                                                OwaspFinding(
+                                                    vector=OwaspVector.TRUST_BOUNDARY,
+                                                    severity="high",
+                                                    detail=f"Malformed JWT token detected: {exc}",
+                                                    event_id=event.event_id,
+                                                )
+                                            )
                             except Exception:  # noqa: S110
                                 pass
                     elif isinstance(v, dict):
                         check_dict_keys(v)
+                    elif isinstance(v, list):
+                        for item in v:
+                            if isinstance(item, dict):
+                                check_dict_keys(item)
+                            elif isinstance(item, str):
+                                is_jwt_structure = re.match(r"^[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]*$", item) is not None
+                                if is_jwt_structure:
+                                    try:
+                                        import jwt
+                                        try:
+                                            jwt.decode(item, options={"verify_signature": False})
+                                        except (ValueError, Exception) as exc:
+                                            exc_type = type(exc).__name__
+                                            if isinstance(exc, ValueError) or exc_type in ("DecodeError", "InvalidTokenError"):
+                                                if not any(f.event_id == event.event_id and f.detail.startswith("Malformed JWT token") for f in scan.findings):
+                                                    scan.findings.append(
+                                                        OwaspFinding(
+                                                            vector=OwaspVector.TRUST_BOUNDARY,
+                                                            severity="high",
+                                                            detail=f"Malformed JWT token detected: {exc}",
+                                                            event_id=event.event_id,
+                                                        )
+                                                    )
+                                    except Exception:  # noqa: S110
+                                        pass
             check_dict_keys(event.tool_call.arguments)
 
         blob = _blob_of(event)
