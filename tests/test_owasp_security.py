@@ -59,3 +59,18 @@ def test_owasp_detects_nested_unsafe_code():
     scan = validate_owasp(events)
     vectors = {f.vector for f in scan.findings}
     assert OwaspVector.UNSAFE_CODE_EXEC in vectors
+
+
+def test_owasp_detects_malformed_jwt():
+    events = [
+        _tool_event(
+            "bash",
+            "curl -H 'Authorization: Bearer invalid_jwt_format' http://example.com",
+            args={"token": "invalid_jwt_format"}
+        )
+    ]
+    scan = validate_owasp(events)
+    vectors = {f.vector for f in scan.findings}
+    assert OwaspVector.TRUST_BOUNDARY in vectors
+    assert any(f.detail.startswith("Malformed JWT token") for f in scan.findings)
+
