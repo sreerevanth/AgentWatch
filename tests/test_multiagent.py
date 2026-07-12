@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 
 from agentwatch.core.event_bus import EventBus
-from agentwatch.orchestration.consensus import AgentVote, detect_consensus
+from agentwatch.orchestration.consensus import AgentVote, detect_consensus, detect_consensus_async
 from agentwatch.orchestration.crew_context import CrewContext
 from agentwatch.orchestration.dag import InterAgentDAG
 from agentwatch.orchestration.deadlock import DeadlockDetector
@@ -255,6 +257,47 @@ def test_consensus_no_agreement():
     ]
     rep = detect_consensus(votes, majority_ratio=0.7)
     assert rep.agreed is False
+
+
+@pytest.mark.asyncio
+async def test_consensus_async_success():
+    async def provider_a():
+        return AgentVote("a", "add caching")
+
+    async def provider_b():
+        return AgentVote("b", "add caching")
+
+    tasks = [provider_a(), provider_b()]
+    rep = await detect_consensus_async(tasks, timeout=1.0, majority_ratio=0.5)
+    assert rep.agreed is True
+    assert rep.majority_proposal == "add caching"
+
+
+@pytest.mark.asyncio
+async def test_consensus_async_stalled_provider():
+    async def provider_fast():
+        return AgentVote("fast", "add caching")
+
+    async def provider_stalled():
+        await asyncio.sleep(5.0)
+        return AgentVote("stalled", "rewrite from scratch")
+
+    tasks = [provider_fast(), provider_stalled()]
+
+    import time
+
+    start = time.time()
+    # Use a small timeout of 0.2 seconds
+    rep = await detect_consensus_async(tasks, timeout=0.2, majority_ratio=0.5)
+    end = time.time()
+
+    # Assert it completed quickly (well under the 5.0 seconds sleep)
+    assert end - start < 1.0
+
+    # Fast provider should have completed, stalled should have timed out.
+    # Consensus should be achieved based on fast provider (1 vote of "add caching", which is a majority of 1)
+    assert rep.agreed is True
+    assert rep.majority_proposal == "add caching"
 
 
 # ─────────────────────────────────────────────

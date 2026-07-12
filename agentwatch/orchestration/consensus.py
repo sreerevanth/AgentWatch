@@ -6,6 +6,8 @@ When agents disagree on approach, surface conflict to the human.
 
 from __future__ import annotations
 
+import asyncio
+from collections.abc import Awaitable
 from dataclasses import dataclass
 
 from agentwatch.scoring.drift import cosine, embed
@@ -81,4 +83,42 @@ def detect_consensus(
     )
 
 
-__all__ = ["AgentVote", "ConsensusReport", "detect_consensus"]
+async def detect_consensus_async(
+    tasks: list[Awaitable[AgentVote]],
+    *,
+    timeout: float = 1.5,
+    similarity_threshold: float = 0.65,
+    majority_ratio: float = 0.6,
+) -> ConsensusReport:
+    """Gather votes from parallel tasks with a configurable timeout, returning a consensus report."""
+    if not tasks:
+        return detect_consensus(
+            [],
+            similarity_threshold=similarity_threshold,
+            majority_ratio=majority_ratio,
+        )
+
+    wrapped_tasks = [asyncio.ensure_future(t) for t in tasks]
+    done, pending = await asyncio.wait(wrapped_tasks, timeout=timeout)
+
+    # Cancel pending tasks to prevent them from running indefinitely
+    for t in pending:
+        t.cancel()
+
+    votes = []
+    for t in done:
+        try:
+            res = t.result()
+            if isinstance(res, AgentVote):
+                votes.append(res)
+        except Exception:  # noqa: S110
+            pass
+
+    return detect_consensus(
+        votes,
+        similarity_threshold=similarity_threshold,
+        majority_ratio=majority_ratio,
+    )
+
+
+__all__ = ["AgentVote", "ConsensusReport", "detect_consensus", "detect_consensus_async"]
