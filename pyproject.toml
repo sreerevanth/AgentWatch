@@ -124,8 +124,9 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # __init__.py re-exports: wildcard imports and implicit re-exports are intentional
-"agentwatch/**/__init__.py" = ["F401", "F403"]
-"agentwatch/*/__init__.py"  = ["F401", "F403"]
+# (F405: __all__ names resolve through those wildcards).
+"agentwatch/**/__init__.py" = ["F401", "F403", "F405"]
+"agentwatch/*/__init__.py"  = ["F401", "F403", "F405"]
 
 [tool.mypy]
 python_version = "3.12"
