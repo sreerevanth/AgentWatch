@@ -1,7 +1,13 @@
 from __future__ import annotations
 
+import importlib.util
+
+import pytest
+
 from agentwatch.core.schema import AgentEvent, AgentFramework, EventType, ToolCallData
 from agentwatch.security.owasp import OwaspVector, validate_owasp
+
+_JWT_AVAILABLE = importlib.util.find_spec("jwt") is not None
 
 
 def _tool_event(tool: str, raw: str, args: dict | None = None) -> AgentEvent:
@@ -61,6 +67,7 @@ def test_owasp_detects_nested_unsafe_code():
     assert OwaspVector.UNSAFE_CODE_EXEC in vectors
 
 
+@pytest.mark.skipif(not _JWT_AVAILABLE, reason="requires pyjwt")
 def test_owasp_detects_malformed_jwt():
     events = [
         _tool_event(
@@ -75,6 +82,7 @@ def test_owasp_detects_malformed_jwt():
     assert any(f.detail.startswith("Malformed JWT token") for f in scan.findings)
 
 
+@pytest.mark.skipif(not _JWT_AVAILABLE, reason="requires pyjwt")
 def test_owasp_detects_malformed_jwt_in_lists():
     events = [
         _tool_event(
