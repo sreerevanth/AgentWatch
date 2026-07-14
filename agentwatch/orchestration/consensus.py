@@ -111,7 +111,7 @@ async def detect_consensus_async(
             res = t.result()
             if isinstance(res, AgentVote):
                 votes.append(res)
-        except Exception:  # noqa: S110
+        except Exception:  # noqa: S110  # nosec B110
             pass
 
     return detect_consensus(
