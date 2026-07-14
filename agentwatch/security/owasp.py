@@ -125,7 +125,13 @@ def validate_owasp(events: list[AgentEvent]) -> OwaspScan:
         # Check for malformed JWT tokens in the event arguments
         if event.tool_call and event.tool_call.arguments:
 
-            def check_dict_keys(d: dict):
+            def check_dict_keys(d: dict, visited: set[int] | None = None):
+                if visited is None:
+                    visited = set()
+                if id(d) in visited:
+                    return
+                visited.add(id(d))
+
                 for k, v in d.items():
                     if isinstance(v, str):
                         is_token_key = any(
@@ -163,11 +169,14 @@ def validate_owasp(events: list[AgentEvent]) -> OwaspScan:
                             except Exception:  # noqa: S110  # nosec B110
                                 pass
                     elif isinstance(v, dict):
-                        check_dict_keys(v)
+                        check_dict_keys(v, visited)
                     elif isinstance(v, list):
+                        if id(v) in visited:
+                            continue
+                        visited.add(id(v))
                         for item in v:
                             if isinstance(item, dict):
-                                check_dict_keys(item)
+                                check_dict_keys(item, visited)
                             elif isinstance(item, str):
                                 is_jwt_structure = (
                                     re.match(
