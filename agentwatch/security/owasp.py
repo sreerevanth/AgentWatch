@@ -146,7 +146,7 @@ def validate_owasp(events: list[AgentEvent]) -> OwaspScan:
                                                     event_id=event.event_id,
                                                 )
                                             )
-                            except Exception:  # noqa: S110
+                            except Exception:  # noqa: S110  # nosec B110
                                 pass
                     elif isinstance(v, dict):
                         check_dict_keys(v)
@@ -173,7 +173,7 @@ def validate_owasp(events: list[AgentEvent]) -> OwaspScan:
                                                             event_id=event.event_id,
                                                         )
                                                     )
-                                    except Exception:  # noqa: S110
+                                    except Exception:  # noqa: S110  # nosec B110
                                         pass
             check_dict_keys(event.tool_call.arguments)
 
