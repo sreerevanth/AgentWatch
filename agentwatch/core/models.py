@@ -7,7 +7,10 @@ for PostgreSQL persistence.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from agentwatch.governance.audit_log import AuditRecord
 
 from sqlalchemy import (
     Boolean,
@@ -69,7 +72,9 @@ class EventRecord(Base):
     event_id = Column(String(36), primary_key=True)
     tenant_id = Column(String(36), index=True, nullable=True)  # Cloud multi-tenancy
     session_id = Column(
-        String(36), ForeignKey("agent_sessions.session_id", ondelete="CASCADE"), index=True
+        String(36),
+        ForeignKey("agent_sessions.session_id", ondelete="CASCADE"),
+        index=True,
     )
     agent_id = Column(String(128), nullable=False)
     framework = Column(String(64), nullable=False)
@@ -127,7 +132,9 @@ class CheckpointRecord(Base):
 
     checkpoint_id = Column(String(36), primary_key=True)
     session_id = Column(
-        String(36), ForeignKey("agent_sessions.session_id", ondelete="CASCADE"), index=True
+        String(36),
+        ForeignKey("agent_sessions.session_id", ondelete="CASCADE"),
+        index=True,
     )
     step_number = Column(Integer, nullable=False)
     checkpoint_type = Column(String(32), nullable=False)
@@ -152,7 +159,10 @@ class MemoryEntryRecord(Base):
     summary = Column(Text)
     importance = Column(String(16), default="medium")
     created_at = Column(
-        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(UTC), index=True
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(UTC),
+        index=True,
     )
     last_accessed = Column(DateTime(timezone=True))
     access_count = Column(Integer, default=0)
@@ -205,6 +215,25 @@ class TaskRecord(Base):
     dependencies = Column(JSONB, default=list)
     outputs = Column(JSONB, default=dict)
     task_metadata = Column(JSONB, default=dict)
+
+
+class AuditLogRecord(Base):
+    """Append-only, hash-chained audit record.
+
+    Mirrors ``governance.audit_log.AuditRecord``. ``timestamp`` is the exact
+    ISO-8601 string that was hashed, so a round-trip reproduces the digest.
+    """
+
+    __tablename__ = "audit_log"
+
+    seq = Column(Integer, primary_key=True, autoincrement=False)
+    timestamp = Column(String(40), nullable=False)
+    actor = Column(String(256))
+    action = Column(String(128), nullable=False)
+    target = Column(String(512), nullable=False)
+    details = Column(JSONB, default=dict)
+    prev_hash = Column(String(64), nullable=False)
+    record_hash = Column(String(64), nullable=False, unique=True)
 
 
 # ─────────────────────────────────────────────
@@ -331,6 +360,118 @@ class Repository:
         result = await self._session.execute(d)
         await self._session.flush()
         return result.rowcount
+
+    async def erase_user_data(
+        self, user_id: str, *, scope: str = "all", tenant_id: str | None = None
+    ) -> int:
+        """
+        Erase a subject's persisted rows and return the row count.
+
+        ``user_id`` is the agent identity that owns the data. Deletes run on the
+        caller's session (uncommitted), so wrapping the call in
+        ``session.begin()`` makes the erasure atomic. ``scope`` is ``all``,
+        ``sessions`` (sessions + events + tasks), or ``memories``.
+        """
+        valid_scopes = {"all", "sessions", "memories"}
+        if scope not in valid_scopes:
+            raise ValueError(
+                f"unknown erasure scope {scope!r}; expected one of {sorted(valid_scopes)}"
+            )
+
+        from sqlalchemy import delete, select
+
+        deleted = 0
+
+        if scope in ("all", "sessions"):
+            session_q = select(SessionRecord.session_id).where(SessionRecord.agent_id == user_id)
+            event_d = delete(EventRecord).where(EventRecord.agent_id == user_id)
+            session_d = delete(SessionRecord).where(SessionRecord.agent_id == user_id)
+            if tenant_id is not None:
+                session_q = session_q.where(SessionRecord.tenant_id == tenant_id)
+                event_d = event_d.where(EventRecord.tenant_id == tenant_id)
+                session_d = session_d.where(SessionRecord.tenant_id == tenant_id)
+
+            session_ids = list((await self._session.execute(session_q)).scalars())
+            if session_ids:
+                # task_nodes has no ON DELETE CASCADE, so clear it before sessions.
+                await self._session.execute(
+                    delete(TaskRecord).where(TaskRecord.session_id.in_(session_ids))
+                )
+            # Delete events explicitly; a bulk session delete skips the FK cascade.
+            deleted += (await self._session.execute(event_d)).rowcount
+            deleted += (await self._session.execute(session_d)).rowcount
+
+        if scope in ("all", "memories"):
+            memory_d = delete(MemoryEntryRecord).where(MemoryEntryRecord.agent_id == user_id)
+            if tenant_id is not None:
+                memory_d = memory_d.where(MemoryEntryRecord.tenant_id == tenant_id)
+            deleted += (await self._session.execute(memory_d)).rowcount
+
+        await self._session.flush()
+        return deleted
+
+
+class SqlAlchemyAuditStore:
+    """AuditStore over the ``audit_log`` table.
+
+    Writes flush on the caller's session; wrap ``read_head`` + ``write`` in
+    ``session.begin()`` to append atomically.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def read_head(self) -> tuple[int, str]:
+        from sqlalchemy import func, select
+
+        from agentwatch.governance.audit_log import GENESIS_HASH
+
+        count = (
+            await self._session.execute(select(func.count()).select_from(AuditLogRecord))
+        ).scalar_one()
+        head = (
+            await self._session.execute(
+                select(AuditLogRecord.record_hash).order_by(AuditLogRecord.seq.desc()).limit(1)
+            )
+        ).scalar_one_or_none()
+        return count, head or GENESIS_HASH
+
+    async def write(self, record: AuditRecord) -> None:
+        self._session.add(
+            AuditLogRecord(
+                seq=record.seq,
+                timestamp=record.timestamp,
+                actor=record.actor,
+                action=record.action,
+                target=record.target,
+                details=dict(record.details),
+                prev_hash=record.prev_hash,
+                record_hash=record.record_hash,
+            )
+        )
+        await self._session.flush()
+
+    async def read_all(self) -> list[AuditRecord]:
+        from sqlalchemy import select
+
+        from agentwatch.governance.audit_log import AuditRecord
+
+        rows = (
+            await self._session.execute(select(AuditLogRecord).order_by(AuditLogRecord.seq))
+        ).scalars()
+        return [
+            AuditRecord(
+                seq=r.seq,
+                timestamp=r.timestamp,
+                actor=r.actor,
+                action=r.action,
+                target=r.target,
+                details=dict(r.details or {}),
+                prev_hash=r.prev_hash,
+                record_hash=r.record_hash,
+            )
+            for r in rows
+        ]
 
 
 class TenantRepository:
@@ -464,6 +605,9 @@ class TenantRepository:
             session_ids = [sid for sid in session_ids if sid in owned_set]
         return await self._repo.prune_sessions(session_ids)
 
+    async def erase_user_data(self, user_id: str, *, scope: str = "all") -> int:
+        return await self._repo.erase_user_data(user_id, scope=scope, tenant_id=self._tenant_id)
+
 
 # ─────────────────────────────────────────────
 # Database initialization
@@ -483,7 +627,8 @@ async def init_db(database_url: str) -> async_sessionmaker:
                 await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
                 # Add embedding column if not exists
                 await conn.execute(
-                    text("""
+                    text(
+                        """
                     DO $$
                     BEGIN
                         IF NOT EXISTS (
@@ -494,14 +639,16 @@ async def init_db(database_url: str) -> async_sessionmaker:
                             CREATE INDEX ON memory_entries USING ivfflat (embedding vector_cosine_ops);
                         END IF;
                     END $$;
-                """)
+                """
+                    )
                 )
             except Exception as exc:
                 # pgvector not installed — fall back to in-memory embeddings
                 import logging
 
                 logging.getLogger(__name__).warning(
-                    "pgvector not available: %s. Memory retrieval uses in-process fallback.", exc
+                    "pgvector not available: %s. Memory retrieval uses in-process fallback.",
+                    exc,
                 )
 
     factory = async_sessionmaker(engine, expire_on_commit=False)
