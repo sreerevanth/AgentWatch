@@ -1,7 +1,6 @@
 """AgentWatch — Reliability, Safety, and Observability for AI Agents."""
 
-__version__ = "0.2.0"
-
+from agentwatch._version import __version__
 from agentwatch.core.watcher import (
     AgentWatchBlockedError,
     GenericAdapter,

@@ -12,6 +12,8 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
 
+from agentwatch._version import __version__
+
 logger = logging.getLogger(__name__)
 
 # ─────────────────────────────────────────────
@@ -39,7 +41,7 @@ class TelemetryConfig:
     def __init__(
         self,
         service_name: str = "agentwatch",
-        service_version: str = "0.2.0",
+        service_version: str = __version__,
         otlp_endpoint: str | None = None,
         export_to_console: bool = False,
         enable_metrics: bool = True,

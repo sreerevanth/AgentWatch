@@ -34,6 +34,7 @@ from prometheus_client import generate_latest
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from agentwatch._version import __version__
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
 from agentwatch.api.auth import require_permission
 from agentwatch.api.entitlement import require_entitlement
@@ -641,7 +642,7 @@ app = FastAPI(
     title="AgentWatch API",
     description="REST API for the AgentWatch observability platform. "
     "Handles reasoning trace ingestion, session management, safety policy enforcement, and real-time dashboard updates.",
-    version="0.2.0",
+    version=__version__,
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -750,7 +751,7 @@ async def system_status(_auth: None = Depends(_require_api_key)) -> dict[str, An
             "mode": "persistent" if _db_session_factory else "in-memory",
         },
         "environment": os.getenv("ENVIRONMENT", "unknown"),
-        "version": "0.2.0",
+        "version": __version__,
     }
 
 
@@ -759,7 +760,7 @@ async def health(request: Request) -> JSONResponse:
     _limiter.check(_rate_limit_key(request, "r"), RATE_READ, request)
 
     checks: dict[str, Any] = {
-        "version": "0.2.0",
+        "version": __version__,
         "timestamp": datetime.now(UTC).isoformat(),
         "database_connected": _db_session_factory is not None,
         "traces": _collector.get_stats(),
