@@ -1,7 +1,7 @@
 # Developer Setup Guide
 
 ## Environment Requirements
-Prepare a Python environment running version 3.12 or newer:
+Prepare a Python environment running exactly version 3.12 (newer versions are currently not verified in CI):
 ```bash
 python --version
 ```
