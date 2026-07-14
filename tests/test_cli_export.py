@@ -153,6 +153,7 @@ def test_export_pdf_permission_error(mock_httpx_client, tmp_path):
             app, ["session", "export-pdf", "abc-123", "--out", str(out_file)]
         )
         assert result.exit_code == 1
-        assert "Cannot write to" in result.stdout
-        assert "Please ensure the file is closed" in result.stdout
+        clean_stdout = " ".join(result.stdout.split())
+        assert "Cannot write to" in clean_stdout
+        assert "Please ensure the file is closed" in clean_stdout
 
