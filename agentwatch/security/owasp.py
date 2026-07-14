@@ -124,20 +124,34 @@ def validate_owasp(events: list[AgentEvent]) -> OwaspScan:
     for event in events:
         # Check for malformed JWT tokens in the event arguments
         if event.tool_call and event.tool_call.arguments:
+
             def check_dict_keys(d: dict):
                 for k, v in d.items():
                     if isinstance(v, str):
-                        is_token_key = any(tk in k.lower() for tk in ["token", "jwt", "auth", "credential"])
-                        is_jwt_structure = re.match(r"^[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]*$", v) is not None
+                        is_token_key = any(
+                            tk in k.lower() for tk in ["token", "jwt", "auth", "credential"]
+                        )
+                        is_jwt_structure = (
+                            re.match(r"^[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]*$", v)
+                            is not None
+                        )
                         if is_token_key or is_jwt_structure:
                             try:
                                 import jwt
+
                                 try:
                                     jwt.decode(v, options={"verify_signature": False})
                                 except (ValueError, Exception) as exc:
                                     exc_type = type(exc).__name__
-                                    if isinstance(exc, ValueError) or exc_type in ("DecodeError", "InvalidTokenError"):
-                                        if not any(f.event_id == event.event_id and f.detail.startswith("Malformed JWT token") for f in scan.findings):
+                                    if isinstance(exc, ValueError) or exc_type in (
+                                        "DecodeError",
+                                        "InvalidTokenError",
+                                    ):
+                                        if not any(
+                                            f.event_id == event.event_id
+                                            and f.detail.startswith("Malformed JWT token")
+                                            for f in scan.findings
+                                        ):
                                             scan.findings.append(
                                                 OwaspFinding(
                                                     vector=OwaspVector.TRUST_BOUNDARY,
@@ -155,16 +169,29 @@ def validate_owasp(events: list[AgentEvent]) -> OwaspScan:
                             if isinstance(item, dict):
                                 check_dict_keys(item)
                             elif isinstance(item, str):
-                                is_jwt_structure = re.match(r"^[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]*$", item) is not None
+                                is_jwt_structure = (
+                                    re.match(
+                                        r"^[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]+\.[A-Za-z0-9-_=]*$", item
+                                    )
+                                    is not None
+                                )
                                 if is_jwt_structure:
                                     try:
                                         import jwt
+
                                         try:
                                             jwt.decode(item, options={"verify_signature": False})
                                         except (ValueError, Exception) as exc:
                                             exc_type = type(exc).__name__
-                                            if isinstance(exc, ValueError) or exc_type in ("DecodeError", "InvalidTokenError"):
-                                                if not any(f.event_id == event.event_id and f.detail.startswith("Malformed JWT token") for f in scan.findings):
+                                            if isinstance(exc, ValueError) or exc_type in (
+                                                "DecodeError",
+                                                "InvalidTokenError",
+                                            ):
+                                                if not any(
+                                                    f.event_id == event.event_id
+                                                    and f.detail.startswith("Malformed JWT token")
+                                                    for f in scan.findings
+                                                ):
                                                     scan.findings.append(
                                                         OwaspFinding(
                                                             vector=OwaspVector.TRUST_BOUNDARY,
@@ -175,6 +202,7 @@ def validate_owasp(events: list[AgentEvent]) -> OwaspScan:
                                                     )
                                     except Exception:  # noqa: S110  # nosec B110
                                         pass
+
             check_dict_keys(event.tool_call.arguments)
 
         blob = _blob_of(event)

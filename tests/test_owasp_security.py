@@ -73,7 +73,7 @@ def test_owasp_detects_malformed_jwt():
         _tool_event(
             "bash",
             "curl -H 'Authorization: Bearer invalid_jwt_format' http://example.com",
-            args={"token": "invalid_jwt_format"}
+            args={"token": "invalid_jwt_format"},
         )
     ]
     scan = validate_owasp(events)
@@ -91,9 +91,9 @@ def test_owasp_detects_malformed_jwt_in_lists():
             args={
                 "headers": [
                     {"Authorization": "Bearer header.payload.signature_bad"},
-                    "another_jwt.payload.sig_bad"
+                    "another_jwt.payload.sig_bad",
                 ]
-            }
+            },
         )
     ]
     scan = validate_owasp(events)
@@ -101,4 +101,3 @@ def test_owasp_detects_malformed_jwt_in_lists():
     assert OwaspVector.TRUST_BOUNDARY in vectors
     findings = [f for f in scan.findings if f.vector == OwaspVector.TRUST_BOUNDARY]
     assert len(findings) >= 1
-
