@@ -1,43 +1,150 @@
-"""Rate Limiting Middleware
+"""
+Rate Limiting Middleware
 
-Per-user and global rate limiting to prevent denial of service attacks
-on API endpoints.
+Per-user and global rate limiting over a pluggable counter backend. The default
+in-memory backend is per-process (multiplies the effective limit across replicas);
+the Redis backend shares one quota across replicas. The RateLimiter
+interface is identical for both.
 """
 
 from __future__ import annotations
 
+import logging
 import time
 from collections import defaultdict
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from fastapi import Request, status
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
+logger = logging.getLogger(__name__)
+
+_REDIS_KEY_PREFIX = "agentwatch:ratelimit:"
+
+
+@runtime_checkable
+class RateLimitBackend(Protocol):
+    """Counter store for a fixed-window rate limiter."""
+
+    def hit(self, key: str, window_sec: int) -> int:
+        """Increment the counter for `key` and return the new count."""
+        ...
+
+    def peek(self, key: str, window_sec: int) -> int:
+        """Return the current count for `key` without incrementing."""
+        ...
+
+
+class InMemoryBackend:
+    """Process-local fixed-window counters (not shared across replicas)."""
+
+    def __init__(self) -> None:
+        self._buckets: dict[str, dict[str, Any]] = defaultdict(
+            lambda: {"count": 0, "start": time.time()}
+        )
+
+    def _current(self, key: str, window_sec: int) -> dict[str, Any]:
+        now = time.time()
+        bucket = self._buckets[key]
+        if now - bucket["start"] > window_sec:
+            bucket["count"] = 0
+            bucket["start"] = now
+        return bucket
+
+    def hit(self, key: str, window_sec: int) -> int:
+        bucket = self._current(key, window_sec)
+        bucket["count"] += 1
+        return bucket["count"]
+
+    def peek(self, key: str, window_sec: int) -> int:
+        now = time.time()
+        bucket = self._buckets[key]
+        if now - bucket["start"] > window_sec:
+            return 0
+        return bucket["count"]
+
+
+class RedisBackend:
+    """Shared fixed-window counters backed by Redis (atomic INCR + EXPIRE NX)."""
+
+    def __init__(self, client: Any, *, key_prefix: str = _REDIS_KEY_PREFIX) -> None:
+        self._client = client
+        self._key_prefix = key_prefix
+
+    def hit(self, key: str, window_sec: int) -> int:
+        redis_key = f"{self._key_prefix}{key}"
+        count = int(self._client.incr(redis_key))
+        # NX: set TTL only on the first hit so the window is fixed, not sliding.
+        self._client.expire(redis_key, window_sec, nx=True)
+        return count
+
+    def peek(self, key: str, window_sec: int) -> int:
+        value = self._client.get(f"{self._key_prefix}{key}")
+        return int(value) if value is not None else 0
+
 
 class RateLimiter:
-    """Per-user and global rate limiting."""
+    """Per-user and global rate limiting over a pluggable counter backend."""
+
+    _GLOBAL_KEY = "__global__"
 
     def __init__(
-        self, user_limit: int = 100, global_limit: int = 10000, window_sec: int = 3600
+        self,
+        user_limit: int = 100,
+        global_limit: int = 10000,
+        window_sec: int = 3600,
+        *,
+        backend: RateLimitBackend | None = None,
     ) -> None:
-        """Initialize rate limiter with configurable limits.
-
-        Args:
-            user_limit: Maximum requests per user per window (default: 100)
-            global_limit: Maximum requests globally per window (default: 10000)
-            window_sec: Time window in seconds (default: 3600 / 1 hour)
-        """
+        """Configure limits; backend defaults to in-memory."""
         self.user_limit = user_limit
         self.global_limit = global_limit
         self.window_sec = window_sec
-        self.user_buckets: dict[str, dict[str, Any]] = defaultdict(
-            lambda: {"count": 0, "start": time.time()}
+        self.backend: RateLimitBackend = backend if backend is not None else InMemoryBackend()
+
+    @classmethod
+    def from_redis_url(
+        cls,
+        redis_url: str,
+        *,
+        user_limit: int = 100,
+        global_limit: int = 10000,
+        window_sec: int = 3600,
+    ) -> RateLimiter:
+        """Build a Redis-backed limiter, falling back to in-memory on failure."""
+        backend: RateLimitBackend
+        try:
+            import redis
+
+            client = redis.Redis.from_url(redis_url, decode_responses=True)
+            client.ping()
+            backend = RedisBackend(client)
+        except Exception as exc:
+            logger.warning(
+                "Redis unavailable for rate limiting (%s); using in-memory counters. "
+                "Limits will NOT be shared across replicas.",
+                exc,
+            )
+            backend = InMemoryBackend()
+        return cls(
+            user_limit=user_limit,
+            global_limit=global_limit,
+            window_sec=window_sec,
+            backend=backend,
         )
-        self.global_bucket: dict[str, Any] = {"count": 0, "start": time.time()}
+
+    def _quota(self, user_count: int, global_count: int) -> dict[str, int]:
+        return {
+            "user_limit": self.user_limit,
+            "user_remaining": max(0, self.user_limit - user_count),
+            "global_limit": self.global_limit,
+            "global_remaining": max(0, self.global_limit - global_count),
+        }
 
     def check_rate_limit(self, user_id: str) -> tuple[bool, dict[str, int]]:
-        """Check if user and global limits are not exceeded.
+        """
+        Check if user and global limits are not exceeded.
 
         Args:
             user_id: The user identifier
@@ -46,38 +153,15 @@ class RateLimiter:
             Tuple of (is_allowed, quota_info) where quota_info contains:
             - user_limit, user_remaining, global_limit, global_remaining
         """
-        now = time.time()
+        global_count = self.backend.hit(self._GLOBAL_KEY, self.window_sec)
+        user_count = self.backend.hit(f"user:{user_id}", self.window_sec)
 
-        # Reset global bucket if window expired
-        if now - self.global_bucket["start"] > self.window_sec:
-            self.global_bucket["count"] = 0
-            self.global_bucket["start"] = now
-
-        # Reset user bucket if window expired
-        user_bucket = self.user_buckets[user_id]
-        if now - user_bucket["start"] > self.window_sec:
-            user_bucket["count"] = 0
-            user_bucket["start"] = now
-
-        # Increment counters
-        self.global_bucket["count"] += 1
-        user_bucket["count"] += 1
-
-        # Check limits
-        user_allowed = user_bucket["count"] <= self.user_limit
-        global_allowed = self.global_bucket["count"] <= self.global_limit
-
-        quota_info = {
-            "user_limit": self.user_limit,
-            "user_remaining": max(0, self.user_limit - user_bucket["count"]),
-            "global_limit": self.global_limit,
-            "global_remaining": max(0, self.global_limit - self.global_bucket["count"]),
-        }
-
-        return user_allowed and global_allowed, quota_info
+        allowed = user_count <= self.user_limit and global_count <= self.global_limit
+        return allowed, self._quota(user_count, global_count)
 
     def get_remaining_quota(self, user_id: str) -> dict[str, int]:
-        """Get current remaining quota for user without incrementing.
+        """
+        Get current remaining quota for user without incrementing.
 
         Args:
             user_id: The user identifier
@@ -85,30 +169,17 @@ class RateLimiter:
         Returns:
             Dictionary with user and global remaining quota
         """
-        now = time.time()
-
-        # Check if buckets need reset (but don't actually reset)
-        user_bucket = self.user_buckets[user_id]
-        global_count = (
-            0
-            if now - self.global_bucket["start"] > self.window_sec
-            else self.global_bucket["count"]
-        )
-        user_count = 0 if now - user_bucket["start"] > self.window_sec else user_bucket["count"]
-
-        return {
-            "user_limit": self.user_limit,
-            "user_remaining": max(0, self.user_limit - user_count),
-            "global_limit": self.global_limit,
-            "global_remaining": max(0, self.global_limit - global_count),
-        }
+        global_count = self.backend.peek(self._GLOBAL_KEY, self.window_sec)
+        user_count = self.backend.peek(f"user:{user_id}", self.window_sec)
+        return self._quota(user_count, global_count)
 
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
     """Middleware to enforce rate limits on API requests."""
 
     def __init__(self, app, limiter: RateLimiter) -> None:
-        """Initialize middleware with rate limiter instance.
+        """
+        Initialize middleware with rate limiter instance.
 
         Args:
             app: FastAPI application
@@ -118,7 +189,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self.limiter = limiter
 
     async def dispatch(self, request: Request, call_next):
-        """Process request and enforce rate limits.
+        """
+        Process request and enforce rate limits.
 
         Args:
             request: Incoming HTTP request
@@ -153,7 +225,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return response
 
     def _extract_user_id(self, request: Request) -> str:
-        """Extract user ID from request.
+        """
+        Extract user ID from request.
 
         Args:
             request: HTTP request object
@@ -177,7 +250,8 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         return "unknown"
 
     def _build_rate_limit_headers(self, quota: dict[str, int]) -> dict[str, str]:
-        """Build HTTP headers with rate limit info.
+        """
+        Build HTTP headers with rate limit info.
 
         Args:
             quota: Rate limit quota dictionary from limiter
@@ -191,3 +265,12 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
             "X-RateLimit-Global-Limit": str(quota["global_limit"]),
             "X-RateLimit-Global-Remaining": str(quota["global_remaining"]),
         }
+
+
+__all__ = [
+    "RateLimitBackend",
+    "InMemoryBackend",
+    "RedisBackend",
+    "RateLimiter",
+    "RateLimitMiddleware",
+]

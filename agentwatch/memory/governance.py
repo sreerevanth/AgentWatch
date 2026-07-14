@@ -10,6 +10,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
+from agentwatch.governance.gdpr import ErasureStore
+
 
 @dataclass
 class RetentionPolicy:
@@ -84,7 +86,7 @@ class MemoryGovernance:
         request: ErasureRequest,
         memories: list[dict[str, Any]],
     ) -> tuple[list[dict[str, Any]], ErasureReceipt]:
-        """Process a GDPR Article 17 erasure request."""
+        """Process a GDPR Article 17 erasure request over an in-memory list."""
         keep = [m for m in memories if m.get("user_id") != request.user_id]
         deleted = len(memories) - len(keep)
         receipt = ErasureReceipt(
@@ -94,10 +96,24 @@ class MemoryGovernance:
         )
         return keep, receipt
 
+    async def erase_persisted(
+        self,
+        request: ErasureRequest,
+        store: ErasureStore,
+    ) -> ErasureReceipt:
+        """Process an erasure request against the persistence layer."""
+        deleted = await store.erase_user_data(request.user_id, scope=request.scope)
+        return ErasureReceipt(
+            request=request,
+            completed_at=datetime.now(UTC),
+            items_deleted=deleted,
+        )
+
 
 __all__ = [
     "RetentionPolicy",
     "ErasureRequest",
     "ErasureReceipt",
+    "ErasureStore",
     "MemoryGovernance",
 ]
