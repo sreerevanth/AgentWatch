@@ -6,3 +6,17 @@ from agentwatch.adapters.langgraph import *  # noqa: F401, F403
 from agentwatch.adapters.openai_agents import *  # noqa: F401, F403
 from agentwatch.adapters.openclaw import *  # noqa: F401, F403
 from agentwatch.adapters.smolagents import *  # noqa: F401, F403
+
+__all__ = [
+    "AutoGenAdapter",
+    "AutoGPTAdapter",
+    "ClaudeCodeEventParser",
+    "ClaudeCodeAdapter",
+    "watch_claude_code",
+    "AgentWatchCallbackHandler",
+    "create_langchain_handler",
+    "LangGraphAdapter",
+    "AgentWatchOpenAIAgentsAdapter",
+    "OpenClawAdapter",
+    "SmolagentsAdapter",
+]
