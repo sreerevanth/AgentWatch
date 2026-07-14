@@ -5,6 +5,7 @@ __pycache__/
 *.pyo
 *.egg-info/
 .pytest_cache/
+.pytest-tmp/
 .ruff_cache/
 pytest-cache-files-*/
 .venv/

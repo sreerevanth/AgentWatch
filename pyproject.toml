@@ -104,12 +104,14 @@ Issues = "https://github.com/sreerevanth/AgentWatch/issues"
 packages = ["agentwatch"]
 
 [tool.pytest.ini_options]
+cache_dir = ".pytest_cache"
 asyncio_mode = "auto"
 testpaths = ["tests"]
-addopts = "-v --tb=short"
+addopts = "-v --tb=short --basetemp=.pytest-tmp"
 pythonpath = ["."]
 
 [tool.ruff]
+cache-dir = ".ruff_cache"
 target-version = "py312"
 line-length = 100
 
