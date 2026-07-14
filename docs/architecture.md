@@ -61,7 +61,7 @@ graph TD
 ---
 
 ## Detailed Guides
-- [Detailed Architecture Internals](architecture_detailed.md)
-- [Developer Setup Manual](developer_setup.md)
-- [Custom Adapters Tutorial](custom_adapters_tutorial.md)
-- [Extended Getting Started Guide](getting_started_extended.md)
+- [Detailed Architecture Internals](architecture-detailed.md)
+- [Developer Setup Manual](developer-setup.md)
+- [Custom Adapters Tutorial](custom-adapters-tutorial.md)
+- [Extended Getting Started Guide](getting-started-extended.md)

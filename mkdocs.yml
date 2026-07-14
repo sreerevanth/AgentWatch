@@ -30,13 +30,13 @@ nav:
       - API Reference: cli/api.md
   - Guides:
       - Getting Started (project): getting-started.md
-      - Extended Getting Started: getting_started_extended.md
-      - Developer Setup: developer_setup.md
+      - Extended Getting Started: getting-started-extended.md
+      - Developer Setup: developer-setup.md
       - Architecture: architecture.md
-      - Detailed Architecture: architecture_detailed.md
-      - API Reference: API-reference.md
-      - Troubleshooting: TROUBLESHOOTING.md
+      - Detailed Architecture: architecture-detailed.md
+      - API Reference: api-reference.md
+      - Troubleshooting: troubleshooting.md
       - Adapters:
-          - Custom Adapters: custom_adapters_tutorial.md
+          - Custom Adapters: custom-adapters-tutorial.md
           - Claude Code: adapters/claude-code.md
           - LangChain: adapters/langchain.md
