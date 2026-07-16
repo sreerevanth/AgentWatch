@@ -626,4 +626,10 @@ def watch(
         return agent
 
 
-__all__ = ["watch", "detect_framework", "detect_framework_label", "GenericAdapter", "RateLimitPolicy"]
+__all__ = [
+    "watch",
+    "detect_framework",
+    "detect_framework_label",
+    "GenericAdapter",
+    "RateLimitPolicy",
+]

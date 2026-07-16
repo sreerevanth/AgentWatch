@@ -114,11 +114,13 @@ class AdaptiveBackoffHandler:
     def _compute_backoff(self) -> float:
         """Return the current backoff delay in seconds."""
         delay = min(
-            self.policy.base_backoff * (self.policy.backoff_factor ** self._consecutive_hits),
+            self.policy.base_backoff * (self.policy.backoff_factor**self._consecutive_hits),
             self.policy.max_backoff,
         )
         if self.policy.jitter:
-            delay *= 0.5 + secrets.randbelow(1000) / 1000  # uniform [0.5*delay, delay]  # noqa: S311
+            delay *= (
+                0.5 + secrets.randbelow(1000) / 1000
+            )  # uniform [0.5*delay, delay]  # noqa: S311
         return delay
 
     def _record_call(self, now: float) -> None:
