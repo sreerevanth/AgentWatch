@@ -1,0 +1,49 @@
+command: agentwatch
+    help: AgentWatch — Reliability, Safety, and Observability Layer for AI Agents
+    short_help: 
+
+command: agentwatch confidence
+    help: [bold]Score[/bold] execution confidence and detect anomalies for a session.
+    short_help: 
+    param session_file kind=TyperArgument type=path required=True default=None flags=session_file help='Path to session JSON file'
+
+command: agentwatch replay
+    help: [bold]Replay[/bold] a captured session step-by-step.
+    short_help: 
+    param failure_only kind=TyperOption type=boolean required=False default=False flags=--failures,-f help='Show only failure points'
+    param from_step kind=TyperOption type=int required=False default=0 flags=--from help='Start from step N'
+    param session_file kind=TyperArgument type=path required=True default=None flags=session_file help='Path to session JSON file'
+    param show_all kind=TyperOption type=boolean required=False default=False flags=--all help='Show all events including metadata'
+    param speed kind=TyperOption type=str required=False default='instant' flags=--speed,-s help='instant|fast|normal|slow'
+    param to_step kind=TyperOption type=int required=False default=None flags=--to help='End at step N'
+
+command: agentwatch safety
+    help: [bold]Score[/bold] the risk level of a shell command.
+    short_help: 
+    param command kind=TyperArgument type=str required=True default=None flags=command help='Command to risk-score'
+    param verbose kind=TyperOption type=boolean required=False default=False flags=--verbose,-v help=''
+
+command: agentwatch serve
+    help: [bold]Start[/bold] the AgentWatch API server.
+    short_help: 
+    param host kind=TyperOption type=str required=False default='0.0.0.0' flags=--host help=''
+    param port kind=TyperOption type=int required=False default=8000 flags=--port help=''
+    param reload kind=TyperOption type=boolean required=False default=False flags=--reload help=''
+
+command: agentwatch sessions
+    help: [bold]List[/bold] recent agent sessions from the AgentWatch API.
+    short_help: 
+    param api_url kind=TyperOption type=str required=False default='http://localhost:8000' flags=--api help=''
+    param framework kind=TyperOption type=str required=False default=None flags=--framework help=''
+    param limit kind=TyperOption type=int required=False default=20 flags=--limit,-n help=''
+
+command: agentwatch watch
+    help: [bold]Watch[/bold] a Claude Code execution with full observability and safety.
+    short_help: 
+    param max_turns kind=TyperOption type=int required=False default=50 flags=--max-turns help=''
+    param model kind=TyperOption type=str required=False default='claude-opus-4-5' flags=--model,-m help=''
+    param no_safety kind=TyperOption type=boolean required=False default=False flags=--no-safety help='Disable safety checks (dangerous)'
+    param output kind=TyperOption type=path required=False default=None flags=--output,-o help='Save session to file'
+    param policy kind=TyperOption type=str required=False default='default' flags=--policy help='Safety policy: default|strict|permissive'
+    param prompt kind=TyperArgument type=str required=True default=None flags=prompt help='Prompt to run with Claude Code'
+
