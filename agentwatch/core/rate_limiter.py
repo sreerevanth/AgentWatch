@@ -26,10 +26,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import secrets
 import time
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from threading import Lock
-from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -113,14 +113,12 @@ class AdaptiveBackoffHandler:
 
     def _compute_backoff(self) -> float:
         """Return the current backoff delay in seconds."""
-        import random
-
         delay = min(
             self.policy.base_backoff * (self.policy.backoff_factor ** self._consecutive_hits),
             self.policy.max_backoff,
         )
         if self.policy.jitter:
-            delay *= 0.5 + random.random() * 0.5  # uniform [0.5*delay, delay]
+            delay *= 0.5 + secrets.randbelow(1000) / 1000  # uniform [0.5*delay, delay]  # noqa: S311
         return delay
 
     def _record_call(self, now: float) -> None:

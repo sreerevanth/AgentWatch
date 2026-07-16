@@ -32,8 +32,8 @@ from typing import Any
 
 from agentwatch.core.event_bus import EventBus, get_event_bus
 from agentwatch.core.http_forwarder import register_http_forwarder
-from agentwatch.core.safety import SafetyEngine
 from agentwatch.core.rate_limiter import AdaptiveBackoffHandler, RateLimitPolicy
+from agentwatch.core.safety import SafetyEngine
 from agentwatch.core.schema import (
     AgentEvent,
     AgentFramework,
