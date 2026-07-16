@@ -1,0 +1,33 @@
+name: Bandit Security Scan
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  bandit:
+    name: Bandit Scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Bandit
+        run: pip install bandit==1.9.4
+
+      - name: Run Bandit
+        # No baseline. bandit-baseline.json was removed in #603: every finding it listed had
+        # since been fixed or suppressed inline with a justification, so it suppressed nothing —
+        # while remaining a broad positional mute that could swallow a genuinely new finding.
+        # Suppressions now live in the code as `# nosec <ID> — reason`; see SECURITY-BASELINE.md.
+        run: bandit -r agentwatch

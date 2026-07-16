@@ -1,13 +1,9 @@
 #!/usr/bin/env python3
-"""
-AgentWatch Demo Script
-Demonstrates the full AgentWatch stack without requiring Claude Code:
-- Event bus
-- Safety engine (blocks dangerous commands)
-- Confidence scoring
-- Replay engine
-- Memory engine
-- Multi-agent orchestration
+"""Interactive Application Suite Demos for AgentWatch.
+
+This module provides step-by-step CLI simulation scenarios demonstrating safety engines,
+session replay mechanisms, real-time model confidence evaluation tracks, episodic causal memory,
+and advanced orchestration multi-agent task execution loops.
 """
 
 from __future__ import annotations
@@ -19,6 +15,13 @@ from pathlib import Path
 # Make agentwatch importable from repo root
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+# Reconfigure stdout/stderr to UTF-8 to support Unicode/emojis on Windows consoles
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8")
+
+from agentwatch._version import __version__
 from agentwatch.core.event_bus import EventBus
 from agentwatch.core.safety import SafetyEngine
 from agentwatch.core.schema import (
@@ -41,30 +44,37 @@ from agentwatch.tracing.collector import TraceCollector
 
 
 def green(s: str) -> str:
+    """Wrap ``s`` in ANSI codes to render it green."""
     return f"\033[92m{s}\033[0m"
 
 
 def red(s: str) -> str:
+    """Wrap ``s`` in ANSI codes to render it red."""
     return f"\033[91m{s}\033[0m"
 
 
 def yellow(s: str) -> str:
+    """Wrap ``s`` in ANSI codes to render it yellow."""
     return f"\033[93m{s}\033[0m"
 
 
 def blue(s: str) -> str:
+    """Wrap ``s`` in ANSI codes to render it blue."""
     return f"\033[94m{s}\033[0m"
 
 
 def bold(s: str) -> str:
+    """Wrap ``s`` in ANSI codes to render it bold."""
     return f"\033[1m{s}\033[0m"
 
 
 def dim(s: str) -> str:
+    """Wrap ``s`` in ANSI codes to render it dim."""
     return f"\033[2m{s}\033[0m"
 
 
 def section(title: str) -> None:
+    """Print a bold, rule-bracketed section header for a demo scenario."""
     print(f"\n{bold('─' * 60)}")
     print(f"{bold(blue('  ' + title))}")
     print(bold("─" * 60))
@@ -75,7 +85,13 @@ def section(title: str) -> None:
 # ─────────────────────────────────────────────
 
 
-def build_demo_session():
+def build_demo_session() -> tuple[AgentSession, list[AgentEvent]]:
+    """Construct a dummy active session stream containing simulated hazardous operations.
+
+    Returns:
+        tuple[AgentSession, list[AgentEvent]]: A localized structural agent wrapper configuration
+            coupled with sequential lifecycle and tool execution telemetry events.
+    """
     session_id = "demo-session-001"
     agent_id = "demo-agent"
 
@@ -205,6 +221,7 @@ def build_demo_session():
 
 
 async def demo_safety():
+    """Simulate processing shell commands through the rule matching patterns engine."""
     section("DEMO 1 — Safety Engine")
 
     engine = SafetyEngine()
@@ -257,6 +274,7 @@ async def demo_safety():
 
 
 async def demo_replay():
+    """Publish dummy streams onto the bus tracking linear runtime replay states."""
     section("DEMO 2 — Trace Collection & Replay Engine")
 
     bus = EventBus()
@@ -320,6 +338,7 @@ async def demo_replay():
 
 
 async def demo_confidence():
+    """Evaluate synthetic session chains generating full diagnostic confidence metrics summaries."""
     section("DEMO 3 — Confidence Scoring Engine")
 
     scorer = ConfidenceScorer()
@@ -374,6 +393,7 @@ async def demo_confidence():
 
 
 async def demo_memory():
+    """Populate persistent contextual memories and run structural vector semantic search checks."""
     section("DEMO 4 — Memory Engine")
 
     memory = MemoryEngine()
@@ -447,6 +467,7 @@ async def demo_memory():
 
 
 async def demo_orchestration():
+    """Verify directed acyclic task graph generation pipelines across distributed roles agents."""
     section("DEMO 5 — Multi-Agent Orchestration")
 
     from agentwatch.orchestration.engine import (
@@ -545,14 +566,27 @@ async def demo_orchestration():
 # ─────────────────────────────────────────────
 
 
-async def main():
+async def run_demo():
+    # The banner is fixed-width box art, so the title cannot simply be interpolated — a version
+    # string of a different length would push the closing `|` out of alignment and the box would
+    # visibly break. The padding is computed from the border instead, so any version renders square.
+    _title = f"AgentWatch - Demo Suite v{__version__}"
+    _border = "+" + "-" * 62 + "+"
+    _interior = len(_border) - 2
+    _titled = "|" + " " * 9 + _title + " " * max(_interior - 9 - len(_title), 0) + "|"
+
     print(
-        bold("""
-╔══════════════════════════════════════════════════════════════╗
-║         AgentWatch — Demo Suite v0.1.0                       ║
-║  Reliability, Safety & Observability Layer for AI Agents     ║
-╚══════════════════════════════════════════════════════════════╝
-""")
+        bold(
+            "\n"
+            + _border
+            + "\n"
+            + _titled
+            + "\n"
+            + "|  Reliability, Safety & Observability Layer for AI Agents     |"
+            + "\n"
+            + _border
+            + "\n"
+        )
     )
 
     await demo_safety()
@@ -563,12 +597,14 @@ async def main():
 
     print(f"\n{bold(green('✓ All demos complete'))}\n")
     print("Next steps:")
+    watch_str = bold('agentwatch watch "<prompt>"')
+    safety_str = bold('agentwatch safety "<cmd>"')
     print(f"  {bold('agentwatch serve')}           — Start the API server")
-    print(f"  {bold('agentwatch watch "<prompt>"')} — Watch a Claude Code session")
+    print(f"  {watch_str} — Watch a Claude Code session")
     print(f"  {bold('agentwatch replay <file>')}   — Replay a saved session")
-    print(f"  {bold('agentwatch safety "<cmd>"')}  — Risk-score a command")
+    print(f"  {safety_str}  — Risk-score a command")
     print(f"  {bold('agentwatch sessions')}         — List sessions via API\n")
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    asyncio.run(run_demo())

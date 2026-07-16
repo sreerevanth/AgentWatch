@@ -54,7 +54,7 @@ def test_redaction_replaces_sensitive():
 
 
 def test_gdpr_erasure_removes_user_records():
-    eng = GDPREngine()
+    eng = GDPREngine(signing_key=b"test-secret")
     records = [
         {"user_id": "alice", "value": "x"},
         {"user_id": "bob", "value": "y"},
@@ -62,7 +62,7 @@ def test_gdpr_erasure_removes_user_records():
     kept, receipt = eng.erase("alice", records)
     assert len(kept) == 1
     assert receipt.items_erased == 1
-    assert receipt.audit_signature.startswith("sha256:")
+    assert receipt.audit_signature.startswith("hmac-sha256:")
 
 
 # ─────────────────────────────────────────────

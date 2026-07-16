@@ -7,9 +7,12 @@ Exports spans to OTLP, Jaeger, or stdout.
 from __future__ import annotations
 
 import logging
+import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from typing import Any
+
+from agentwatch._version import __version__
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +41,7 @@ class TelemetryConfig:
     def __init__(
         self,
         service_name: str = "agentwatch",
-        service_version: str = "0.2.0",
+        service_version: str = __version__,
         otlp_endpoint: str | None = None,
         export_to_console: bool = False,
         enable_metrics: bool = True,
@@ -69,6 +72,8 @@ class TelemetryProvider:
     def __init__(self, config: TelemetryConfig | None = None):
         self._config = config or TelemetryConfig()
         self._tracer = None
+        self._tracer_provider: Any = None
+        self._emitted_trace_ids: set[str] = set()
         self._meter = None
         self._initialized = False
         self._buffer: list[Any] = []
@@ -80,6 +85,41 @@ class TelemetryProvider:
         self._blocked_counter = None
         self._session_duration = None
         self._token_counter = None
+
+    def _export_with_retry(
+        self,
+        spans: list[Any],
+        max_retries: int = 3,
+        initial_delay: float = 1.0,
+    ) -> None:
+        """Export spans with exponential backoff retry."""
+        if not self._exporter:
+            return
+
+        delay = initial_delay
+
+        for attempt in range(max_retries):
+            try:
+                self._exporter.export(spans)
+                return
+
+            except Exception as exc:
+                logger.warning(
+                    "Span export failed (attempt %s/%s): %s",
+                    attempt + 1,
+                    max_retries,
+                    exc,
+                )
+
+            if attempt == max_retries - 1:
+                logger.error(
+                    "Span export failed after %s retries",
+                    max_retries,
+                )
+                return
+
+            time.sleep(delay)
+            delay *= 2
 
     def export(self, span: Any) -> None:
         """Export a span to the configured backend (or buffer if failing)."""
@@ -93,7 +133,7 @@ class TelemetryProvider:
         if self._exporter and hasattr(self._exporter, "export"):
             try:
                 # OTel exporters usually expect a sequence of spans
-                self._exporter.export([span])
+                self._export_with_retry([span])
             except Exception as exc:
                 logger.debug("Manual span export failed: %s", exc)
         else:
@@ -109,6 +149,18 @@ class TelemetryProvider:
         for span in self._buffer:
             self.export(span)
         self._buffer.clear()
+
+    def _flush_exported_spans(self, timeout_millis: int = 30000) -> bool:
+        """Force-flush queued spans and report whether the export completed."""
+        provider = self._tracer_provider
+        if self._exporter is None or provider is None or not hasattr(provider, "force_flush"):
+            return False
+
+        try:
+            return bool(provider.force_flush(timeout_millis))
+        except Exception as exc:
+            logger.warning("Telemetry span flush failed: %s", exc)
+            return False
 
     def grafana_dashboard_template(self) -> dict[str, Any]:
         """Return a basic Grafana dashboard template for AgentWatch."""
@@ -162,6 +214,8 @@ class TelemetryProvider:
             if not self._exporter:
                 self._exporter = console_exporter
             tracer_provider.add_span_processor(BatchSpanProcessor(console_exporter))
+
+        self._tracer_provider = tracer_provider
 
         try:
             trace.set_tracer_provider(tracer_provider)
@@ -267,6 +321,126 @@ class TelemetryProvider:
             self._session_duration.record(
                 duration_seconds, {"framework": framework, "status": status}
             )
+
+    def export_reasoning_trace(self, trace_data: dict[str, Any]) -> bool:
+        """Export a finalized ReasoningTrace dict to OpenTelemetry."""
+        if not self._initialized or not _OTEL_AVAILABLE or not self._tracer:
+            return False
+
+        import hashlib
+        import uuid
+        from datetime import datetime
+
+        from opentelemetry.context import Context
+        from opentelemetry.trace import (
+            NonRecordingSpan,
+            SpanContext,
+            TraceFlags,
+            set_span_in_context,
+        )
+
+        def _safe_int_from_id(id_str: str | None, bits: int) -> int | None:
+            if not id_str:
+                return None
+            try:
+                return uuid.UUID(id_str).int & ((1 << bits) - 1)
+            except ValueError:
+                # Deterministic fallback ID generation for malformed identifiers.
+                # Not used for security.
+                h = hashlib.blake2b(
+                    id_str.encode("utf-8"),
+                    digest_size=16 if bits == 128 else 8,
+                    usedforsecurity=False,
+                ).digest()
+                return int.from_bytes(h, byteorder="big") & ((1 << bits) - 1)
+
+        def _parse_time(time_str: str | None) -> int | None:
+            if not time_str:
+                return None
+            try:
+                dt = datetime.fromisoformat(time_str.replace("Z", "+00:00"))
+                return int(dt.timestamp() * 1e9)
+            except Exception:
+                try:
+                    return int(float(time_str) * 1e9)
+                except Exception:
+                    return None
+
+        agent = trace_data.get("agent", {})
+        base_attrs = {
+            "agent.id": agent.get("id", ""),
+            "agent.name": agent.get("name", ""),
+            "agent.framework": agent.get("framework", ""),
+            "agent.model": agent.get("model", ""),
+        }
+        base_attrs = {k: str(v) for k, v in base_attrs.items() if v}
+
+        trace_id_int = _safe_int_from_id(trace_data.get("trace_id"), 128)
+        if not trace_id_int:
+            return False
+
+        trace_key = str(trace_data.get("trace_id"))
+        if trace_key in self._emitted_trace_ids:
+            return self._flush_exported_spans()
+
+        # Create a fake root context to enforce trace_id
+        dummy_span_id = _safe_int_from_id(trace_data.get("trace_id", "root"), 64) or 1
+        root_span_context = SpanContext(
+            trace_id=trace_id_int,
+            span_id=dummy_span_id,
+            is_remote=True,
+            trace_flags=TraceFlags.SAMPLED,
+        )
+        base_context = set_span_in_context(NonRecordingSpan(root_span_context), Context())
+
+        otel_contexts = {}  # span_id -> Context
+
+        # Sort spans by start_time to ensure parents are processed first
+        spans = sorted(trace_data.get("spans", []), key=lambda s: s.get("start_time") or "")
+
+        for span_data in spans:
+            aw_span_id = str(span_data.get("span_id", ""))
+            parent_aw_id = str(span_data.get("parent_span_id", ""))
+
+            parent_context = otel_contexts.get(parent_aw_id, base_context)
+            start_time_ns = _parse_time(span_data.get("start_time")) or int(time.time() * 1e9)
+            end_time_ns = _parse_time(span_data.get("end_time")) or start_time_ns
+
+            span = self._tracer.start_span(
+                name=str(span_data.get("name", "span")),
+                context=parent_context,
+                start_time=start_time_ns,
+            )
+
+            # Attributes
+            for k, v in base_attrs.items():
+                span.set_attribute(k, v)
+
+            span.set_attribute("agentwatch.span_id", aw_span_id)
+            if parent_aw_id:
+                span.set_attribute("agentwatch.parent_span_id", parent_aw_id)
+
+            kind = span_data.get("kind")
+            if kind:
+                span.set_attribute("agentwatch.kind", str(kind))
+
+            token_count = span_data.get("token_count")
+            if token_count is not None:
+                span.set_attribute("agentwatch.token_count", int(token_count))
+                self.record_tokens(int(token_count), str(agent.get("framework", "custom")))
+
+            # Extra attributes
+            attrs = span_data.get("attributes", {})
+            if isinstance(attrs, dict):
+                for k, v in attrs.items():
+                    if isinstance(v, (str, int, float, bool)):
+                        span.set_attribute(str(k), v)
+
+            span.end(end_time=end_time_ns)
+            otel_contexts[aw_span_id] = set_span_in_context(span, Context())
+
+        self._emitted_trace_ids.add(trace_key)
+        return self._flush_exported_spans()
 
 
 # Compatibility alias for OBS tests

@@ -236,7 +236,7 @@ Always ensure `AGENTWATCH_API_KEY` is set in your production environment variabl
 
 ### Example `.env`
 
-If you are running outside Docker Compose, copy the [.env.example](../.env.example) template file at the repository root to `.env` and fill in the values:
+If you are running outside Docker Compose, copy the [.env.example](https://github.com/sreerevanth/AgentWatch/blob/main/.env.example) template file at the repository root to `.env` and fill in the values:
 
 ```bash
 cp .env.example .env

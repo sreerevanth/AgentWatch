@@ -21,6 +21,7 @@ from agentwatch.platform.sharing import (
     ShareLinkRegistry,
     ShareScope,
     render_for_viewer,
+    sanitize_trace,
 )
 from agentwatch.plugins.registry import PluginRegistry
 
@@ -68,6 +69,35 @@ def test_render_for_viewer_redacts():
     out = render_for_viewer(payload, ShareScope.REDACTED)
     assert out["api_keys"] == "[REDACTED]"
     assert out["events"][0]["tool_call"]["raw_command"] == "[REDACTED]"
+
+
+def test_sanitize_trace_strips_secret_keys_at_any_depth():
+    payload = {
+        "session": {"credentials": {"password": "hunter2"}},
+        "steps": [{"env": {"OPENAI_API_KEY": "sk-live-xyz"}}],
+        "api_keys": ["sk-abc"],
+    }
+    out = sanitize_trace(payload)
+    assert out["api_keys"] == "[REDACTED]"
+    assert out["session"]["credentials"] == "[REDACTED]"
+    assert out["steps"][0]["env"] == "[REDACTED]"
+
+
+def test_sanitize_trace_masks_free_text_pii():
+    payload = {
+        "events": [{"tool_call": {"raw_command": "mail bob@acme.com about SSN 123-45-6789"}}]
+    }
+    cmd = sanitize_trace(payload)["events"][0]["tool_call"]["raw_command"]
+    assert "bob@acme.com" not in cmd
+    assert "123-45-6789" not in cmd
+    assert "[REDACTED]" in cmd
+
+
+def test_sanitize_trace_preserves_benign_content():
+    payload = {"session": {"session_id": "abc-123", "status": "success"}}
+    out = sanitize_trace(payload)
+    assert out["session"]["session_id"] == "abc-123"
+    assert out["session"]["status"] == "success"
 
 
 # ─────────────────────────────────────────────

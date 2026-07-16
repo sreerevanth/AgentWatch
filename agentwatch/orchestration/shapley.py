@@ -55,13 +55,13 @@ def shapley_attribution(
         total_perms = math.factorial(n)
         contributions = {a: v / total_perms for a, v in contributions.items()}
     else:
-        rng = random.Random(0)  # noqa: S311 — sampling, not crypto
+        rng = random.Random(0)  # noqa: S311  # nosec B311 — Monte Carlo sampling, not crypto
         for _ in range(n_samples):
-            perm = list(agents)
-            rng.shuffle(perm)
-            prefix: list[str] = []
+            perm_list = list(agents)
+            rng.shuffle(perm_list)
+            prefix = []
             prev = value_fn([])
-            for a in perm:
+            for a in perm_list:
                 prefix.append(a)
                 cur = value_fn(list(prefix))
                 contributions[a] += cur - prev

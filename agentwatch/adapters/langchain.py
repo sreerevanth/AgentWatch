@@ -1,3 +1,4 @@
+# pylint: disable=unused-argument,protected-access,broad-exception-caught,too-many-arguments,too-many-instance-attributes,too-few-public-methods,too-many-return-statements,no-else-return,missing-function-docstring,keyword-arg-before-vararg,too-many-positional-arguments
 """
 AgentWatch LangChain Adapter
 Hooks into LangChain's callback system to emit normalized AgentWatch events.
@@ -113,7 +114,7 @@ class AgentWatchCallbackHandler:
                         completion_tokens=usage_meta.get("completion_tokens", 0),
                         total_tokens=usage_meta.get("total_tokens", 0),
                     )
-        except Exception:  # noqa: S110
+        except Exception:  # noqa: S110  # nosec B110 — malformed usage metadata is safe to skip
             pass  # Malformed usage metadata — safe to ignore, event still emits
 
         self._emit_sync(event)

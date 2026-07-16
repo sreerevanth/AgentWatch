@@ -31,7 +31,8 @@ export default function Hero() {
 
   useEffect(() => {
     const prefersReduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (prefersReduced) return;
+    const isMobile = window.innerWidth < 768;
+    if (prefersReduced || isMobile) return; // Skip heavy JS intro on mobile for instant LCP
 
     const tl = gsap.timeline({ delay: 0.4 });
     const targets = [
@@ -132,13 +133,13 @@ export default function Hero() {
         style={{ width: "270px" }}
       >
       <div ref={blockedRef} className="opacity-0">
-        <div className="relative rounded-xl overflow-hidden border border-[#e8ff47]/20 bg-[#0c0c0c]/92 backdrop-blur-xl shadow-[0_0_40px_rgba(232,255,71,0.05)]">
+        <div className="relative rounded-xl overflow-hidden border border-[#00f0ff]/30 bg-[#0c0c0c]/92 backdrop-blur-2xl shadow-[0_0_50px_rgba(0,240,255,0.15)]">
           {/* Scan sweep */}
           <div
-            className="absolute inset-0 pointer-events-none opacity-30"
+            className="absolute inset-0 pointer-events-none opacity-40"
             style={{
               background:
-                "linear-gradient(90deg, transparent, rgba(232,255,71,0.08), transparent)",
+                "linear-gradient(90deg, transparent, rgba(0,240,255,0.15), transparent)",
               animation: "scan-sweep 4s linear infinite",
               width: "30%",
             }}
@@ -217,15 +218,15 @@ export default function Hero() {
         style={{ width: "240px" }}
       >
       <div ref={telemetryRef} className="opacity-0">
-        <div className="rounded-xl border border-white/10 bg-[#0c0c0c]/92 backdrop-blur-xl px-4 py-3">
+        <div className="rounded-xl border border-white/20 bg-[#0c0c0c]/80 backdrop-blur-2xl px-4 py-3 shadow-[0_0_50px_rgba(232,255,71,0.1)]">
           <div className="flex items-center justify-between mb-2">
             <span
-              className="text-[10px] uppercase tracking-[0.2em] text-[#555]"
+              className="text-[10px] uppercase tracking-[0.2em] text-[#888]"
               style={{ fontFamily: "var(--font-jetbrains)" }}
             >
               Live Telemetry
             </span>
-            <span className="w-1.5 h-1.5 rounded-full bg-[#e8ff47] live-dot" />
+            <span className="w-1.5 h-1.5 rounded-full bg-[#00f0ff] live-dot shadow-[0_0_10px_#00f0ff]" />
           </div>
           <div key={telIdx} style={{ animation: "telemetry-float 2.8s ease both" }}>
             <div className="flex items-start gap-2">
@@ -344,8 +345,8 @@ export default function Hero() {
             href="https://github.com/sreerevanth/agentwatch"
             target="_blank"
             rel="noreferrer"
-            className="btn-magnetic flex items-center gap-2 px-6 py-3 rounded-lg bg-[#e8ff47] text-[#0a0a0a] font-semibold text-sm hover:bg-[#bcd20e]"
-            style={{ boxShadow: "0 0 0 1px rgba(232,255,71,0.6), 0 0 18px rgba(232,255,71,0.18)" }}
+            className="btn-magnetic flex items-center gap-2 px-6 py-3 rounded-lg bg-gradient-to-r from-[#00f0ff] to-[#e8ff47] text-[#0a0a0a] font-bold text-sm hover:from-[#00d0dd] hover:to-[#bcd20e] transition-all"
+            style={{ boxShadow: "0 0 0 1px rgba(0,240,255,0.6), 0 0 25px rgba(0,240,255,0.3)" }}
           >
             <svg viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
               <path d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" />
@@ -353,7 +354,7 @@ export default function Hero() {
             Star on GitHub
           </a>
           <a
-            href="https://discord.gg/ZbQ9m9HtnE"
+            href="https://discord.gg/UT9uaeY46e"
             target="_blank"
             rel="noreferrer"
             className="btn-magnetic btn-discord-pulse flex items-center gap-2 px-6 py-3 rounded-lg bg-[#5865F2] hover:bg-[#4752c4] text-white transition-colors duration-200 text-sm font-medium"
@@ -363,6 +364,86 @@ export default function Hero() {
             </svg>
             Join Discord
           </a>
+        </div>
+      </div>
+
+      {/* Central Visual Workflow / Dashboard */}
+      <div className="relative w-full max-w-5xl mx-auto mt-16 px-6 lg:px-0 z-20">
+        <div className="relative w-full aspect-video rounded-2xl border border-[#00f0ff]/30 bg-[#0c0c0c]/90 backdrop-blur-3xl shadow-[0_0_80px_rgba(0,240,255,0.15)] overflow-hidden flex flex-col">
+          
+          {/* Mac window header */}
+          <div className="h-10 w-full border-b border-white/10 bg-white/5 flex items-center px-4 gap-2 shrink-0">
+            <div className="flex gap-1.5">
+              <div className="w-3 h-3 rounded-full bg-[#ff5f56]" />
+              <div className="w-3 h-3 rounded-full bg-[#ffbd2e]" />
+              <div className="w-3 h-3 rounded-full bg-[#27c93f]" />
+            </div>
+            <div className="mx-auto text-[10px] uppercase tracking-[0.2em] text-[#888] font-mono">Agent Workflow Inspector</div>
+          </div>
+
+          {/* Workflow Body */}
+          <div className="flex-1 relative overflow-hidden flex">
+            {/* Sidebar */}
+            <div className="w-1/4 border-r border-white/10 bg-white/[0.02] p-4 flex flex-col gap-4 hidden sm:flex">
+               <div className="text-xs text-[#00f0ff] uppercase tracking-widest font-bold">Active Sessions</div>
+               <div className="flex flex-col gap-2">
+                 {[1,2,3].map(i => (
+                    <div key={i} className="p-3 rounded-lg border border-white/5 bg-black/20 flex items-center gap-3">
+                       <span className={`w-2 h-2 rounded-full ${i===1 ? 'bg-[#e8ff47] animate-pulse' : 'bg-white/20'}`} />
+                       <div className="flex flex-col">
+                         <span className="text-[10px] text-white/80 font-mono">Session_0x{i}F9</span>
+                         <span className="text-[9px] text-white/40">Monitoring</span>
+                       </div>
+                    </div>
+                 ))}
+               </div>
+            </div>
+
+            {/* Main Graph Area */}
+            <div className="flex-1 relative bg-black/40 p-6 flex items-center justify-center">
+               <div className="absolute inset-0 dot-grid opacity-30" />
+               <div className="absolute top-4 right-4 flex items-center gap-2 bg-black/60 px-3 py-1.5 rounded-full border border-white/10 backdrop-blur-md">
+                 <span className="w-2 h-2 rounded-full bg-[#00f0ff] animate-ping" />
+                 <span className="text-[10px] text-[#00f0ff] font-mono">INTERCEPTING</span>
+               </div>
+
+               {/* Simulated Agent Graph Node */}
+               <div className="relative z-10 w-full max-w-md">
+                 <div className="flex justify-between items-center relative">
+                   {/* Flow lines */}
+                   <div className="absolute left-1/4 right-1/4 h-px bg-gradient-to-r from-[#e8ff47] via-[#00f0ff] to-[#ff6b6b] top-1/2 -translate-y-1/2 z-0" />
+                   
+                   <div className="relative z-10 w-24 h-24 rounded-full border border-[#e8ff47]/50 bg-[#0c0c0c] flex items-center justify-center shadow-[0_0_30px_rgba(232,255,71,0.2)]">
+                      <span className="text-xs text-[#e8ff47] font-mono text-center">LLM<br/>Agent</span>
+                   </div>
+
+                   <div className="relative z-10 w-32 h-32 rounded-xl border border-[#00f0ff] bg-[#0c0c0c]/90 backdrop-blur-xl flex flex-col items-center justify-center shadow-[0_0_50px_rgba(0,240,255,0.3)] gap-2 p-2">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="w-8 h-8 text-[#00f0ff]">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                      </svg>
+                      <span className="text-xs text-[#00f0ff] font-mono font-bold">AgentWatch</span>
+                   </div>
+
+                   <div className="relative z-10 w-24 h-24 rounded-full border border-[#ff6b6b]/50 bg-[#0c0c0c] flex flex-col items-center justify-center shadow-[0_0_30px_rgba(255,107,107,0.2)] gap-1 p-2 text-center">
+                      <span className="text-xs text-[#ff6b6b] font-mono uppercase">Dangerous<br/>Action</span>
+                      <span className="text-[8px] text-white/50 font-mono">Blocked</span>
+                   </div>
+                 </div>
+
+                 {/* Console log simulation inside the video UI */}
+                 <div className="mt-8 bg-black/80 rounded-lg border border-white/10 p-3 h-24 overflow-hidden relative font-mono text-[10px]">
+                    <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/80 z-10" />
+                    <div className="space-y-1 text-white/60 animate-bounce-y">
+                      <p><span className="text-[#e8ff47]">[INF]</span> Agent initiated action: <code>execute_command</code></p>
+                      <p><span className="text-[#00f0ff]">[CHK]</span> Analyzing semantic intent...</p>
+                      <p><span className="text-[#00f0ff]">[CHK]</span> Confidence: 0.92, Blast Radius: HIGH</p>
+                      <p><span className="text-[#ff6b6b]">[BLK]</span> Action blocked by rule: SYS_MODIFY</p>
+                      <p><span className="text-[#00f0ff]">[RPT]</span> Fallback triggered. Returning mock result.</p>
+                    </div>
+                 </div>
+               </div>
+             </div>
+           </div>
         </div>
       </div>
 
