@@ -33,6 +33,7 @@ from typing import Any
 from agentwatch.core.event_bus import EventBus, get_event_bus
 from agentwatch.core.http_forwarder import register_http_forwarder
 from agentwatch.core.safety import SafetyEngine
+from agentwatch.core.rate_limiter import AdaptiveBackoffHandler, RateLimitPolicy
 from agentwatch.core.schema import (
     AgentEvent,
     AgentFramework,
@@ -229,6 +230,7 @@ class GenericAdapter:
         session_id: str | None = None,
         agent_id: str | None = None,
         safety_engine: SafetyEngine | None = None,
+        rate_limit_policy: RateLimitPolicy | None = None,
     ):
         self.agent = agent
         self.framework = framework
@@ -239,6 +241,8 @@ class GenericAdapter:
         self._step = 0
         self._wrapped_methods: dict[str, Any] = {}
         self._safety_engine = safety_engine or SafetyEngine()
+        _policy = rate_limit_policy or RateLimitPolicy.from_env()
+        self._rate_limiter = AdaptiveBackoffHandler(_policy)
 
     def attach(self) -> Any:
         """
@@ -293,6 +297,10 @@ class GenericAdapter:
             @functools.wraps(original)
             async def async_wrapped(*args: Any, **kwargs: Any) -> Any:
                 self._step += 1
+
+                # ── Rate-limit / adaptive backoff check (async) ──
+                if is_tool_like:
+                    await self._rate_limiter.check_async(method_name)
 
                 # ── Safety gate (async path — full check_event with approval) ──
                 if is_tool_like:
@@ -357,6 +365,10 @@ class GenericAdapter:
         @functools.wraps(original)
         def sync_wrapped(*args: Any, **kwargs: Any) -> Any:
             self._step += 1
+
+            # ── Rate-limit / adaptive backoff check (sync) ──
+            if is_tool_like:
+                self._rate_limiter.check_sync(method_name)
 
             # ── Safety gate (sync path — pattern match only, no approval) ──
             if is_tool_like:
@@ -549,6 +561,7 @@ def watch(
     session_id: str | None = None,
     agent_id: str | None = None,
     event_bus: EventBus | None = None,
+    rate_limit_policy: RateLimitPolicy | None = None,
 ) -> Any:
     """
     Instrument an agent for AgentWatch observability.
@@ -561,7 +574,9 @@ def watch(
         agent:       any supported agent or generic callable
         session_id:  optional explicit session ID (auto-generated otherwise)
         agent_id:    optional explicit agent ID
-        event_bus:   override the default EventBus (mostly for testing)
+        event_bus:          override the default EventBus (mostly for testing)
+        rate_limit_policy:  optional client-side rate-limiting and adaptive backoff policy.
+                            Defaults to RateLimitPolicy.from_env() if not provided.
     """
     if agent is None:
         logger.warning("watch() called with None — returning None")
@@ -598,6 +613,7 @@ def watch(
             event_bus=bus,
             session_id=session_id,
             agent_id=agent_id,
+            rate_limit_policy=rate_limit_policy,
         )
         return adapter.attach()
 
@@ -610,4 +626,4 @@ def watch(
         return agent
 
 
-__all__ = ["watch", "detect_framework", "detect_framework_label", "GenericAdapter"]
+__all__ = ["watch", "detect_framework", "detect_framework_label", "GenericAdapter", "RateLimitPolicy"]
