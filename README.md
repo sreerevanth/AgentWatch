@@ -256,6 +256,92 @@ agentwatch watch "Build me a REST API"
 That's it. Zero config for default settings, or customize via the [.env.example](.env.example) file. Real data immediately.
 
 ---
+## Troubleshooting
+
+If you encounter issues while setting up AgentWatch, try the following solutions.
+
+### ModuleNotFoundError
+
+This usually means one or more required Python packages are missing.
+
+**Solution:**
+
+```bash
+pip install -r requirements.txt
+```
+
+If you are using a virtual environment, make sure it is activated before installing dependencies.
+
+---
+
+### Docker not running
+
+Some features require Docker to be running.
+
+**Solution:**
+
+- Start Docker Desktop (Windows/macOS) or the Docker service (Linux).
+- Verify Docker is running:
+
+```bash
+docker --version
+docker ps
+```
+
+---
+
+### Port already in use
+
+If the application fails to start because a port is already in use:
+
+**Solution:**
+
+- Stop the process using the port.
+- Or configure the application to use a different port.
+
+Example:
+
+```bash
+lsof -i :8000
+```
+
+or on Windows:
+
+```powershell
+netstat -ano | findstr :8000
+```
+
+---
+
+### Python version mismatch
+
+Using an unsupported Python version may cause installation errors.
+
+**Solution:**
+
+- Check your Python version:
+
+```bash
+python --version
+```
+
+- Install and use the version recommended in this README.
+
+---
+
+### Missing environment variables
+
+The application may fail if required environment variables are not configured.
+
+**Solution:**
+
+- Copy the example environment file:
+
+```bash
+cp .env.example .env
+```
+
+- Fill in all required values before running the application.
 
 ## 🔌 Supported Frameworks
 
