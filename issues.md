@@ -91,7 +91,7 @@ Scope reviewed: Python package, frontend dashboard, landing page, documentation,
 ### Issue 10: Historical labels remained in documentation headings
 
 - Severity: Low
-- Location: `docs/architecture_detailed.md`, `docs/custom_adapters_tutorial.md`, `docs/developer_setup.md`, `docs/getting_started_extended.md`
+- Location: `docs/architecture-detailed.md`, `docs/custom-adapters-tutorial.md`, `docs/developer-setup.md`, `docs/getting-started-extended.md`
 - Description: Several docs included stale event/project suffixes in headings.
 - Why it matters: Historical labels make current docs look forked or stale.
 - Recommended fix: Use neutral durable document titles. Fixed before/within this cleanup set.
@@ -101,7 +101,7 @@ Scope reviewed: Python package, frontend dashboard, landing page, documentation,
 ### Issue 11: Mixed getting-started filename styles
 
 - Severity: Low
-- Location: `docs/getting-started.md`, `docs/getting_started_extended.md`, `docs/cli/getting-started.md`
+- Location: `docs/getting-started.md`, `docs/getting-started-extended.md`, `docs/cli/getting-started.md`
 - Description: Documentation filenames mix kebab-case and snake_case.
 - Why it matters: Inconsistent naming makes docs harder to discover and link.
 - Recommended fix: Prefer kebab-case for docs pages in a future compatibility-preserving docs rename pass with redirects or link updates.
@@ -121,7 +121,7 @@ Scope reviewed: Python package, frontend dashboard, landing page, documentation,
 ### Issue 13: API response conventions are not centrally documented
 
 - Severity: Low
-- Location: `agentwatch/api/server.py`, `docs/API-reference.md`
+- Location: `agentwatch/api/server.py`, `docs/api-reference.md`
 - Description: API routes exist across safety, sessions, policies, telemetry, compliance, and security, but response envelope conventions are not documented in one place.
 - Why it matters: Contributors may add inconsistent response shapes.
 - Recommended fix: Add a contributor-facing API style section documenting existing conventions before accepting new API work.
@@ -131,7 +131,7 @@ Scope reviewed: Python package, frontend dashboard, landing page, documentation,
 ### Issue 14: Durable docs existed outside MkDocs navigation
 
 - Severity: Medium
-- Location: `mkdocs.yml`, `docs/API-reference.md`, `docs/architecture_detailed.md`, `docs/custom_adapters_tutorial.md`, `docs/developer_setup.md`, `docs/getting_started_extended.md`
+- Location: `mkdocs.yml`, `docs/api-reference.md`, `docs/architecture-detailed.md`, `docs/custom-adapters-tutorial.md`, `docs/developer-setup.md`, `docs/getting-started-extended.md`
 - Description: MkDocs built successfully but reported several durable docs pages that were not included in nav.
 - Why it matters: Unlisted docs are effectively hidden from published documentation.
 - Recommended fix: Add durable pages to MkDocs nav and remove stale notes. Fixed in this pass.
