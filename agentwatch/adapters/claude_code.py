@@ -263,6 +263,7 @@ class ClaudeCodeAdapter:
         self._session: AgentSession | None = None
         self._events: list[AgentEvent] = []
         self._start_time: float = 0.0
+
     async def run(
         self,
         prompt: str,
