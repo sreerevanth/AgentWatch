@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from statistics import mean
@@ -10,6 +11,23 @@ from typing import Any, cast
 from agentwatch.core.schema import AgentEvent, EventType
 
 JudgeCallback = Callable[[str, AgentEvent], Awaitable[dict[str, Any]]]
+
+# Substrings that mark a shell/tool command as destructive. Kept intentionally
+# conservative and lowercase; matched against the command + string arguments.
+_DESTRUCTIVE_PATTERNS = (
+    "rm -rf",
+    "rm -r ",
+    "rmdir",
+    "drop table",
+    "drop database",
+    "truncate ",
+    "mkfs",
+    "dd if=",
+    "shutdown",
+    "reboot",
+    "> /dev/sd",
+    ":(){:|:&};:",
+)
 
 
 @dataclass
@@ -20,6 +38,11 @@ class StepAudit:
     verdict: str
     rationale: str
     evidence: list[str] = field(default_factory=list)
+    # Transparency fields: surface *why* a step scored the way it did.
+    model_used: str = "heuristic"
+    risk_signals: list[str] = field(default_factory=list)
+    confidence_breakdown: dict[str, float] = field(default_factory=dict)
+    latency_ms: float = 0.0
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -29,6 +52,12 @@ class StepAudit:
             "verdict": self.verdict,
             "rationale": self.rationale,
             "evidence": self.evidence,
+            "model_used": self.model_used,
+            "risk_signals": self.risk_signals,
+            "confidence_breakdown": {
+                key: round(value, 3) for key, value in self.confidence_breakdown.items()
+            },
+            "latency_ms": round(self.latency_ms, 2),
         }
 
 
@@ -87,18 +116,65 @@ class ReasoningAuditor:
         )
 
     async def audit_step(self, step_index: int, event: AgentEvent) -> StepAudit:
+        start = time.perf_counter()
         prompt = self._build_prompt(event)
         if self._judge:
             judged = await self._judge(prompt, event)
-            return StepAudit(
+            audit = StepAudit(
                 step_index=step_index,
                 event_id=event.event_id,
                 score=float(cast(float, judged.get("score", 0.5))),
                 verdict=str(judged.get("verdict", "uncertain")),
                 rationale=str(judged.get("rationale", "No rationale returned.")),
                 evidence=[str(item) for item in cast(list[Any], judged.get("evidence", []))],
+                model_used=str(judged.get("model_used", "llm-judge")),
+                confidence_breakdown={
+                    str(key): float(value)
+                    for key, value in cast(
+                        dict[str, Any], judged.get("confidence_breakdown", {})
+                    ).items()
+                },
             )
-        return self._heuristic_audit(step_index, event)
+        else:
+            audit = self._heuristic_audit(step_index, event)
+
+        # Risk signals and latency are populated uniformly regardless of whether
+        # the score came from the LLM judge or the heuristic fallback.
+        audit.risk_signals = self.detect_risk_signals(event)
+        audit.latency_ms = (time.perf_counter() - start) * 1000.0
+        return audit
+
+    @staticmethod
+    def detect_risk_signals(event: AgentEvent) -> list[str]:
+        """Surface human-readable risk signals for a step, e.g. destructive
+        commands or overly-broad wildcards, so a block is explainable."""
+        signals: list[str] = []
+        tool_call = event.tool_call
+        if tool_call is not None:
+            command = (tool_call.raw_command or "").lower()
+            arg_text = (
+                " ".join(
+                    str(value).lower()
+                    for value in tool_call.arguments.values()
+                    if isinstance(value, str)
+                )
+                if tool_call.arguments
+                else ""
+            )
+            haystack = f"{command} {arg_text}".strip()
+            if any(pattern in haystack for pattern in _DESTRUCTIVE_PATTERNS):
+                signals.append("destructive_command")
+            if haystack.startswith("sudo") or "sudo " in haystack:
+                signals.append("privilege_escalation")
+            if "*" in haystack:
+                signals.append("broad_wildcard")
+            if any(token in haystack for token in ("curl ", "wget ", "http://", "https://")):
+                signals.append("external_fetch")
+        if event.tool_result is not None and event.tool_result.error:
+            signals.append("tool_error")
+        if event.is_blocked:
+            signals.append("blocked_action")
+        return signals
 
     def _build_prompt(self, event: AgentEvent) -> str:
         return (
@@ -145,6 +221,27 @@ class ReasoningAuditor:
             "Heuristic audit based on observability artifacts because no external judge "
             "callback is configured."
         )
+
+        # Interpretable per-dimension decomposition (does not alter `score`).
+        planner_text = event.planner_output_preview or ""
+        has_planner = bool(planner_text)
+        is_specific = len(planner_text.split()) >= 8
+        has_tool_args = bool(
+            event.tool_call and (event.tool_call.raw_command or event.tool_call.arguments)
+        )
+        has_error = bool(event.tool_result and event.tool_result.error)
+        confidence_breakdown = {
+            "relevance": min(
+                1.0, 0.4 + (0.35 if has_planner else 0.0) + (0.25 if has_tool_args else 0.0)
+            ),
+            "safety": max(
+                0.0, 1.0 - (0.5 if has_error else 0.0) - (0.5 if event.is_blocked else 0.0)
+            ),
+            "coherence": min(
+                1.0, 0.5 + (0.4 if is_specific else 0.0) + (0.1 if event.tool_result else 0.0)
+            ),
+        }
+
         return StepAudit(
             step_index=step_index,
             event_id=event.event_id,
@@ -152,4 +249,6 @@ class ReasoningAuditor:
             verdict=verdict,
             rationale=rationale,
             evidence=evidence,
+            model_used="heuristic",
+            confidence_breakdown=confidence_breakdown,
         )

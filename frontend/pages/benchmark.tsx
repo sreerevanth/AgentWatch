@@ -1,12 +1,5 @@
-import useSWR from 'swr'
-import { useState } from 'react'
 import { Award, PlayCircle } from 'lucide-react'
-
-const API_BASE = process.env.NEXT_PUBLIC_API_HOST
-  ? `https://${process.env.NEXT_PUBLIC_API_HOST}/api/v1`
-  : (process.env.NEXT_PUBLIC_API_URL ?? '/api/v1')
-
-const fetcher = (url: string) => fetch(url).then((r) => (r.ok ? r.json() : null))
+import { useBenchmarkLatest, useRunBenchmark } from '../lib/api/hooks/useBenchmark'
 
 interface BenchmarkReport {
   pass_rate: number
@@ -16,18 +9,16 @@ interface BenchmarkReport {
 }
 
 export default function BenchmarkPage() {
-  const { data: latest, mutate } = useSWR<BenchmarkReport>(`${API_BASE}/reasoning/benchmark/latest`, fetcher)
-  const [running, setRunning] = useState(false)
+  const { benchmark } = useBenchmarkLatest()
+  const latest = benchmark as unknown as BenchmarkReport | undefined
+  const { runBenchmark, isRunning: running } = useRunBenchmark()
 
   const trigger = async () => {
-    setRunning(true)
     try {
-      await fetch(`${API_BASE}/reasoning/benchmark/run`, { method: 'POST' })
+      await runBenchmark()
     } catch {
       // ignore — backend may be running standalone
     }
-    setRunning(false)
-    mutate()
   }
 
   return (

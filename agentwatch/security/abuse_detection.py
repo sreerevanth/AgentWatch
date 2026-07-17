@@ -1,9 +1,10 @@
 """
 Detect one entitlement being used across multiple devices (issue #463).
 
-A token can be copied to other machines even though it is bound to one device.
-The tracker records the device fingerprint each entitlement is used from and
-flags the same subject appearing on more devices than allowed within a window.
+Under our bearer-token entitlement model, a token can be copied to other machines
+along with its associated metadata machine ID. This tracker records the device
+fingerprints reported during entitlement use and flags when the same subject/token
+appears on more distinct device fingerprints than allowed within a time window.
 """
 
 from __future__ import annotations

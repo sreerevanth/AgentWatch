@@ -124,3 +124,48 @@ def test_upgrade_no_browser(
     assert "https://example.com/checkout" in result.stdout
 
     mock_browser.assert_not_called()
+
+
+def test_cli_license_public_key_loading_robustness(monkeypatch, tmp_path):
+    """
+    Verify that _license_public_key in CLI main.py handles:
+    - missing files
+    - permission errors
+    - invalid encoding
+    """
+    import sys
+
+    cli_main = sys.modules["agentwatch.cli.main"]
+    from pathlib import Path
+
+    # 1. Clear env to test files
+    monkeypatch.delenv("AGENTWATCH_LICENSE_PUBLIC_KEY", raising=False)
+
+    # 3. File not found
+    monkeypatch.setenv("AGENTWATCH_LICENSE_PUBLIC_KEY_FILE", str(tmp_path / "non_existent_key.pem"))
+    assert cli_main._license_public_key() is None
+
+    # 4. Permission error
+    key_file = tmp_path / "key.pem"
+    key_file.touch()
+    monkeypatch.setenv("AGENTWATCH_LICENSE_PUBLIC_KEY_FILE", str(key_file))
+
+    def mock_read_text_permission_error(*args, **kwargs):
+        raise PermissionError("Access Denied")
+
+    monkeypatch.setattr(Path, "read_text", mock_read_text_permission_error)
+    assert cli_main._license_public_key() is None
+
+    # 5. UnicodeDecodeError
+    def mock_read_text_decode_error(*args, **kwargs):
+        raise UnicodeDecodeError("utf-8", b"\xff", 0, 1, "invalid start byte")
+
+    monkeypatch.setattr(Path, "read_text", mock_read_text_decode_error)
+    assert cli_main._license_public_key() is None
+
+    # 6. Generic OSError
+    def mock_read_text_os_error(*args, **kwargs):
+        raise OSError("Disk failure")
+
+    monkeypatch.setattr(Path, "read_text", mock_read_text_os_error)
+    assert cli_main._license_public_key() is None

@@ -1,0 +1,213 @@
+command: agentwatch
+    help: AgentWatch — Reliability, Safety, and Observability Layer for AI Agents
+    short_help: 
+    param install_completion kind=TyperOption type=boolean required=False default=None flags=--install-completion help='Install completion for the current shell.'
+    param show_completion kind=TyperOption type=boolean required=False default=None flags=--show-completion help='Show completion for the current shell, to copy it or customize the installation.'
+    param version kind=TyperOption type=boolean required=False default=False flags=--version,-V help='Show version and exit.'
+
+command: agentwatch check-env
+    help: [bold]Verify[/bold] local developer environment variables and dependencies.
+    short_help: 
+
+command: agentwatch compare
+    help: [bold]Compare[/bold] confidence and quality metrics across two sessions.
+    short_help: 
+    param api_key kind=TyperOption type=text required=False default=None flags=--api-key help='API key for protected endpoints (or set AGENTWATCH_API_KEY).'
+    param api_url kind=TyperOption type=text required=False default='http://localhost:8000' flags=--api help=''
+    param session_id_1 kind=TyperArgument type=text required=True default=None flags=session_id_1 help='ID of the first session to compare'
+    param session_id_2 kind=TyperArgument type=text required=True default=None flags=session_id_2 help='ID of the second session to compare'
+
+command: agentwatch cost
+    help: AgentWatch FinOps. Report token usage and API spend across agents and frameworks.
+    short_help: 
+
+command: agentwatch cost report
+    help: [bold]Report[/bold] token usage, USD cost, and cost-per-successful-goal.
+
+Aggregates recent sessions from the AgentWatch API over the last [b]--days[/b],
+grouped by [b]--group-by[/b].
+
+[b]Example Usage:[/b]
+[dim]python -m agentwatch.cli.main cost report --days 30 --group-by framework[/dim]
+    short_help: 
+    param api_key kind=TyperOption type=text required=False default=None flags=--api-key help='API key for protected endpoints (or set AGENTWATCH_API_KEY).'
+    param api_url kind=TyperOption type=text required=False default='http://localhost:8000' flags=--api help=''
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Emit JSON instead of a table.'
+    param days kind=TyperOption type=integer required=False default=30 flags=--days help='Reporting window in days (must be >= 1).'
+    param group_by kind=TyperOption type=text required=False default='framework' flags=--group-by help='Group by: framework, agent, or status.'
+
+command: agentwatch doctor
+    help: [bold]Doctor[/bold]: Check AgentWatch installation health.
+    short_help: 
+
+command: agentwatch eval
+    help: AgentWatch Evaluation. Run an agent against a dataset and score the batch.
+    short_help: 
+
+command: agentwatch eval run
+    help: [bold]Run[/bold] a batch evaluation of an agent against a dataset of prompts.
+
+[b]Example Usage:[/b]
+[dim]python -m agentwatch.cli.main eval run dataset.json --agent my_agent.py[/dim]
+    short_help: 
+    param agent kind=TyperOption type=path required=True default=None flags=--agent help='Path to an agent script exposing run(prompt) -> list[AgentEvent].'
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Emit JSON instead of a table.'
+    param dataset kind=TyperArgument type=path required=True default=None flags=dataset help='Path to the dataset JSON: a list of {id, prompt, expected?}.'
+    param threshold kind=TyperOption type=float range required=False default=0.5 flags=--threshold help='Minimum confidence for a case to pass.'
+
+command: agentwatch mcp
+    help: Run the AgentWatch MCP server over stdio.
+    short_help: 
+
+command: agentwatch redteam
+    help: [bold]Red-team[/bold] the safety engine with simulated attacks and score resilience.
+    short_help: 
+    param json_output kind=TyperOption type=boolean required=False default=False flags=--json help='Emit the report as JSON'
+
+command: agentwatch safety
+    help: AgentWatch Safety & Risk Engine. Analyze shell commands against security policies.
+    short_help: 
+
+command: agentwatch safety check
+    help: [bold]Score[/bold] the risk level of a shell command.
+
+[b]Example Usage:[/b]
+[dim]python -m agentwatch.cli.main safety check "rm -rf /var/log"[/dim]
+    short_help: 
+    param command kind=TyperArgument type=text required=True default=None flags=command help='Command to risk-score'
+    param verbose kind=TyperOption type=boolean required=False default=False flags=--verbose,-v help=''
+
+command: agentwatch safety config
+    help: Manage the local safety policy file.
+    short_help: 
+
+command: agentwatch safety config generate
+    help: [bold]Generate[/bold] a starter .agentwatch-safety.yml policy file.
+    short_help: 
+    param force kind=TyperOption type=boolean required=False default=False flags=--force help='Overwrite an existing file.'
+    param path kind=TyperOption type=path required=False default='.agentwatch-safety.yml' flags=--path help='Where to write the policy file.'
+
+command: agentwatch safety policies
+    help: Inspect the effective safety policy set.
+    short_help: 
+
+command: agentwatch safety policies list
+    help: [bold]List[/bold] the effective safety policy set: builtin patterns + local rules.
+    short_help: 
+
+command: agentwatch server
+    help: Manage the AgentWatch API server
+    short_help: 
+
+command: agentwatch server start
+    help: [bold]Start[/bold] the AgentWatch API server.
+    short_help: 
+    param dry_run kind=TyperOption type=boolean required=False default=False flags=--dry-run help='Preview what would happen without starting the server'
+    param host kind=TyperOption type=text required=False default='0.0.0.0' flags=--host help=''
+    param port kind=TyperOption type=integer required=False default=8000 flags=--port help=''
+    param reload kind=TyperOption type=boolean required=False default=False flags=--reload help=''
+
+command: agentwatch server status
+    help: [bold]Show[/bold] a real-time live dashboard of AgentWatch runtime status.
+    short_help: 
+    param api_key kind=TyperOption type=text required=False default=None flags=--api-key help='API key for protected endpoints (or set AGENTWATCH_API_KEY).'
+    param api_url kind=TyperOption type=text required=False default='http://localhost:8000' flags=--api help=''
+    param refresh_rate kind=TyperOption type=float range required=False default=1.0 flags=--refresh help='Refresh rate in seconds (must be >= 0.1)'
+
+command: agentwatch server top
+    help: [bold]Live Process Monitor[/bold] showing executing agent loops, active tools, and token burn rate.
+    short_help: 
+    param api_key kind=TyperOption type=text required=False default=None flags=--api-key help='API key for protected endpoints (or set AGENTWATCH_API_KEY).'
+    param api_url kind=TyperOption type=text required=False default='http://localhost:8000' flags=--api help=''
+    param refresh_rate kind=TyperOption type=float range required=False default=1.0 flags=--refresh help='Refresh rate in seconds'
+
+command: agentwatch session
+    help: Manage and inspect agent sessions
+    short_help: 
+
+command: agentwatch session export
+    help: [bold]Export[/bold] a session replay to a portable JSON or Markdown file.
+    short_help: 
+    param api_key kind=TyperOption type=text required=False default=None flags=--api-key help='API key for protected endpoints (or set AGENTWATCH_API_KEY).'
+    param api_url kind=TyperOption type=text required=False default='http://localhost:8000' flags=--api help=''
+    param format kind=TyperOption type=choice required=False default=<ExportFormat.json: 'json'> flags=--format help='Export format: json or md'
+    param output kind=TyperOption type=path required=False default=None flags=--output,-o help='Custom output file path'
+    param session_id kind=TyperArgument type=text required=True default=None flags=session_id help='ID of the session to export'
+
+command: agentwatch session export-csv
+    help: [bold]Export-csv[/bold] a session replay to a CSV file.
+    short_help: 
+    param api_key kind=TyperOption type=text required=False default=None flags=--api-key help='API key for protected endpoints (or set AGENTWATCH_API_KEY).'
+    param api_url kind=TyperOption type=text required=False default='http://localhost:8000' flags=--api help=''
+    param out kind=TyperOption type=text required=False default='report.csv' flags=--out help='Custom output file path'
+    param session_id kind=TyperArgument type=text required=True default=None flags=session_id help='ID of the session to export'
+
+command: agentwatch session list
+    help: [bold]List[/bold] recent agent sessions from the AgentWatch API.
+    short_help: 
+    param api_key kind=TyperOption type=text required=False default=None flags=--api-key help='API key for protected endpoints (or set AGENTWATCH_API_KEY).'
+    param api_url kind=TyperOption type=text required=False default='http://localhost:8000' flags=--api help=''
+    param framework kind=TyperOption type=text required=False default=None flags=--framework help=''
+    param limit kind=TyperOption type=integer required=False default=20 flags=--limit,-n help=''
+
+command: agentwatch session prune
+    help: [bold]Prune[/bold] old sessions, traces, and checkpoints to free up disk space.
+    short_help: 
+    param api_key kind=TyperOption type=text required=False default=None flags=--api-key help='API key for protected endpoints (or set AGENTWATCH_API_KEY).'
+    param api_url kind=TyperOption type=text required=False default='http://localhost:8000' flags=--api help=''
+    param dry_run kind=TyperOption type=boolean required=False default=False flags=--dry-run help='Preview what would be deleted without taking action'
+    param older_than kind=TyperOption type=text required=True default=None flags=--older-than help='Age of sessions to prune (e.g. 30d, 12h)'
+
+command: agentwatch session replay
+    help: [bold]Replay[/bold] a captured session step-by-step.
+    short_help: 
+    param failure_only kind=TyperOption type=boolean required=False default=False flags=--failures,-f help='Show only failure points'
+    param from_step kind=TyperOption type=integer required=False default=0 flags=--from help='Start from step N'
+    param session_file kind=TyperArgument type=path required=True default=None flags=session_file help='Path to session JSON file'
+    param show_all kind=TyperOption type=boolean required=False default=False flags=--all help='Show all events including metadata'
+    param speed kind=TyperOption type=text required=False default='instant' flags=--speed,-s help='instant|fast|normal|slow'
+    param to_step kind=TyperOption type=integer required=False default=None flags=--to help='End at step N'
+
+command: agentwatch session rollback
+    help: [bold]Rollback[/bold] a session to a specific step.
+    short_help: 
+    param session_id kind=TyperArgument type=text required=True default=None flags=session_id help='Session ID to rollback'
+    param to_step kind=TyperOption type=integer range required=True default=None flags=--to-step help='Step number to rollback to'
+
+command: agentwatch session score
+    help: [bold]Score[/bold] execution confidence and detect anomalies for a session.
+    short_help: 
+    param session_file kind=TyperArgument type=path required=True default=None flags=session_file help='Path to session JSON file'
+
+command: agentwatch session watch
+    help: [bold]Watch[/bold] a Claude Code execution with full observability and safety.
+    short_help: 
+    param dry_run kind=TyperOption type=boolean required=False default=False flags=--dry-run help='Preview what would happen without executing or writing to disk'
+    param max_turns kind=TyperOption type=integer required=False default=50 flags=--max-turns help=''
+    param model kind=TyperOption type=text required=False default='claude-opus-4-5' flags=--model,-m help=''
+    param no_safety kind=TyperOption type=boolean required=False default=False flags=--no-safety help='Disable safety checks (dangerous)'
+    param output kind=TyperOption type=path required=False default=None flags=--output,-o help='Save session to file'
+    param policy kind=TyperOption type=text required=False default='default' flags=--policy help='Safety policy: default|strict|permissive'
+    param prompt kind=TyperArgument type=text required=True default=None flags=prompt help='Prompt to run with Claude Code'
+
+command: agentwatch share
+    help: [bold]Share[/bold] a trace via a temporary public link (PII/secrets redacted).
+    short_help: 
+    param dry_run kind=TyperOption type=boolean required=False default=False flags=--dry-run help='Sanitize and preview the payload locally without uploading.'
+    param expires_days kind=TyperOption type=integer range required=False default=7 flags=--expires-days help='Days before the shared link expires.'
+    param session_file kind=TyperArgument type=path required=True default=None flags=session_file help='Path to the trace/session JSON file to share'
+    param share_url kind=TyperOption type=text required=False default=None flags=--share-url help='Base URL of the share service (or set AGENTWATCH_SHARE_URL).'
+
+command: agentwatch upgrade
+    help: [bold]Upgrade[/bold] to AgentWatch Premium via the secure web checkout.
+    short_help: 
+    param activate kind=TyperOption type=text required=False default=None flags=--activate help='Store the entitlement token returned by the checkout page.'
+    param base_url kind=TyperOption type=text required=False default=None flags=--checkout-url help='Override the checkout portal base URL.'
+    param dry_run kind=TyperOption type=boolean required=False default=False flags=--dry-run help='Preview the handoff without opening a browser.'
+    param no_browser kind=TyperOption type=boolean required=False default=False flags=--no-browser help='Print the checkout URL instead of opening a browser.'
+    param show_status kind=TyperOption type=boolean required=False default=False flags=--status help='Show the current entitlement status and exit.'
+
+command: agentwatch version
+    help: Show AgentWatch version and diagnostics.
+    short_help: 
+

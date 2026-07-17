@@ -23,7 +23,7 @@ import uuid
 from dataclasses import dataclass
 
 from agentwatch.core.schema import AgentEvent, EventType, ToolCallData
-from agentwatch.security.owasp import validate_owasp, OwaspVector
+from agentwatch.security.owasp import OwaspVector, validate_owasp
 from agentwatch.security.redteam import RedTeamHarness
 
 # ── Synthetic attack events for OWASP scanner ──────────────────────
@@ -265,12 +265,8 @@ def main() -> int:
     parser = argparse.ArgumentParser(
         description="OWASP Agentic Top 10 automated test harness for AgentWatch"
     )
-    parser.add_argument(
-        "--json", action="store_true", help="Output JSON report instead of text"
-    )
-    parser.add_argument(
-        "--fail-fast", action="store_true", help="Stop on first critical finding"
-    )
+    parser.add_argument("--json", action="store_true", help="Output JSON report instead of text")
+    parser.add_argument("--fail-fast", action="store_true", help="Stop on first critical finding")
     args = parser.parse_args()
 
     result = run_harness(fail_fast=args.fail_fast)
