@@ -263,7 +263,6 @@ class ClaudeCodeAdapter:
         self._session: AgentSession | None = None
         self._events: list[AgentEvent] = []
         self._start_time: float = 0.0
-
     async def run(
         self,
         prompt: str,
@@ -371,6 +370,11 @@ class ClaudeCodeAdapter:
 
         async for raw_line in process.stdout:
             line = raw_line.decode("utf-8", errors="replace")
+            # TODO: Stream token inspection before parsing tool events
+            stream_chunk = line.strip()
+
+            if not stream_chunk:
+                continue
             event = parser.parse_line(line)
             if event is None:
                 continue
