@@ -52,7 +52,7 @@ from agentwatch.core.schema import (
     ToolCallData,
     ToolResultData,
 )
-from agentwatch.cost.tracker import CostTracker
+
 from agentwatch.governance.compliance_reporter import ComplianceReporter
 from agentwatch.governance.engine import AuditEventType, GovernanceEngine
 from agentwatch.models.tenant import TenantPlan
@@ -60,8 +60,6 @@ from agentwatch.monitoring.metrics import (
     record_api_latency,
     record_failure,
 )
-from agentwatch.reasoning.auditor import ReasoningAuditor
-from agentwatch.replay.counterfactual import CounterfactualEngine, CounterfactualScenario
 from agentwatch.replay.engine import ReplayEngine
 from agentwatch.rollback.engine import RollbackEngine
 from agentwatch.scoring.confidence import ConfidenceScorer
@@ -248,8 +246,7 @@ _replay_engine = ReplayEngine()
 _rollback_engine = RollbackEngine()
 _safety_engine = SafetyEngine()
 _confidence_scorer = ConfidenceScorer()
-_cost_tracker = CostTracker()
-_reasoning_auditor = ReasoningAuditor()
+
 _governance = GovernanceEngine()
 _compliance_reporter = ComplianceReporter(_governance, _collector)
 _alerting = AlertingEngine(
@@ -492,7 +489,7 @@ class SafetyCheckResponse(BaseModel):
 
 
 def _record_budget(event: AgentEvent) -> None:
-    _cost_tracker.ingest_event(event)
+    pass
 
 
 async def _after_publish(event: AgentEvent) -> None:
@@ -762,7 +759,7 @@ async def health(request: Request) -> dict[str, Any]:
         "traces": _collector.get_stats(),
         "event_bus": get_event_bus().stats(),
         "safety": _safety_engine.stats(),
-        "cost": _cost_tracker.stats(),
+        "cost": {},
     }
 
 
@@ -954,29 +951,8 @@ async def get_confidence(
     )
 
 
-@app.get("/api/v1/sessions/{session_id}/reasoning")
-async def get_reasoning_audit(
-    session_id: str, _auth: None = Depends(_require_api_key)
-) -> dict[str, Any]:
-    events = _collector.get_events(session_id, limit=5000)
-    if not events:
-        raise HTTPException(status_code=404, detail=f"No events for session {session_id}")
-    return (await _reasoning_auditor.audit_session(events)).to_dict()
 
 
-@app.get("/api/v1/sessions/{session_id}/cost")
-async def get_cost_budget(
-    session_id: str, _auth: None = Depends(_require_api_key)
-) -> dict[str, Any]:
-    budget = _cost_tracker.get_session(session_id)
-    if not budget:
-        events = _collector.get_events(session_id, limit=5000)
-        if not events:
-            raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
-        for event in events:
-            _cost_tracker.ingest_event(event)
-        budget = _cost_tracker.get_session(session_id)
-    return budget.to_dict() if budget else {"session_id": session_id}
 
 
 @app.get("/api/v1/sessions/{session_id}/replay")
@@ -987,55 +963,11 @@ async def get_replay(session_id: str, _auth: None = Depends(_require_api_key)) -
         raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
     replay = _replay_engine.load_from_events(trace.session, events)
-    audit_summary = await _reasoning_auditor.audit_session(events)
-
     d = replay.to_dict()
-    d["reasoning_audit"] = {
-        "overall_score": audit_summary.average_score,
-        "hallucination_risk": 1.0 - audit_summary.average_score,  # Simple heuristic for UI
-        "goal_alignment": audit_summary.average_score,  # Shared heuristic
-        "findings": [
-            {
-                "type": a.verdict,
-                "severity": "high" if a.score < 0.4 else "medium" if a.score < 0.7 else "low",
-                "message": a.rationale,
-                "step_index": a.step_index,
-            }
-            for a in audit_summary.audits
-            if a.score < 0.7
-        ],
-    }
     return d
 
 
-@app.post("/api/v1/sessions/{session_id}/simulate")
-async def simulate_session(
-    session_id: str, request: SimulateRequest, _auth: None = Depends(_require_api_key)
-) -> dict[str, Any]:
-    events = _collector.get_events(session_id, limit=5000)
-    trace = _collector.get_trace(session_id)
-    if not events or not trace:
-        raise HTTPException(status_code=404, detail=f"Session {session_id} not found")
 
-    scenario = CounterfactualScenario(
-        rewind_to_step=request.rewind_to_step,
-        tool_id=request.tool_id,
-        replacement=request.replacement,
-        notes=request.notes,
-    )
-    try:
-        engine = CounterfactualEngine()
-        result = engine.run(events, scenario)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-
-    return {
-        "session_id": session_id,
-        "diverged_at_step": result.diverged_at_step,
-        "original_events": [e.model_dump_for_storage() for e in result.original_events],
-        "alternate_events": [e.model_dump_for_storage() for e in result.alternate_events],
-        "summary": result.summary,
-    }
 
 
 @app.get("/api/v1/sessions/{session_id}/checkpoints")
@@ -1292,90 +1224,6 @@ async def report_entitlement_usage(
         "active_devices": len(_usage_tracker.active_devices(report.subject)),
     }
 
-
-@app.get("/api/v1/governance/eu-ai-act-report")
-async def eu_ai_act_report(
-    _auth: None = Depends(_require_api_key),
-    _ent: object = Depends(require_entitlement("compliance")),
-) -> dict[str, Any]:
-    """EU AI Act Article 15 conformity export (CMP-004).
-
-    Maps AgentWatch's safety telemetry to the Article 15 requirements and
-    returns the technical documentation plus a conformity assessment as JSON.
-    """
-    from agentwatch.governance.eu_ai_act import (
-        DecisionLogEntry,
-        EUAIActPackage,
-        TechnicalDocumentation,
-    )
-
-    # Derive the report from live telemetry and the active safety policy rather
-    # than static literals, so the conformity evidence reflects the running
-    # system (Article 15 record-keeping / accuracy-robustness requirements).
-    safety = _safety_engine.stats()  # {"checked", "blocked", "approved"}
-    policy = _safety_engine.policy
-    sessions = _collector.list_sessions(limit=200)
-    checked = safety["checked"]
-
-    robustness: list[str] = []
-    if checked:
-        robustness.append(f"safety_engine_risk_scoring:{checked}_events_checked")
-    if safety["blocked"]:
-        robustness.append(f"actions_blocked:{safety['blocked']}")
-    if policy.block_on_critical:
-        robustness.append("block_on_critical")
-    if policy.block_on_high:
-        robustness.append("block_on_high")
-
-    oversight: list[str] = []
-    if policy.block_on_critical:
-        oversight.append("critical actions are blocked")
-    if policy.require_approval_on_high:
-        oversight.append("high-risk actions require human approval")
-    if policy.require_approval_on_medium:
-        oversight.append("medium-risk actions require human approval")
-
-    doc = TechnicalDocumentation(
-        system_name="AgentWatch-monitored AI system",
-        intended_purpose="Observability, safety, and reliability layer for AI agents",
-        risk_category="high",
-        data_governance={
-            "active_policy": policy.name,
-            "approval_required_high": str(policy.require_approval_on_high),
-        },
-        accuracy_metrics={
-            "events_checked": float(checked),
-            "safety_block_rate": round(safety["blocked"] / checked, 4) if checked else 0.0,
-        },
-        robustness_evidence=robustness,
-        human_oversight_description="; ".join(oversight) or "no oversight gates configured",
-        transparency_disclosures=["session_replay", "reasoning_audit_trail"],
-    )
-
-    pkg = EUAIActPackage()
-    pkg.set_documentation(doc)
-    # Record-keeping evidence: derive decision-log entries from real sessions.
-    sessions_used = sessions[:50]
-    for session in sessions_used:
-        pkg.log_decision(
-            DecisionLogEntry(
-                when=session.started_at,
-                decision_id=session.session_id,
-                inputs_hash="",
-                outputs_hash="",
-                confidence=0.0,
-                safety_checks_passed=session.status != ExecutionStatus.BLOCKED,
-                human_oversight_required=policy.require_approval_on_high,
-                explanation=f"session status={session.status.value}",
-            )
-        )
-
-    return {
-        "article": "EU AI Act Article 15",
-        "documentation": doc.to_dict(),
-        "conformity": pkg.assess().to_dict(),
-        "telemetry": {"safety_stats": safety, "sessions_considered": len(sessions_used)},
-    }
 
 
 @app.post("/api/v1/demo/seed")

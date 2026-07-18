@@ -140,24 +140,3 @@ def test_watch_passes_redact_through():
     events = bus.get_recent_events(event_type=EventType.TOOL_CALL)
     assert events
     assert MASK in events[0].tool_call.raw_command
-
-
-# ── EU AI Act Article 15 export endpoint ──────────────────────────────────
-
-
-def test_eu_ai_act_report_endpoint(monkeypatch):
-    # Pin auth off so the test doesn't depend on a stray AGENTWATCH_API_KEY.
-    monkeypatch.setattr("agentwatch.api.server._API_KEY", None)
-    client = TestClient(app)
-    resp = client.get("/api/v1/governance/eu-ai-act-report")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["article"] == "EU AI Act Article 15"
-    assert "conformity" in body
-    assert "requirements_met" in body["conformity"]
-    # Fields are derived from live telemetry/policy, not static literals.
-    assert "telemetry" in body
-    assert "safety_stats" in body["telemetry"]
-    assert "accuracy_metrics" in body["documentation"]
-    assert "active_policy" in body["documentation"]["data_governance"]
-    assert body["documentation"]["risk_category"] == "high"

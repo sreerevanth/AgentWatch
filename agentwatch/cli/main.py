@@ -1527,19 +1527,8 @@ def compare(
             from pydantic import ValidationError
 
             from agentwatch.core.schema import AgentEvent
-            from agentwatch.reasoning.hallucination import (
-                HallucinationClassifier,
-                HallucinationRisk,
-            )
 
-            # Preferred: if confidence_response has hallucination_risk, use it.
-            # Otherwise, derive it from official HallucinationClassifier.
-            hrisk = conf.get("hallucination_risk")
-            compute_hrisk = hrisk is None
-
-            if compute_hrisk:
-                classifier = HallucinationClassifier()
-                highest_risk = HallucinationRisk.LOW
+            hrisk = conf.get("hallucination_risk", "LOW")
 
             for step in steps:
                 ev_data = step.get("event", {})
@@ -1554,24 +1543,7 @@ def compare(
                 if etype == "safety_block" or (safety and safety.get("blocked")):
                     safety_blocks += 1
 
-                # Classify hallucination risk using the official source of truth
-                if compute_hrisk:
-                    try:
-                        ev = AgentEvent(**ev_data)
-                        classifier.observe(ev)
-                        f = classifier.classify(ev)
-                        if f.risk == HallucinationRisk.HIGH:
-                            highest_risk = HallucinationRisk.HIGH
-                        elif (
-                            f.risk == HallucinationRisk.MEDIUM
-                            and highest_risk == HallucinationRisk.LOW
-                        ):
-                            highest_risk = HallucinationRisk.MEDIUM
-                    except (ValidationError, TypeError, ValueError):
-                        continue
 
-            if compute_hrisk:
-                hrisk = highest_risk.value.upper()
 
             return {
                 "overall": overall,

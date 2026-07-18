@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import pytest
 
-from agentwatch.cost.tracker import CostTracker
+
 from agentwatch.infrastructure.config import RouterConfig
 from agentwatch.infrastructure.router import ModelRouter
 
@@ -66,34 +66,3 @@ def test_circuit_breaker_transitions(mock_sleep, mock_config):
         assert metrics["providers"]["gpt-4o"]["state"] == "OPEN"
 
 
-def test_budget_routing_downgrade(mock_config):
-    tracker = CostTracker()
-    tracker.configure_session("sess1", usd_budget=10.0)
-    # Use 9.0 out of 10.0 -> > 80%
-    budget = tracker.get_session("sess1")
-    assert budget is not None
-    budget.usd_used = Decimal("9.0")
-
-    router = ModelRouter(mock_config, cost_tracker=tracker)
-
-    with patch("agentwatch.infrastructure.router.litellm.completion") as mock_completion:
-        mock_completion.return_value = {"choices": []}
-        router.completion([{"role": "user", "content": "hi"}], session_id="sess1")
-
-        metrics = router.get_metrics()
-        # The primary choice was downgraded to the first fallback
-        assert metrics["routing_decisions"][-1]["model"] == "claude-3-haiku-20240307"
-
-
-def test_budget_routing_exceeded(mock_config):
-    tracker = CostTracker()
-    tracker.configure_session("sess2", usd_budget=10.0)
-    budget = tracker.get_session("sess2")
-    assert budget is not None
-    budget.usd_used = Decimal("11.0")
-    budget.exceeded = True
-
-    router = ModelRouter(mock_config, cost_tracker=tracker)
-
-    with pytest.raises(RuntimeError, match="Budget exceeded"):
-        router.completion([{"role": "user", "content": "hi"}], session_id="sess2")

@@ -32,19 +32,15 @@ services:
       context: .
       dockerfile: Dockerfile.api
     environment:
-      DATABASE_URL: postgresql+asyncpg://agentwatch:agentwatch@postgres:5432/agentwatch
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/1
+      DATABASE_URL: postgres://agentwatch:agentwatch@postgres:5432/agentwatch
       AGENTWATCH_ENV: production
     ports:
       - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
-      redis:
-        condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -54,15 +50,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.api
-    command: celery -A agentwatch.tasks.celery_app worker --loglevel=info --concurrency=2
+    command: ["celery", "-A", "agentwatch.tasks.celery_app", "worker", "--loglevel=info"]
     environment:
-      DATABASE_URL: postgresql+asyncpg://agentwatch:agentwatch@postgres:5432/agentwatch
-      REDIS_URL: redis://redis:6379/0
-      CELERY_BROKER_URL: redis://redis:6379/1
+      DATABASE_URL: postgres://agentwatch:agentwatch@postgres:5432/agentwatch
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     profiles: ["workers"]
     restart: unless-stopped

@@ -111,11 +111,11 @@ AgentWatch deploys a **second model**, architecturally separate, with no access 
   <tr>
     <td width="50%" align="center" valign="top">
       <img src="docs/screenshots/03-features.png" alt="Six production-grade modules" /><br/>
-      <sub><b>Six production-grade modules.</b><br/>Reasoning Auditor · Safety Engine · One-Click Rollback · Multi-Agent DAG · Causal Memory · Compliance Ready.</sub>
+      <sub><b>Production-grade telemetry.</b><br/>Safety Engine · Live Tracing · Observability · Rate Limiting.</sub>
     </td>
     <td width="50%" align="center" valign="top">
       <img src="docs/screenshots/04-comparison.png" alt="AgentWatch vs Langfuse, Phoenix, Datadog — and the 60-second quickstart" /><br/>
-      <sub><b>What nobody else ships.</b><br/>Pre-execution blocking, independent audit, git-backed rollback — and it wraps any agent framework in 60 seconds.</sub>
+      <sub><b>What nobody else ships.</b><br/>Pre-execution blocking and real-time observability — and it wraps any agent framework in 60 seconds.</sub>
     </td>
   </tr>
 </table>
@@ -126,7 +126,7 @@ AgentWatch deploys a **second model**, architecturally separate, with no access 
 
 ## 🏗️ Architecture
 
-AgentWatch is built as a layered system — adapters feed a normalized event stream into the core engine, which fans out to safety, reasoning, rollback, and observability subsystems.
+AgentWatch is built as a layered system — adapters feed a normalized event stream into the core engine, which fans out to safety and telemetry observability subsystems.
 
 ```mermaid
 flowchart TB
@@ -147,14 +147,7 @@ flowchart TB
     subgraph CORE["⚙️ Core Engine"]
         direction TB
         SAFE["🛡️ Safety Engine<br/>40+ patterns · blast radius"]
-        REASON["🧠 Reasoning Auditor<br/>independent scoring"]
-        SAFE --- REASON
     end
-
-    CORE --> ROLL["⏪ Rollback<br/>git-backed checkpoints"]
-    CORE --> MEM["💾 Causal Memory<br/>cross-session trails"]
-    CORE --> COST["💰 Cost Governance<br/>per-session budgets"]
-    CORE --> GOV["📋 Compliance<br/>GDPR · HIPAA · EU AI Act"]
 
     CORE --> TEL["🔭 Telemetry<br/>OpenTelemetry spans"]
     TEL --> API["🌐 REST + WebSocket API"]
@@ -205,32 +198,7 @@ The intent normalizers are what make this robust — they catch bypass attempts 
 
 ---
 
-## 🔄 Reasoning Audit Sequence
 
-The independent auditor scores each step *before* the action runs. A drop below threshold holds the next action and fires an alert — it is never logged after the fact.
-
-```mermaid
-sequenceDiagram
-    participant Agent
-    participant AgentWatch
-    participant Auditor as Independent Auditor
-    participant World as Tools / APIs / DB
-
-    Agent->>AgentWatch: emit reasoning step + tool call
-    AgentWatch->>Auditor: score_step(step)
-    Auditor-->>AgentWatch: confidence · hallucination risk · goal drift
-
-    alt confidence below threshold
-        AgentWatch--xAgent: HOLD action + fire alert
-        Note over AgentWatch: human decides next move
-    else confidence ok
-        AgentWatch->>World: action proceeds
-        World-->>Agent: result
-        AgentWatch->>AgentWatch: checkpoint for rollback
-    end
-```
-
----
 
 ## 🚀 Quick Start
 
@@ -271,20 +239,7 @@ AgentWatch wraps your existing agent. **You change nothing.** Detailed guides fo
 
 ## ✨ Core Features
 
-### 🧠 Reasoning Auditor
-*The feature nobody else has built.*
 
-```python
-from agentwatch.reasoning.auditor import ReasoningAuditor
-
-auditor = ReasoningAuditor()
-audit = await auditor.audit_step(step.step_number, step)
-
-print(audit.score)        # 0.0 – 1.0 confidence in the step
-print(audit.rationale)    # why the auditor scored it this way
-```
-
-When the score drops below your threshold, the next action is **held — not logged after the fact.** An alert fires. You decide what happens next.
 
 ### 🛡️ Safety Engine
 
@@ -318,22 +273,7 @@ except CommandError as exc:
 ```
 
 
-### ⏪ One-Click Rollback
 
-```bash
-agentwatch rollback <session-id> --to-step 12
-```
-
-Every step is a **git-backed filesystem snapshot.** Irreversible actions become reversible. Click rollback in the dashboard or use the CLI.
-
-### 📊 Live Dashboard
-Real-time WebSocket stream of every action your agent takes. Confidence meter updating per step. Colour-coded by span type. No polling. No refresh.
-
-### 💾 Persistent Memory
-Cross-session episodic, semantic, and procedural memory backed by a causal graph. Your agent remembers what it decided and *why* — across restarts, across sessions.
-
-### 💰 Cost Intelligence
-Per-session token budget with hard stop. Real-time spend tracking. Alerts at 80%. Blocks at 100%. Prevents runaway agents from bankrupting you overnight.
 
 ### 🔔 Alerting
 Slack + PagerDuty when confidence drops or actions are blocked. Every alert contains full context — not just "something failed."
@@ -344,10 +284,7 @@ Slack + PagerDuty when confidence drops or actions are blocked. Every alert cont
 
 ```
 GET  /api/v1/sessions
-GET  /api/v1/sessions/{id}/replay
-GET  /api/v1/sessions/{id}/confidence
-GET  /api/v1/sessions/{id}/checkpoints
-POST /api/v1/sessions/{id}/rollback
+GET  /api/v1/sessions
 GET  /api/v1/safety/blocked
 GET  /api/v1/dashboard/summary
 WS   /ws/events
@@ -362,13 +299,6 @@ Full Swagger docs at `localhost:8000/docs`.
 | Feature | AgentWatch | Langfuse | Phoenix | Datadog |
 |---|:---:|:---:|:---:|:---:|
 | Pre-execution blocking | ✅ | ❌ | ❌ | ❌ |
-| Independent reasoning auditor | ✅ | ❌ | ❌ | ❌ |
-| Git-backed rollback | ✅ | ❌ | ❌ | ❌ |
-| Inter-agent causal DAG | ✅ | ❌ | ❌ | ❌ |
-| Cross-session memory | ✅ | ❌ | ❌ | ❌ |
-| Session replay | ✅ | ❌ | ✅ | ⚠️ |
-| Goal drift detection | ✅ | ❌ | ❌ | ❌ |
-| Hallucination risk per step | ✅ | ❌ | ❌ | ❌ |
 
 ---
 
@@ -464,11 +394,8 @@ The upload step authenticates with a PyPI API token stored as a GitHub secret na
 
 AgentWatch **v0.2.0** is being built now — 90 features across 10 phases including:
 
-- Causal memory graph (cross-session reasoning trails)
-- Inter-agent causal DAG (multi-agent failure tracing)
-- OWASP Agentic Top 10 scanner
-- EU AI Act Article 15 compliance package
-- Counterfactual replay ("what if step 3 was different")
+- Lightning fast Rust core (in progress)
+- Webhooks API
 - Open reasoning trace schema (the OTEL play)
 
 Every open issue on the roadmap is available to contributors. [Browse them here.](https://github.com/sreerevanth/AgentWatch/issues)

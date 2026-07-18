@@ -25,7 +25,6 @@ from agentwatch.core.schema import (
     SafetyCheckData,
     ToolCallData,
 )
-from agentwatch.reasoning.auditor import ReasoningAuditor
 
 logger = logging.getLogger(__name__)
 
@@ -583,7 +582,6 @@ class SafetyEngine:
         self,
         policy: SafetyPolicy | None = None,
         approval_callback: ApprovalCallback | None = None,
-        auditor: ReasoningAuditor | None = None,
         policy_engine: PolicyEngine | None = None,
         blast_radius_estimator: BlastRadiusEstimator | None = None,
     ) -> None:
@@ -592,14 +590,12 @@ class SafetyEngine:
         Args:
             policy: Blocking/approval rules; defaults to :data:`DEFAULT_POLICY`.
             approval_callback: Async callback for human-in-the-loop approval.
-            auditor: Reasoning auditor for confidence scoring.
             policy_engine: DSL policy engine for complex rules.
             blast_radius_estimator: Estimator for proactive impact analysis.
         """
         self._policy = policy or DEFAULT_POLICY
         self._scorer = RiskScorer(extra_patterns=self._policy.custom_patterns)
         self._approval_callback = approval_callback
-        self._auditor = auditor or ReasoningAuditor()
         self._policy_engine = policy_engine or PolicyEngine()
         self._blast_radius_estimator = blast_radius_estimator or BlastRadiusEstimator()
         self._pending_approvals: dict[str, asyncio.Future[bool]] = {}
@@ -624,13 +620,6 @@ class SafetyEngine:
             return event
 
         self._checked_count += 1
-
-        # 1. Confidence-based reasoning audit (Async only for now)
-        audit = await self._auditor.audit_step(event.step_number, event)
-        event.confidence = ConfidenceData(
-            overall_score=audit.score,
-            explanation=audit.rationale,
-        )
 
         # 2. Run shared evaluation logic
         safety_data, block_decision = self._evaluate_safety(event)

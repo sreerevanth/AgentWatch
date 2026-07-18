@@ -108,24 +108,7 @@ def test_machine_bound_token_checked_against_header(monkeypatch, keypair):
     assert exc.value.status_code == 402
 
 
-def test_eu_ai_act_report_gated(monkeypatch, keypair):
-    private_pem, public_pem = keypair
-    from fastapi.testclient import TestClient
 
-    from agentwatch.api.server import app
-
-    monkeypatch.setattr("agentwatch.api.server._API_KEY", None)
-    monkeypatch.setattr("agentwatch.api.server._IS_PROD", False)
-    monkeypatch.setattr(entitlement, "_LICENSE_PUBLIC_KEY", public_pem)
-    client = TestClient(app)
-
-    assert client.get("/api/v1/governance/eu-ai-act-report").status_code == 402
-    ok = client.get(
-        "/api/v1/governance/eu-ai-act-report",
-        headers={"X-Entitlement-Token": _token(private_pem)},
-    )
-    assert ok.status_code == 200
-    assert ok.json()["article"] == "EU AI Act Article 15"
 
 
 def test_bearer_token_model_spoofed_machine_id_succeeds(monkeypatch, keypair):

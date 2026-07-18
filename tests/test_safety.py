@@ -355,44 +355,7 @@ def test_sandbox_allows_benign_command():
     assert not result.blocked
 
 
-# ─────────────────────────────────────────────
-# SAF-011 — Integrated Confidence Blocking
-# ─────────────────────────────────────────────
 
-
-@pytest.mark.asyncio
-async def test_safety_engine_blocks_on_low_confidence_via_dsl():
-    from agentwatch.core.policy_dsl import PolicyAction, PolicyEngine, Rule
-    from agentwatch.reasoning.auditor import ReasoningAuditor, StepAudit
-
-    # Mock auditor that returns low confidence
-    class LowConfAuditor(ReasoningAuditor):
-        async def audit_step(self, step_index: int, event: AgentEvent) -> StepAudit:
-            return StepAudit(
-                step_index=step_index,
-                event_id=event.event_id,
-                score=0.1,  # Critical low
-                verdict="FAIL",
-                rationale="Reasoning is non-sensical",
-                evidence={},
-            )
-
-    # DSL rule: block if confidence < 0.5
-    dsl = PolicyEngine(
-        [
-            Rule(condition="confidence < 0.5", action=PolicyAction.BLOCK),
-        ]
-    )
-
-    engine = SafetyEngine(auditor=LowConfAuditor(), policy_engine=dsl)
-    event = _tool_event("bash", "echo hello")
-
-    result = await engine.check_event(event)
-
-    assert result.status == ExecutionStatus.BLOCKED
-    assert result.safety.blocked
-    assert any("rule_matched:confidence < 0.5" in r for r in result.safety.reasons)
-    assert result.confidence.overall_score == 0.1
 
 
 @pytest.mark.asyncio

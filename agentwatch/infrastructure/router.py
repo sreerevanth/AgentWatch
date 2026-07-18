@@ -62,9 +62,8 @@ class ModelRouter:
     and cost-aware routing.
     """
 
-    def __init__(self, config_provider: RouterConfig, cost_tracker: Any = None):
+    def __init__(self, config_provider: RouterConfig):
         self.config_provider = config_provider
-        self.cost_tracker = cost_tracker
         self.providers: dict[str, ProviderHealth] = {}
 
         self.fallback_counts = 0
@@ -95,19 +94,6 @@ class ModelRouter:
         session_id = kwargs.pop("session_id", None)
         agent_id = kwargs.pop("agent_id", "router")
 
-        if self.cost_tracker and session_id:
-            budget = self.cost_tracker.get_session(session_id)
-            if budget:
-                if budget.exceeded:
-                    raise RuntimeError("Budget exceeded, load shedding active.")
-
-                # Downgrade if > 80% of budget used
-                if (
-                    budget.usd_budget > 0
-                    and float(budget.usd_used) / float(budget.usd_budget) > 0.8
-                ):
-                    primary = fallbacks[0] if fallbacks else primary
-
         chain = [primary] + fallbacks
 
         for i, model in enumerate(chain):
@@ -127,27 +113,7 @@ class ModelRouter:
 
                 self.routing_decisions.append({"model": model, "reason": "success", "index": i})
 
-                if self.cost_tracker and session_id:
-                    usage = getattr(res, "usage", None)
-                    if usage:
-                        cost = 0.0
-                        try:
-                            cost = litellm.completion_cost(completion_response=res)
-                        except Exception as e:
-                            logger.debug("Failed to estimate completion cost: %s", e)
 
-                        event = AgentEvent(
-                            session_id=session_id,
-                            agent_id=agent_id,
-                            event_type=EventType.TOOL_CALL,
-                            token_usage=TokenUsage(
-                                prompt_tokens=getattr(usage, "prompt_tokens", 0),
-                                completion_tokens=getattr(usage, "completion_tokens", 0),
-                                total_tokens=getattr(usage, "total_tokens", 0),
-                                estimated_cost_usd=float(cost),
-                            ),
-                        )
-                        self.cost_tracker.ingest_event(event)
 
                 return res
 

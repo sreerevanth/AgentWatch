@@ -32,7 +32,7 @@ from agentwatch.core.schema import (
     ToolCallData,
     ToolResultData,
 )
-from agentwatch.memory.engine import ImportanceLevel, MemoryEngine, MemoryType
+
 from agentwatch.replay.engine import ReplayEngine, ReplaySpeed
 from agentwatch.scoring.confidence import ConfidenceScorer
 from agentwatch.tracing.collector import TraceCollector
@@ -386,179 +386,6 @@ async def demo_confidence():
         print(f"    {dim(line)}")
 
 
-# ─────────────────────────────────────────────
-# Demo 4: Memory Engine
-# ─────────────────────────────────────────────
-
-
-async def demo_memory():
-    """Populate persistent contextual memories and run structural vector semantic search checks."""
-    section("DEMO 4 — Memory Engine")
-
-    memory = MemoryEngine()
-    agent_id = "demo-agent"
-
-    print("  Storing memories across types...\n")
-
-    # Episodic
-    await memory.store(
-        agent_id,
-        "Ran cleanup script on 2024-11-01, removed 800MB from /var/log",
-        memory_type=MemoryType.EPISODIC,
-        importance=ImportanceLevel.MEDIUM,
-    )
-    await memory.store(
-        agent_id,
-        "Previous cleanup attempt failed — rm -rf was blocked by safety engine",
-        memory_type=MemoryType.EPISODIC,
-        importance=ImportanceLevel.HIGH,
-    )
-
-    # Semantic
-    await memory.store(
-        agent_id,
-        "The /var/log directory requires root permissions for deletion",
-        memory_type=MemoryType.SEMANTIC,
-        importance=ImportanceLevel.HIGH,
-    )
-    await memory.store(
-        agent_id,
-        "Use 'truncate -s 0' instead of rm to safely zero out log files",
-        memory_type=MemoryType.SEMANTIC,
-        importance=ImportanceLevel.CRITICAL,
-    )
-
-    # Procedural
-    await memory.store(
-        agent_id,
-        "Workflow: 1) list files 2) find old logs 3) truncate safely 4) verify freed space",
-        memory_type=MemoryType.PROCEDURAL,
-        importance=ImportanceLevel.HIGH,
-    )
-
-    print(f"  Stored {memory.stats(agent_id)['total_entries']} entries")
-    print(f"  By type: {memory.stats(agent_id)['by_type']}\n")
-
-    # Retrieval
-    query = "how to safely clean up log files"
-    print(f"  Query: {bold(repr(query))}\n")
-    results = await memory.retrieve(agent_id, query, top_k=4)
-
-    for i, r in enumerate(results, 1):
-        type_color = {"episodic": blue, "semantic": green, "procedural": yellow}[
-            r.entry.memory_type.value
-        ]
-        print(
-            f"  [{i}] {type_color(f'[{r.entry.memory_type.value.upper()}]')} "
-            f"score={r.similarity_score:.3f}  {r.entry.importance.value}"
-        )
-        print(f"      {dim(r.entry.content[:80])}")
-
-    # Context window
-    ctx = await memory.get_context_window(agent_id, query, max_tokens=500)
-    print(f"\n  {bold('Context window preview:')}")
-    print(f"  {dim(ctx[:300] if ctx else '(no context generated)')}")
-
-
-# ─────────────────────────────────────────────
-# Demo 5: Multi-agent Orchestration
-# ─────────────────────────────────────────────
-
-
-async def demo_orchestration():
-    """Verify directed acyclic task graph generation pipelines across distributed roles agents."""
-    section("DEMO 5 — Multi-Agent Orchestration")
-
-    from agentwatch.orchestration.engine import (
-        AgentRole,
-        MessageType,
-        OrchestrationEngine,
-        SubAgent,
-        TaskGraph,
-    )
-
-    bus = EventBus()
-    orch = OrchestrationEngine(session_id="orch-demo", event_bus=bus)
-
-    # Define agents
-    planner = SubAgent(
-        "planner-1",
-        "Planner",
-        AgentRole.PLANNER,
-        AgentFramework.CLAUDE_CODE,
-        capabilities=["decompose", "plan"],
-    )
-    executor1 = SubAgent(
-        "exec-1",
-        "Executor A",
-        AgentRole.EXECUTOR,
-        AgentFramework.CLAUDE_CODE,
-        capabilities=["bash", "file_ops"],
-        max_concurrent_tasks=2,
-    )
-    executor2 = SubAgent(
-        "exec-2",
-        "Executor B",
-        AgentRole.EXECUTOR,
-        AgentFramework.CLAUDE_CODE,
-        capabilities=["web_search", "analysis"],
-    )
-    verifier = SubAgent(
-        "verify-1",
-        "Verifier",
-        AgentRole.VERIFIER,
-        AgentFramework.CLAUDE_CODE,
-        capabilities=["verify", "validate"],
-    )
-
-    # Wire up simple handlers
-    completed_tasks = []
-
-    async def exec_handler(msg):
-        if msg.message_type == MessageType.TASK_ASSIGN:
-            tid = msg.payload.get("task_id")
-            await asyncio.sleep(0.01)  # Simulate work
-            completed_tasks.append(tid)
-            if orch._active_graph:
-                orch._active_graph.mark_completed(tid, outputs={"result": "done"})
-
-    executor1.set_handler(exec_handler)
-    executor2.set_handler(exec_handler)
-
-    for agent in [planner, executor1, executor2, verifier]:
-        orch.register_agent(agent)
-
-    await orch.start()
-
-    # Build task graph
-    graph = TaskGraph(session_id="orch-demo", goal="Audit and report on system performance")
-    t1 = graph.add_task("Collect CPU metrics", "Run top/vmstat and capture output")
-    t2 = graph.add_task("Collect memory metrics", "Run free -m and smem", depends_on=[])
-    t3 = graph.add_task("Collect disk metrics", "Run df -h and iostat")
-    t4 = graph.add_task(
-        "Analyze metrics", "Identify bottlenecks", depends_on=[t1.task_id, t2.task_id, t3.task_id]
-    )
-    graph.add_task("Generate report", "Write markdown report", depends_on=[t4.task_id])
-
-    print(f"  Task graph: {len(graph.nodes)} tasks, goal: {bold(graph.goal[:50])}")
-    print("  Dependency chain: collect → analyze → report\n")
-
-    result = await orch.run_graph(graph)
-    await orch.stop()
-
-    print(f"  {bold('Execution result:')}")
-    print(f"    Total tasks:  {result['total_tasks']}")
-    print(f"    Completed:    {green(str(result['completed']))}")
-    print(f"    Failed:       {red(str(result['failed']))}")
-    print(f"    Pending:      {str(result['pending'])}")
-
-    print(f"\n  {bold('Agent status:')}")
-    for agent_status in orch.agent_status():
-        print(
-            f"    {agent_status['name']:<15} role={agent_status['role']:<12} "
-            f"active={agent_status['active_tasks']}"
-        )
-
 
 # ─────────────────────────────────────────────
 # Main
@@ -578,8 +405,7 @@ async def run_demo():
     await demo_safety()
     await demo_replay()
     await demo_confidence()
-    await demo_memory()
-    await demo_orchestration()
+
 
     print(f"\n{bold(green('✓ All demos complete'))}\n")
     print("Next steps:")
