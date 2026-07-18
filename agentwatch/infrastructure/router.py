@@ -8,7 +8,6 @@ from typing import Any
 import litellm
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from agentwatch.core.schema import AgentEvent, EventType, TokenUsage
 from agentwatch.infrastructure.config import RouterConfig
 
 logger = logging.getLogger(__name__)
@@ -91,8 +90,8 @@ class ModelRouter:
             "fallback", ["claude-3-haiku-20240307", "gemini-1.5-flash"]
         )
 
-        session_id = kwargs.pop("session_id", None)
-        agent_id = kwargs.pop("agent_id", "router")
+        kwargs.pop("session_id", None)
+        kwargs.pop("agent_id", "router")
 
         chain = [primary] + fallbacks
 

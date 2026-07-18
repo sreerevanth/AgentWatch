@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from fastapi.testclient import TestClient
-
-from agentwatch.api.server import app
 from agentwatch.core.schema import ToolCallData
 from agentwatch.core.watcher import GenericAdapter, watch
 from agentwatch.security.redaction import (

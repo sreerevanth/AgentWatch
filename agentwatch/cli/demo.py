@@ -33,7 +33,6 @@ from agentwatch.core.schema import (
     ToolCallData,
     ToolResultData,
 )
-
 from agentwatch.replay.engine import ReplayEngine, ReplaySpeed
 from agentwatch.scoring.confidence import ConfidenceScorer
 from agentwatch.tracing.collector import TraceCollector

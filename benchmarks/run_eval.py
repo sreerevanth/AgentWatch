@@ -1,19 +1,17 @@
 import asyncio
 import json
+import math
 import os
 import sys
 import time
+from pathlib import Path
 from statistics import mean, median
 
+from agentwatch.reasoning.auditor import ReasoningAuditor
 from rich.console import Console
 from rich.table import Table
 
 from agentwatch.core.schema import AgentEvent
-from agentwatch.reasoning.auditor import ReasoningAuditor
-
-
-import math
-from pathlib import Path
 
 
 def safe_div(n, d):

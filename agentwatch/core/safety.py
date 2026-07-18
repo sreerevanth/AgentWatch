@@ -18,7 +18,6 @@ from agentwatch.core.policy_dsl import PolicyAction, PolicyEngine
 from agentwatch.core.schema import (
     AgentEvent,
     AgentFramework,
-    ConfidenceData,
     EventType,
     ExecutionStatus,
     RiskLevel,

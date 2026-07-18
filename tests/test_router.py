@@ -1,8 +1,6 @@
-from decimal import Decimal
 from unittest.mock import patch
 
 import pytest
-
 
 from agentwatch.infrastructure.config import RouterConfig
 from agentwatch.infrastructure.router import ModelRouter

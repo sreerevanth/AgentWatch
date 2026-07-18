@@ -1677,9 +1677,7 @@ def compare(
             failed_steps = 0
             safety_blocks = 0
 
-            from pydantic import ValidationError
 
-            from agentwatch.core.schema import AgentEvent
 
             hrisk = conf.get("hallucination_risk", "LOW")
 

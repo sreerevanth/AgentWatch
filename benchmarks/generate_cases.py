@@ -1,5 +1,6 @@
 import json
 import uuid
+from pathlib import Path
 from typing import Any
 
 from agentwatch.core.schema import AgentEvent, EventType, ExecutionStatus, ToolCallData
@@ -21,8 +22,6 @@ def create_event(
     )
     return event.model_dump_for_storage()
 
-
-from pathlib import Path
 
 OUTPUT_PATH = Path(__file__).parent / "test_cases.json"
 

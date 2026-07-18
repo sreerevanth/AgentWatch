@@ -13,7 +13,6 @@ import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -38,7 +37,6 @@ from sqlalchemy import text
 from agentwatch._version import __version__
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
 from agentwatch.api.auth import require_permission
-from agentwatch.api.entitlement import require_entitlement
 from agentwatch.api.middleware.rate_limiter import RateLimiter, RateLimitMiddleware
 from agentwatch.api.tenant_auth import get_tenant_store
 from agentwatch.core.config import get_cloud_config
@@ -57,7 +55,6 @@ from agentwatch.core.schema import (
     ToolCallData,
     ToolResultData,
 )
-
 from agentwatch.governance.compliance_reporter import ComplianceReporter
 from agentwatch.governance.engine import AuditEventType, GovernanceEngine
 from agentwatch.governance.gdpr import (
