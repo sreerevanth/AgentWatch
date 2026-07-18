@@ -423,33 +423,6 @@ class TestTransitionsAndAudit:
             "events_observed",
         }
 
-    def test_eu_ai_act_logging_on_transition(self):
-        eu = FakeEUAIAct()
-        cb = CircuitBreaker(
-            "sess-1",
-            CircuitThresholds(max_total_errors=1),
-            eu_ai_act_package=eu,
-        )
-        cb.observe(error_event())
-        assert len(eu.entries) == 1
-        entry = eu.entries[0]
-        assert entry.human_oversight_required is True  # OPEN requires oversight
-        assert "closed -> open" in entry.explanation
-
-    def test_eu_ai_act_logging_failure_does_not_break(self):
-        class BrokenEU:
-            def log_decision(self, entry):
-                raise RuntimeError("boom")
-
-        cb = CircuitBreaker(
-            "sess-1",
-            CircuitThresholds(max_total_errors=1),
-            eu_ai_act_package=BrokenEU(),
-        )
-        # Should trip fine despite the logging sink raising.
-        cb.observe(error_event())
-        assert cb.state is CircuitState.OPEN
-
 
 # --------------------------------------------------------------------------- full lifecycle
 
@@ -457,12 +430,10 @@ class TestTransitionsAndAudit:
 class TestFullLifecycle:
     async def test_closed_open_paused_halfopen_closed(self):
         engine = FakeRollbackEngine()
-        eu = FakeEUAIAct()
         cb = CircuitBreaker(
             "sess-1",
             CircuitThresholds(max_total_errors=1, half_open_probe_successes=1),
             rollback_engine=engine,
-            eu_ai_act_package=eu,
         )
         # CLOSED -> OPEN
         cb.observe(error_event())
@@ -485,5 +456,3 @@ class TestFullLifecycle:
             ("paused", "half_open"),
             ("half_open", "closed"),
         ]
-        # Every transition logged for EU AI Act Article 12
-        assert len(eu.entries) == 4

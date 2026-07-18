@@ -17,6 +17,25 @@ command: agentwatch compare
     param session_id_1 kind=TyperArgument type=text required=True default=None flags=session_id_1 help='ID of the first session to compare'
     param session_id_2 kind=TyperArgument type=text required=True default=None flags=session_id_2 help='ID of the second session to compare'
 
+command: agentwatch compliance
+    help: Compliance audit log export and reporting.
+    short_help: 
+
+command: agentwatch compliance export-csv
+    help: Export compliance audit log as CSV from the running API server.
+    short_help: 
+    param api_key kind=TyperOption type=text required=False default=None flags=--api-key help='API key for protected endpoints (or set AGENTWATCH_API_KEY).'
+    param api_url kind=TyperOption type=text required=False default='http://localhost:8000' flags=--api help=''
+    param include_allowed kind=TyperOption type=boolean required=False default=False flags=--include-allowed help='Include allowed actions (denials only by default)'
+    param output kind=TyperOption type=path required=False default='compliance-audit.csv' flags=--output,-o help='Output CSV file path'
+
+command: agentwatch compliance export-local
+    help: Export compliance audit log from a local JSONL file as CSV.
+    short_help: 
+    param audit_log kind=TyperOption type=path required=False default='data/audit-log.jsonl' flags=--audit-log help='Path to the persisted audit log JSONL file'
+    param include_allowed kind=TyperOption type=boolean required=False default=False flags=--include-allowed help='Include allowed actions (denials only by default)'
+    param output kind=TyperOption type=path required=False default='compliance-audit.csv' flags=--output,-o help='Output CSV file path'
+
 command: agentwatch cost
     help: AgentWatch FinOps. Report token usage and API spend across agents and frameworks.
     short_help: 

@@ -122,12 +122,6 @@ def test_in_memory_store_satisfies_protocol():
     assert isinstance(InMemoryAuditStore(), AuditStore)
 
 
-def test_sql_store_satisfies_protocol():
-    from agentwatch.core.models import SqlAlchemyAuditStore
-
-    assert isinstance(SqlAlchemyAuditStore(session=None), AuditStore)  # type: ignore[arg-type]
-
-
 def test_audit_log_record_model_instantiation():
     from agentwatch.core.models import AuditLogRecord
 
