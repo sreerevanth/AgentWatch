@@ -178,6 +178,47 @@ class GovernanceEngine:
         self._audit_path = audit_log_path
         self._entry_counter = 0
 
+        if self._audit_path:
+            self.load_from_disk()
+
+    def load_from_disk(self) -> int:
+        """Load persisted audit entries from the JSONL file into memory.
+
+        Returns the number of entries loaded.
+        """
+        if not self._audit_path or not self._audit_path.exists():
+            return 0
+
+        count = 0
+        try:
+            with open(self._audit_path, encoding="utf-8") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                        entry = AuditEntry(
+                            audit_id=data["audit_id"],
+                            timestamp=datetime.fromisoformat(data["timestamp"]),
+                            principal_id=data.get("principal_id"),
+                            event_type=AuditEventType(data["event_type"]),
+                            resource=data["resource"],
+                            action=data["action"],
+                            allowed=data["allowed"],
+                            session_id=data.get("session_id"),
+                            details=data.get("details", {}),
+                        )
+                        self._audit_log.append(entry)
+                        count += 1
+                    except (json.JSONDecodeError, KeyError, ValueError, TypeError) as exc:
+                        logger.warning("Skipping corrupt audit entry: %s", exc)
+        except OSError as exc:
+            logger.warning("Failed to read audit log from %s: %s", self._audit_path, exc)
+
+        logger.info("Loaded %d audit entries from %s", count, self._audit_path)
+        return count
+
     def register_principal(self, principal: Principal) -> None:
         self._principals[principal.principal_id] = principal
         logger.debug("Registered principal: %s (%s)", principal.name, principal.roles)

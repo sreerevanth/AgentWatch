@@ -7,16 +7,18 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import platform
 import sys
 import time
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import typer
 from rich import box
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -27,6 +29,8 @@ if TYPE_CHECKING:
     # type-only import keeps the annotation without a hard runtime import.
     import httpx
 
+    from agentwatch.core.policy_loader import CombinedVerdict
+    from agentwatch.core.schema import RiskLevel, ToolCallData
     from agentwatch.cost.reporting import CostReport
     from agentwatch.eval.runner import EvalReport
 
@@ -53,6 +57,15 @@ safety_app = typer.Typer(
     rich_markup_mode="rich",
     no_args_is_help=True,
 )
+
+policies_app = typer.Typer(
+    name="policies", help="Inspect the effective safety policy set.", no_args_is_help=True
+)
+config_app = typer.Typer(
+    name="config", help="Manage the local safety policy file.", no_args_is_help=True
+)
+safety_app.add_typer(policies_app, name="policies")
+safety_app.add_typer(config_app, name="config")
 
 cost_app = typer.Typer(
     name="cost",
@@ -127,7 +140,6 @@ def main_callback(
 
 def _start_repl_session():
     """Run an interactive REPL shell for the CLI."""
-    import os
     import shlex
 
     from rich.panel import Panel
@@ -162,9 +174,7 @@ def _start_repl_session():
                 break
 
             if cmd_lower in ("clear", "cls"):
-                os.system(  # noqa: S605, S607
-                    "cls" if os.name == "nt" else "clear"
-                )  # nosec
+                console.clear()
                 continue
 
             args = shlex.split(cmd_line)
@@ -348,7 +358,29 @@ def watch(
                     require_approval_on_medium=True,
                 )
             safety = SafetyEngine(policy=p)
-            safety.set_approval_callback(cli_approval_handler)
+
+            def cli_renderer(event, safety):
+                tool = event.tool_call
+                print("\n" + "=" * 60)
+                print("⚠️  AGENTWATCH SAFETY CHECK")
+                print("=" * 60)
+                print(f"Agent:      {event.agent_name or event.agent_id}")
+                print(f"Action:     {tool.tool_name if tool else 'unknown'}")
+                if tool and tool.raw_command:
+                    print(f"Command:    {tool.raw_command}")
+                if tool and tool.affected_resources:
+                    print(f"Resources:  {', '.join(tool.affected_resources)}")
+                print(f"Risk Level: {safety.risk_level.value.upper()}")
+                print(f"Risk Score: {safety.risk_score:.2f}")
+                print("Reasons:")
+                for r in safety.reasons:
+                    print(f"  • {r}")
+                print("=" * 60)
+
+            async def wrapped_handler(event, check_safety):
+                return await cli_approval_handler(event, check_safety, renderer=cli_renderer)
+
+            safety.set_approval_callback(wrapped_handler)
 
         adapter = ClaudeCodeAdapter(safety_engine=safety)
 
@@ -860,6 +892,7 @@ def safety(
     from rich.progress import Progress, SpinnerColumn, TextColumn
 
     from agentwatch.cli.animator import matrix_type_print
+    from agentwatch.core.policy_loader import PolicyOutcome
     from agentwatch.core.safety import RiskScorer
     from agentwatch.core.schema import ToolCallData
 
@@ -880,6 +913,12 @@ def safety(
         time.sleep(0.3)
 
     level, score, reasons, policies = scorer.score(tool)
+
+    # Overlay any local .agentwatch-safety.yml policy on top of the builtin verdict.
+    verdict = _local_policy_verdict(tool, level)
+    if verdict is not None and verdict.outcome is not PolicyOutcome.UNCHANGED:
+        level = verdict.effective_risk
+
     color = _risk_color(level.value)
 
     matrix_type_print("THREAT ANALYSIS COMPLETE", color="1;96m", delay=0.02)
@@ -907,6 +946,20 @@ def safety(
     else:
         details.append("[green][+] No heuristic violations detected.[/green]")
 
+    if verdict is not None and verdict.matched_label is not None:
+        label = escape(verdict.matched_label)
+        note = escape(verdict.note) if verdict.note else None
+        if verdict.outcome is PolicyOutcome.UNCHANGED:
+            if note:
+                details.append(f"[dim]Local policy ({label}): {note}[/dim]")
+        else:
+            details.append(
+                f"[bold magenta]LOCAL POLICY:[/bold magenta] "
+                f"{verdict.outcome.value.upper()} (rule: {label})"
+            )
+            if note:
+                details.append(f"[dim]{note}[/dim]")
+
     details.append("")
     details.append("[bold cyan]WHAT-IF SIMULATION:[/bold cyan]")
     details.append(f"[italic]{what_if}[/italic]")
@@ -918,6 +971,107 @@ def safety(
             title=f"[{color}]Security Report[/{color}]",
             padding=(1, 2),
         )
+    )
+
+
+def _local_policy_verdict(tool: ToolCallData, risk_level: RiskLevel) -> CombinedVerdict | None:
+    """Evaluate a command against the local policy file, if one is present."""
+    from agentwatch.core.policy_loader import combine, discover_policy_file, load_policy_engine
+    from agentwatch.core.schema import AgentEvent, EventType
+
+    path = discover_policy_file()
+    if path is None:
+        return None
+    try:
+        engine = load_policy_engine(path)
+    except (ValueError, OSError) as exc:
+        console.print(f"[yellow]Ignoring invalid policy file {path}: {escape(str(exc))}[/yellow]")
+        return None
+    event = AgentEvent(
+        session_id="cli", agent_id="cli", event_type=EventType.TOOL_CALL, tool_call=tool
+    )
+    return combine(risk_level, engine.evaluate(event))
+
+
+@policies_app.command(name="list")
+def safety_policies_list() -> None:
+    """
+    [bold]List[/bold] the effective safety policy set: builtin patterns + local rules.
+    """
+    from rich import box
+
+    from agentwatch.core.policy_loader import discover_policy_file, load_policy_engine
+    from agentwatch.core.safety import BUILTIN_RISK_PATTERNS
+
+    builtin = Table(
+        title="[bold green]B U I L T I N   P A T T E R N S[/bold green]",
+        box=box.DOUBLE_EDGE,
+        border_style="bold cyan",
+    )
+    builtin.add_column("Policy ID", style="bold cyan")
+    builtin.add_column("Risk", style="yellow")
+    builtin.add_column("Blocks", justify="center")
+    builtin.add_column("Reason", style="dim white")
+    for pat in BUILTIN_RISK_PATTERNS:
+        builtin.add_row(
+            pat.policy_id,
+            pat.risk_level.value.upper(),
+            "yes" if pat.block_by_default else "-",
+            pat.reason,
+        )
+    console.print(builtin)
+
+    path = discover_policy_file()
+    if path is None:
+        console.print(
+            "[dim]No local policy file found (checked ./.agentwatch-safety.yml and "
+            "~/.agentwatch/.agentwatch-safety.yml). Run `agentwatch safety config generate`.[/dim]"
+        )
+        return
+    try:
+        engine = load_policy_engine(path)
+    except (ValueError, OSError) as exc:
+        console.print(f"[red]Invalid policy file {path}: {escape(str(exc))}[/red]")
+        raise typer.Exit(1)
+
+    custom = Table(
+        title=f"[bold green]L O C A L   R U L E S[/bold green]  [dim]({escape(str(path))})[/dim]",
+        box=box.DOUBLE_EDGE,
+        border_style="bold magenta",
+    )
+    custom.add_column("Label", style="bold magenta")
+    custom.add_column("Action", style="yellow")
+    custom.add_column("Condition", style="dim white")
+    for rule in engine.rules:
+        custom.add_row(escape(rule.label or "-"), rule.action.value, escape(rule.condition))
+    console.print(custom)
+    if not engine.rules:
+        console.print("[dim]The policy file has no rules.[/dim]")
+
+
+@config_app.command(name="generate")
+def safety_config_generate(
+    path: Path = typer.Option(
+        Path(".agentwatch-safety.yml"), "--path", help="Where to write the policy file."
+    ),
+    force: bool = typer.Option(False, "--force", help="Overwrite an existing file."),
+) -> None:
+    """
+    [bold]Generate[/bold] a starter .agentwatch-safety.yml policy file.
+    """
+    from agentwatch.core.policy_loader import DEFAULT_POLICY_YAML
+
+    if path.exists() and not force:
+        console.print(
+            f"[yellow]{escape(str(path))} already exists. Use --force to overwrite.[/yellow]"
+        )
+        raise typer.Exit(1)
+    path.write_text(DEFAULT_POLICY_YAML, encoding="utf-8")
+    console.print(
+        f"[green]Wrote safety policy scaffold to[/green] [bold]{escape(str(path))}[/bold]"
+    )
+    console.print(
+        "[dim]Edit the rules, then run `agentwatch safety policies list` to review them.[/dim]"
     )
 
 
@@ -1207,7 +1361,6 @@ def top(
     async def _run() -> None:
         try:
             import asyncio
-            from typing import Any
 
             import httpx
             from rich.live import Live
@@ -1905,6 +2058,12 @@ def _print_live_event(event) -> None:
         console.print(f"[dim]{ts}[/dim] {icon} [bold]{name}[/bold]{risk_str}{status_str}")
         if cmd:
             console.print(f"         [dim]{cmd}[/dim]")
+        if event.is_blocked:
+            from agentwatch.reasoning.auditor import ReasoningAuditor
+
+            signals = ReasoningAuditor.detect_risk_signals(event)
+            if signals:
+                console.print(f"         [red]⚠ risk signals: {', '.join(signals)}[/red]")
 
     elif event.event_type == EventType.SAFETY_BLOCK:
         console.print(f"[dim]{ts}[/dim] {icon} [bold red]SAFETY BLOCK[/bold red]")
@@ -2187,6 +2346,108 @@ def session_prune(
 
 
 # ─────────────────────────────────────────────
+# compliance commands
+# ---------------------------------------------
+
+
+compliance_app = typer.Typer(
+    name="compliance",
+    help="Compliance audit log export and reporting.",
+    no_args_is_help=True,
+)
+app.add_typer(compliance_app)
+
+
+@compliance_app.command(name="export-csv")
+def compliance_export_csv(
+    output: Path = typer.Option(
+        Path("compliance-audit.csv"), "--output", "-o", help="Output CSV file path"
+    ),
+    include_allowed: bool = typer.Option(
+        False,
+        "--include-allowed",
+        help="Include allowed actions (denials only by default)",
+    ),
+    api_url: str = typer.Option("http://localhost:8000", "--api"),
+    api_key: str | None = API_KEY_OPTION,
+) -> None:
+    """Export compliance audit log as CSV from the running API server."""
+
+    async def _run() -> None:
+        try:
+            import httpx
+        except ImportError:
+            console.print("[red]httpx not installed. Run: pip install httpx[/red]")
+            raise typer.Exit(1)
+
+        async with httpx.AsyncClient() as client:
+            try:
+                params: dict[str, Any] = {"format": "csv"}
+                if include_allowed:
+                    params["include_allowed"] = "true"
+                resp = await client.get(
+                    f"{api_url}/api/v1/governance/compliance-report",
+                    headers=_api_headers(api_key),
+                    params=params,
+                    timeout=10.0,
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                _handle_http_status_error(exc, api_url)
+            except httpx.HTTPError as exc:
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
+                raise typer.Exit(1)
+
+        with open(output, "w", encoding="utf-8", newline="") as f:
+            f.write(resp.text)
+        console.print(f"[green]{output} created successfully[/green]")
+
+    asyncio.run(_run())
+
+
+_DEFAULT_AUDIT_LOG_PATH = Path(os.getenv("AGENTWATCH_AUDIT_LOG_PATH", "data/audit-log.jsonl"))
+
+
+@compliance_app.command(name="export-local")
+def compliance_export_local(
+    output: Path = typer.Option(
+        Path("compliance-audit.csv"), "--output", "-o", help="Output CSV file path"
+    ),
+    include_allowed: bool = typer.Option(
+        False,
+        "--include-allowed",
+        help="Include allowed actions (denials only by default)",
+    ),
+    audit_log: Path = typer.Option(
+        _DEFAULT_AUDIT_LOG_PATH,
+        "--audit-log",
+        help="Path to the persisted audit log JSONL file",
+    ),
+) -> None:
+    """Export compliance audit log from a local JSONL file as CSV."""
+    from agentwatch.governance.compliance_reporter import ComplianceReporter
+    from agentwatch.governance.engine import GovernanceEngine
+
+    engine = GovernanceEngine(audit_log_path=audit_log)
+    loaded = len(engine._audit_log)
+    if loaded == 0:
+        console.print(
+            f"[yellow]No audit entries found in {audit_log}. "
+            "The server persists audit data when AGENTWATCH_AUDIT_LOG_PATH is set.[/yellow]"
+        )
+        return
+
+    reporter = ComplianceReporter(engine)
+    csv_content = reporter.generate_csv(include_allowed=include_allowed)
+
+    with open(output, "w", encoding="utf-8", newline="") as f:
+        f.write(csv_content)
+    # Count actual exported rows (subtract 1 for header)
+    exported = max(0, csv_content.count("\n") - 1)
+    console.print(f"[green]{output} created successfully ({exported} entries exported)[/green]")
+
+
+# ─────────────────────────────────────────────
 # Version
 # ---------------------------------------------
 
@@ -2262,3 +2523,66 @@ def doctor() -> None:
         table.add_row("Docker", "[red]Not installed[/red]")
 
     console.print(table)
+
+
+# ─────────────────────────────────────────────
+# export-csv command
+# ─────────────────────────────────────────────
+
+
+@session_app.command(name="export-csv")
+def export_csv(
+    session_id: str = typer.Argument(..., help="ID of the session to export"),
+    out: str = typer.Option("report.csv", "--out", help="Custom output file path"),
+    api_url: str = typer.Option("http://localhost:8000", "--api"),
+    api_key: str | None = API_KEY_OPTION,
+) -> None:
+    """[bold]Export-csv[/bold] a session replay to a CSV file."""
+
+    async def _run() -> None:
+        try:
+            import csv
+
+            import httpx
+        except ImportError:
+            console.print("[red]httpx not installed.[/red]")
+            raise typer.Exit(1)
+
+        async with httpx.AsyncClient() as client:
+            try:
+                resp = await client.get(
+                    f"{api_url}/api/v1/sessions/{session_id}/replay",
+                    headers=_api_headers(api_key),
+                    timeout=10.0,
+                )
+                if resp.status_code == 404:
+                    console.print(f"[red]Session {session_id} not found.[/red]")
+                    raise typer.Exit(1)
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                _handle_http_status_error(exc, api_url)
+            except httpx.HTTPError as exc:
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
+                raise typer.Exit(1)
+
+        try:
+            data = resp.json()
+            steps = data.get("steps", [])
+        except (ValueError, AttributeError) as exc:
+            console.print(f"[red]Unexpected API response: {exc}[/red]")
+            raise typer.Exit(1)
+
+        try:
+            with open(out, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow(["step", "action", "status"])
+                for i, step in enumerate(steps):
+                    writer.writerow([i, step.get("action", ""), step.get("status", "")])
+            console.print(f"[green]{out} created successfully[/green]")
+        except PermissionError:
+            console.print(
+                f"[red]Cannot write to {out}. Please ensure the file is closed and try again.[/red]"
+            )
+            raise typer.Exit(1)
+
+    asyncio.run(_run())

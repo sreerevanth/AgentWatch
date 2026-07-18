@@ -57,3 +57,11 @@ graph TD
    - If **BLOCKED**, an `AgentWatchBlockedError` is raised, stopping the threat before damage occurs.
 4. **Publishing**: An `AGENT_START` or `TOOL_CALL` event is pushed to the Event Bus.
 5. **Consumption**: Trace Collector updates the active session; alerting engine posts to Slack/PagerDuty.
+
+---
+
+## Detailed Guides
+- [Detailed Architecture Internals](architecture_detailed.md)
+- [Developer Setup Manual](developer_setup.md)
+- [Custom Adapters Tutorial](custom_adapters_tutorial.md)
+- [Extended Getting Started Guide](getting_started_extended.md)

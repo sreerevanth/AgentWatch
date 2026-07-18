@@ -70,5 +70,42 @@ def test_sync_vs_async_parity():
     )
 
 
+def test_tool_parameter_scope_constraints():
+    """
+    Test feature [ELUSOC] from Issue #364:
+    Ensures policy DSL blocks tool calls if input arguments violate threshold parameters.
+    """
+    # 1. Define a YAML rule that restricts high-value transfers
+    dsl = """
+    rules:
+      - if: tool == "request_funds" and args.amount > 500
+        then: block
+        label: "high_value_funds_restriction"
+    """
+    policy_engine = PolicyEngine.from_yaml(dsl)
+    safety_engine = SafetyEngine(policy_engine=policy_engine)
+
+    # 2. Test within safe parameters (amount = 250, allowed)
+    allowed_tool_call = ToolCallData(
+        tool_name="request_funds",
+        raw_command="",
+        arguments={"amount": 250},  # Natively parsed by policy_dsl via args.amount
+    )
+    blocked_allow, reasons_allow = safety_engine.check_tool_call_sync(allowed_tool_call)
+
+    assert blocked_allow is False
+    assert len(reasons_allow) == 0
+
+    # 3. Test outside safe parameters (amount = 600, blocked)
+    blocked_tool_call = ToolCallData(
+        tool_name="request_funds", raw_command="", arguments={"amount": 600}
+    )
+    blocked_deny, reasons_deny = safety_engine.check_tool_call_sync(blocked_tool_call)
+
+    assert blocked_deny is True
+    assert "rule_matched:high_value_funds_restriction" in reasons_deny
+
+
 if __name__ == "__main__":
     test_sync_vs_async_parity()
+    test_tool_parameter_scope_constraints()

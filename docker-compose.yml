@@ -62,7 +62,7 @@ services:
   frontend:
     build:
       context: ./frontend
-      dockerfile: ../Dockerfile.frontend
+      dockerfile: Dockerfile
     environment:
       AGENTWATCH_API_URL: http://api:8000
       NEXT_PUBLIC_API_URL: /api/v1
