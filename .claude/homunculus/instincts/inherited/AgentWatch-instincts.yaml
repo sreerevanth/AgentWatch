@@ -1,0 +1,404 @@
+# Instincts generated from https://github.com/sreerevanth/AgentWatch
+# Generated: 2026-07-18T16:00:55.412Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: AgentWatch-commit-conventional
+trigger: "when writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Commit Conventional
+
+## Action
+
+Use conventional commit format with prefixes: feat, fix, chore
+
+## Evidence
+
+- 3 commits analyzed
+- Detected conventional commit pattern
+- Examples: feat: build reasoning auditor benchmark suite, fix: address coderabbit review feedback
+
+---
+id: AgentWatch-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Commit Length
+
+## Action
+
+Keep commit messages concise (~49 characters)
+
+## Evidence
+
+- Average commit message length: 49 chars
+- Based on 3 commits
+
+---
+id: AgentWatch-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Naming Files
+
+## Action
+
+Use snake_case naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: snake_case
+
+---
+id: AgentWatch-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: AgentWatch-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: AgentWatch-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: AgentWatch-test-naming
+trigger: "when creating a test file"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Test Naming
+
+## Action
+
+Name test files using the pattern: *.test.ts
+
+## Evidence
+
+- File pattern: *.test.ts
+- Consistent across test files
+
+---
+id: AgentWatch-workflow-benchmark-suite-development-and-iteration
+trigger: "when doing benchmark suite development and iteration"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Workflow Benchmark Suite Development And Iteration
+
+## Action
+
+Follow the benchmark-suite-development-and-iteration workflow:
+1. Edit or add Python scripts for generating or running benchmarks (generate_cases.py, run_eval.py)
+2. Update or create test case files (test_cases.json)
+3. Update benchmark results (results/eval_latest.json)
+4. Update documentation (benchmarks/README.md)
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: benchmarks/generate_cases.py, benchmarks/run_eval.py, benchmarks/test_cases.json
+
+---
+id: agentwatch-instinct-file-naming
+trigger: "When creating or renaming a source code file"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct File Naming
+
+## Action
+
+Use snake_case for file names
+
+## Evidence
+
+- Pattern in namingConventions.files: snake_case
+
+---
+id: agentwatch-instinct-function-naming
+trigger: "When defining a function"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Function Naming
+
+## Action
+
+Use camelCase for function names
+
+## Evidence
+
+- Pattern in namingConventions.functions: camelCase
+
+---
+id: agentwatch-instinct-class-naming
+trigger: "When defining a class"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Class Naming
+
+## Action
+
+Use PascalCase for class names
+
+## Evidence
+
+- Pattern in namingConventions.classes: PascalCase
+
+---
+id: agentwatch-instinct-constant-naming
+trigger: "When defining a constant"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Constant Naming
+
+## Action
+
+Use SCREAMING_SNAKE_CASE for constant names
+
+## Evidence
+
+- Pattern in namingConventions.constants: SCREAMING_SNAKE_CASE
+
+---
+id: agentwatch-instinct-import-style
+trigger: "When importing modules in Python code"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Import Style
+
+## Action
+
+Use relative imports
+
+## Evidence
+
+- Pattern in importStyle: relative
+
+---
+id: agentwatch-instinct-export-style
+trigger: "When exporting functions or classes"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Export Style
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in exportStyle: named
+
+---
+id: agentwatch-instinct-test-file-pattern
+trigger: "When creating a test file"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Test File Pattern
+
+## Action
+
+Name the file with the pattern *.test.ts
+
+## Evidence
+
+- Pattern in testing.filePattern: *.test.ts
+
+---
+id: agentwatch-instinct-test-type
+trigger: "When writing tests"
+confidence: 0.7
+domain: testing
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Test Type
+
+## Action
+
+Write unit tests
+
+## Evidence
+
+- Pattern in testing.testTypes: unit
+
+---
+id: agentwatch-instinct-test-coverage-config
+trigger: "When configuring tests"
+confidence: 0.7
+domain: testing
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Test Coverage Config
+
+## Action
+
+Ensure test coverage configuration is present
+
+## Evidence
+
+- Pattern in testing.coverageConfig: true
+
+---
+id: agentwatch-instinct-git-commit-format
+trigger: "When writing a commit message"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Git Commit Format
+
+## Action
+
+Use conventional commit prefixes: feat, fix, or chore
+
+## Evidence
+
+- Pattern in commits.prefixes: feat, fix, chore
+- Seen in commit: 'feat: build reasoning auditor benchmark suite'
+- Seen in commit: 'fix: address coderabbit review feedback'
+- Seen in commit: 'chore: massive brutalist purge of speculative features and bloat'
+
+---
+id: agentwatch-instinct-git-commit-length
+trigger: "When writing a commit message"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Git Commit Length
+
+## Action
+
+Keep commit message length around 49 characters on average
+
+## Evidence
+
+- Pattern in commits.averageLength: 49
+
+---
+id: agentwatch-instinct-benchmark-suite-workflow
+trigger: "When someone wants to create or update a benchmark suite for reasoning auditor"
+confidence: 0.95
+domain: workflow
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Benchmark Suite Workflow
+
+## Action
+
+Edit or add Python scripts (generate_cases.py, run_eval.py), update or create test case files (test_cases.json), update benchmark results (results/eval_latest.json), and update documentation (benchmarks/README.md)
+
+## Evidence
+
+- Workflow: benchmark-suite-development-and-iteration
+- Pattern in workflow files: benchmarks/generate_cases.py, benchmarks/run_eval.py, benchmarks/test_cases.json, benchmarks/results/eval_latest.json, benchmarks/README.md
+
