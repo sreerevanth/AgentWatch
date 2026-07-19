@@ -55,7 +55,6 @@ from agentwatch.core.schema import (
     ToolCallData,
     ToolResultData,
 )
-
 from agentwatch.governance.engine import AuditEventType, GovernanceEngine
 from agentwatch.governance.gdpr import (
     CrossSessionErasureService,

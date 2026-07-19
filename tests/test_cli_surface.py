@@ -48,6 +48,12 @@ def _params(cmd: object) -> list[str]:
     for param in getattr(cmd, "params", []):
         kind = type(param).__name__
         type_name = getattr(getattr(param, "type", None), "name", "?")
+        if type_name == "str":
+            type_name = "text"
+        elif type_name == "int":
+            type_name = "integer"
+        elif type_name == "bool":
+            type_name = "boolean"
         default = param.default() if callable(param.default) else param.default
         # repr() of a pathlib.Path embeds the concrete class — PosixPath on Linux, WindowsPath on
         # Windows — so a Path default would make the golden file platform-specific even though the

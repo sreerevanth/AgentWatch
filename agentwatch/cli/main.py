@@ -31,7 +31,6 @@ if TYPE_CHECKING:
 
     from agentwatch.core.policy_loader import CombinedVerdict
     from agentwatch.core.schema import RiskLevel, ToolCallData
-
     from agentwatch.eval.runner import EvalReport
 
 app = typer.Typer(
@@ -1736,7 +1735,6 @@ def _license_public_key() -> str | None:
     ``AGENTWATCH_LICENSE_PUBLIC_KEY_FILE`` (path to a PEM file). Returns ``None``
     when no key is configured, in which case the CLI behaves as free tier.
     """
-    import os
     import sys
 
     inline = os.environ.get("AGENTWATCH_LICENSE_PUBLIC_KEY")
@@ -2253,7 +2251,6 @@ if __name__ == "__main__":
 @app.command(name="doctor")
 def doctor() -> None:
     """[bold]Doctor[/bold]: Check AgentWatch installation health."""
-    import os
     import shutil
     import subprocess  # nosec B404
 
