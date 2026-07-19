@@ -355,9 +355,6 @@ def test_sandbox_allows_benign_command():
     assert not result.blocked
 
 
-
-
-
 @pytest.mark.asyncio
 async def test_safety_engine_auto_blocks_if_no_callback_registered():
     # Setup a policy that requires approval on medium risk

@@ -386,7 +386,6 @@ async def demo_confidence():
         print(f"    {dim(line)}")
 
 
-
 # ─────────────────────────────────────────────
 # Main
 # ─────────────────────────────────────────────
@@ -418,7 +417,6 @@ async def run_demo():
     await demo_safety()
     await demo_replay()
     await demo_confidence()
-
 
     print(f"\n{bold(green('✓ All demos complete'))}\n")
     print("Next steps:")

@@ -17,7 +17,7 @@ from uuid import uuid4
 
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2
+from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +36,7 @@ class APIKeyEncryption:
     @staticmethod
     def _derive_key(master_key: str, salt: bytes = b"agentwatch-api") -> bytes:
         """Derive 32-byte encryption key from master key using PBKDF2."""
-        kdf = PBKDF2(
+        kdf = PBKDF2HMAC(
             algorithm=hashes.SHA256(),
             length=32,
             salt=salt,

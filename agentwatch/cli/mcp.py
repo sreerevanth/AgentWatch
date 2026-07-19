@@ -24,7 +24,7 @@ def mcp_server() -> None:
         raise typer.Exit(1)
 
     from agentwatch.core.safety import SafetyEngine
-    from agentwatch.cost.tracker import CostTracker
+
     from agentwatch.replay.engine import ReplayEngine
     from agentwatch.scoring.confidence import ConfidenceScorer
     from agentwatch.tracing.collector import TraceCollector
@@ -33,7 +33,7 @@ def mcp_server() -> None:
     replay_engine = ReplayEngine()
     safety_engine = SafetyEngine()
     confidence_scorer = ConfidenceScorer()
-    cost_tracker = CostTracker()
+
 
     server = AgentWatchMCPServer()
 

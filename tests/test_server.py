@@ -151,7 +151,6 @@ def test_health_response_structure(client, mock_db_session, mock_redis_healthy):
         "traces",
         "event_bus",
         "safety",
-        "cost",
         "database",
         "redis",
     }
@@ -194,8 +193,8 @@ def test_publish_event_malformed(client):
 
 def test_get_governance_report(client):
     response = client.get("/api/v1/governance/compliance-report")
-    assert response.status_code == 200
-    assert "generated_at" in response.json()
+    assert response.status_code == 501
+    assert "Compliance module was removed" in response.text
 
 
 # ---------------------------------------------------------------------------

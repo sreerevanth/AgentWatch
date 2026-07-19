@@ -108,9 +108,6 @@ def test_machine_bound_token_checked_against_header(monkeypatch, keypair):
     assert exc.value.status_code == 402
 
 
-
-
-
 def test_bearer_token_model_spoofed_machine_id_succeeds(monkeypatch, keypair):
     """
     Verify that an entitlement token bound to a specific machine can be verified

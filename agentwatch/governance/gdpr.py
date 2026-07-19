@@ -1,4 +1,4 @@
-﻿"""
+"""
 CMP-001 â€” GDPR Data Handling.
 
 - PII detection across all traces

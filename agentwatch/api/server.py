@@ -55,7 +55,7 @@ from agentwatch.core.schema import (
     ToolCallData,
     ToolResultData,
 )
-from agentwatch.governance.compliance_reporter import ComplianceReporter
+
 from agentwatch.governance.engine import AuditEventType, GovernanceEngine
 from agentwatch.governance.gdpr import (
     CrossSessionErasureService,
@@ -255,7 +255,7 @@ _rollback_engine = RollbackEngine()
 _safety_engine = SafetyEngine()
 _confidence_scorer = ConfidenceScorer()
 _governance = GovernanceEngine()
-_compliance_reporter = ComplianceReporter(_governance, _collector)
+
 _alerting = AlertingEngine(
     AlertingConfig(
         slack_webhook_url=os.getenv("SLACK_WEBHOOK_URL"),
@@ -766,7 +766,6 @@ async def health(request: Request) -> JSONResponse:
         "traces": _collector.get_stats(),
         "event_bus": get_event_bus().stats(),
         "safety": _safety_engine.stats(),
-        "cost": {},
     }
     degraded = False
 
@@ -997,10 +996,6 @@ async def get_confidence(
     )
 
 
-
-
-
-
 @app.get("/api/v1/sessions/{session_id}/replay")
 async def get_replay(session_id: str, _auth: None = Depends(_require_api_key)) -> dict[str, Any]:
     events = _collector.get_events(session_id, limit=5000)
@@ -1011,9 +1006,6 @@ async def get_replay(session_id: str, _auth: None = Depends(_require_api_key)) -
     replay = _replay_engine.load_from_events(trace.session, events)
     d = replay.to_dict()
     return d
-
-
-
 
 
 @app.get("/api/v1/sessions/{session_id}/checkpoints")
@@ -1249,12 +1241,7 @@ async def compliance_report(
     format: str = Query("json", alias="format"),
     include_allowed: bool = Query(False),
 ):
-    if format == "csv":
-        from fastapi.responses import PlainTextResponse
-
-        csv_content = _compliance_reporter.generate_csv(include_allowed=include_allowed)
-        return PlainTextResponse(csv_content, media_type="text/csv")
-    return _compliance_reporter.generate().to_dict()
+    raise HTTPException(status_code=501, detail="Compliance module was removed in Brutalist Purge")
 
 
 @app.post("/api/v1/entitlement/usage")
@@ -1280,18 +1267,13 @@ async def report_entitlement_usage(
     }
 
 
-
-
 @app.get("/api/v1/compliance/audit-log")
 async def compliance_audit_log_csv(
     _auth: None = Depends(_require_api_key),
     format: str = Query("csv", alias="format"),
     include_allowed: bool = Query(False),
 ):
-    from fastapi.responses import PlainTextResponse
-
-    csv_content = _compliance_reporter.generate_csv(include_allowed=include_allowed)
-    return PlainTextResponse(csv_content, media_type="text/csv")
+    raise HTTPException(status_code=501, detail="Compliance module was removed in Brutalist Purge")
 
 
 @app.post("/api/v1/demo/seed")
@@ -1614,55 +1596,6 @@ class _SessionErasureTarget:
             raise RuntimeError(f"sessions_and_events.erase_matching failed: {exc}") from exc
 
 
-class _MemoryErasureTarget:
-    """Best-effort ErasureTarget for memory/causal backends that may not be wired.
-
-    When the optional memory imports succeed the target delegates to the
-    in-memory stores; otherwise it raises a scoped RuntimeError so the
-    CrossSessionErasureService records the missing backend as a per-target
-    failure rather than silently reporting zero matches.
-    """
-
-    name = "memory_and_causal"
-
-    def __init__(self, tenant_id: str | None = None) -> None:
-        self._tenant_id = tenant_id
-
-    async def count_matching(self, identifier: str, scope: ErasureScope) -> int:
-        try:
-            from agentwatch.memory.governance import list_memory_entries
-        except Exception as exc:  # noqa: BLE001 — surfaced via ErasureTargetResult
-            raise RuntimeError(
-                f"memory_and_causal backend unavailable: {exc}"
-            ) from exc
-        items = await list_memory_entries()
-        return sum(
-            1
-            for entry in items
-            if identifier in (entry.get("user_id", "") or "")
-            and (
-                self._tenant_id is None
-                or entry.get("tenant_id") == self._tenant_id
-            )
-        )
-
-    async def erase_matching(self, identifier: str, scope: ErasureScope) -> int:
-        try:
-            from agentwatch.memory.governance import drop_memory_entries
-        except Exception as exc:  # noqa: BLE001 — surfaced via ErasureTargetResult
-            raise RuntimeError(
-                f"memory_and_causal backend unavailable: {exc}"
-            ) from exc
-        try:
-            removed = await drop_memory_entries(
-                identifier=identifier,
-                tenant_id=self._tenant_id,
-            )
-        except TypeError:
-            removed = await drop_memory_entries(identifier)
-        return int(removed)
-
-
 async def _build_erasure_service(
     tenant_id: str | None = None,
 ) -> CrossSessionErasureService:
@@ -1673,10 +1606,6 @@ async def _build_erasure_service(
         logger.warning(
             "Database session factory is not initialised; portability-and-events target omitted from erasure service."
         )
-    try:
-        targets.append(_MemoryErasureTarget(tenant_id=tenant_id))
-    except Exception as exc:  # noqa: BLE001 — surfaced via ErasureTargetResult
-        logger.debug("Memory target will register as failure on first call: %s", exc)
     if not targets:
         raise RuntimeError(
             "No erasure targets are available; refusing to sign a receipt for a "

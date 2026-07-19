@@ -63,5 +63,3 @@ def test_circuit_breaker_transitions(mock_sleep, mock_config):
 
         metrics = router.get_metrics()
         assert metrics["providers"]["gpt-4o"]["state"] == "OPEN"
-
-

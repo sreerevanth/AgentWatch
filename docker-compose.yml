@@ -32,7 +32,7 @@ services:
       context: .
       dockerfile: Dockerfile.api
     environment:
-      DATABASE_URL: postgres://agentwatch:agentwatch@postgres:5432/agentwatch
+      DATABASE_URL: postgresql+asyncpg://agentwatch:agentwatch@postgres:5432/agentwatch
       AGENTWATCH_ENV: production
     ports:
       - "8000:8000"
@@ -52,7 +52,9 @@ services:
       dockerfile: Dockerfile.api
     command: ["celery", "-A", "agentwatch.tasks.celery_app", "worker", "--loglevel=info"]
     environment:
-      DATABASE_URL: postgres://agentwatch:agentwatch@postgres:5432/agentwatch
+      DATABASE_URL: postgresql+asyncpg://agentwatch:agentwatch@postgres:5432/agentwatch
+      CELERY_BROKER_URL: redis://redis:6379/0
+      REDIS_URL: redis://redis:6379/0
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,7 +67,7 @@ services:
       dockerfile: Dockerfile
     environment:
       AGENTWATCH_API_URL: http://api:8000
-      NEXT_PUBLIC_API_URL: /api/v1
+      NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
     ports:
       - "3000:3000"
     depends_on:

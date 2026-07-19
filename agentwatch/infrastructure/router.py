@@ -112,8 +112,6 @@ class ModelRouter:
 
                 self.routing_decisions.append({"model": model, "reason": "success", "index": i})
 
-
-
                 return res
 
             except Exception as e:

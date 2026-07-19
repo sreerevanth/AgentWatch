@@ -17,44 +17,6 @@ command: agentwatch compare
     param session_id_1 kind=TyperArgument type=text required=True default=None flags=session_id_1 help='ID of the first session to compare'
     param session_id_2 kind=TyperArgument type=text required=True default=None flags=session_id_2 help='ID of the second session to compare'
 
-command: agentwatch compliance
-    help: Compliance audit log export and reporting.
-    short_help: 
-
-command: agentwatch compliance export-csv
-    help: Export compliance audit log as CSV from the running API server.
-    short_help: 
-    param api_key kind=TyperOption type=text required=False default=None flags=--api-key help='API key for protected endpoints (or set AGENTWATCH_API_KEY).'
-    param api_url kind=TyperOption type=text required=False default='http://localhost:8000' flags=--api help=''
-    param include_allowed kind=TyperOption type=boolean required=False default=False flags=--include-allowed help='Include allowed actions (denials only by default)'
-    param output kind=TyperOption type=path required=False default='compliance-audit.csv' flags=--output,-o help='Output CSV file path'
-
-command: agentwatch compliance export-local
-    help: Export compliance audit log from a local JSONL file as CSV.
-    short_help: 
-    param audit_log kind=TyperOption type=path required=False default='data/audit-log.jsonl' flags=--audit-log help='Path to the persisted audit log JSONL file'
-    param include_allowed kind=TyperOption type=boolean required=False default=False flags=--include-allowed help='Include allowed actions (denials only by default)'
-    param output kind=TyperOption type=path required=False default='compliance-audit.csv' flags=--output,-o help='Output CSV file path'
-
-command: agentwatch cost
-    help: AgentWatch FinOps. Report token usage and API spend across agents and frameworks.
-    short_help: 
-
-command: agentwatch cost report
-    help: [bold]Report[/bold] token usage, USD cost, and cost-per-successful-goal.
-
-Aggregates recent sessions from the AgentWatch API over the last [b]--days[/b],
-grouped by [b]--group-by[/b].
-
-[b]Example Usage:[/b]
-[dim]python -m agentwatch.cli.main cost report --days 30 --group-by framework[/dim]
-    short_help: 
-    param api_key kind=TyperOption type=text required=False default=None flags=--api-key help='API key for protected endpoints (or set AGENTWATCH_API_KEY).'
-    param api_url kind=TyperOption type=text required=False default='http://localhost:8000' flags=--api help=''
-    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Emit JSON instead of a table.'
-    param days kind=TyperOption type=integer required=False default=30 flags=--days help='Reporting window in days (must be >= 1).'
-    param group_by kind=TyperOption type=text required=False default='framework' flags=--group-by help='Group by: framework, agent, or status.'
-
 command: agentwatch doctor
     help: [bold]Doctor[/bold]: Check AgentWatch installation health.
     short_help: 
@@ -151,14 +113,6 @@ command: agentwatch session export
     param api_url kind=TyperOption type=text required=False default='http://localhost:8000' flags=--api help=''
     param format kind=TyperOption type=choice required=False default=<ExportFormat.json: 'json'> flags=--format help='Export format: json or md'
     param output kind=TyperOption type=path required=False default=None flags=--output,-o help='Custom output file path'
-    param session_id kind=TyperArgument type=text required=True default=None flags=session_id help='ID of the session to export'
-
-command: agentwatch session export-csv
-    help: [bold]Export-csv[/bold] a session replay to a CSV file.
-    short_help: 
-    param api_key kind=TyperOption type=text required=False default=None flags=--api-key help='API key for protected endpoints (or set AGENTWATCH_API_KEY).'
-    param api_url kind=TyperOption type=text required=False default='http://localhost:8000' flags=--api help=''
-    param out kind=TyperOption type=text required=False default='report.csv' flags=--out help='Custom output file path'
     param session_id kind=TyperArgument type=text required=True default=None flags=session_id help='ID of the session to export'
 
 command: agentwatch session list
