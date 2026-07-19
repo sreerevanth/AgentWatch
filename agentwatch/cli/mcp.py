@@ -24,7 +24,6 @@ def mcp_server() -> None:
         raise typer.Exit(1)
 
     from agentwatch.core.safety import SafetyEngine
-
     from agentwatch.replay.engine import ReplayEngine
     from agentwatch.scoring.confidence import ConfidenceScorer
     from agentwatch.tracing.collector import TraceCollector
@@ -72,34 +71,12 @@ def mcp_server() -> None:
         sessions = collector.list_sessions(limit=50)
         return [s.model_dump(mode="json") for s in sessions]
 
-    def _cost(sid: str) -> dict:
-        budget = cost_tracker.get_session(sid)
-        if not budget:
-            events = collector.get_events(sid, limit=5000)
-            if not events:
-                raise ValueError(f"Session {sid} not found")
-            for event in events:
-                cost_tracker.ingest_event(event)
-            budget = cost_tracker.get_session(sid)
-        if budget:
-            return budget.to_dict()
-        budget_dict = {
-            "session_id": sid,
-            "usd_budget": 0.0,
-            "tokens_used": 0,
-            "usd_used": 0.0,
-            "exceeded": False,
-            "warnings": [],
-        }
-        budget_dict["token_budget"] = 0
-        return budget_dict
 
     server.confidence_provider = _confidence
     server.memory_provider = _memory
     server.replay_provider = _replay
     server.safety_provider = _safety
     server.sessions_provider = _sessions
-    server.cost_provider = _cost
 
     fastmcp = server.build_fastmcp()
     fastmcp.run(transport="stdio")

@@ -10,6 +10,18 @@ file and uses it as the GitHub Release body, so keep each version's notes here.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-19
+
+### Removed
+- **Brutalist Purge**: Completely removed `agentwatch.orchestration` to strictly enforce our identity as an observability layer, not an agent framework.
+- Removed `agentwatch.memory` and associated graphing tools as they are non-core and out of scope.
+- Removed `agentwatch.cost` and token trackers, delegating this to external/upstream tools.
+- Removed the `benchmarks/` suite and legacy adapters (`agentwatch/adapters/base.py`) for a leaner codebase.
+- Removed CLI `cost_tracker` dependencies from the MCP server.
+
+### Changed
+- Refocused API and core architecture on Telemetry, Safety, Governance, and Scoring.
+
 ### Added
 - Enterprise Telemetry (OBS-008): OTLP export of agent reasoning traces mapping to OpenTelemetry span hierarchy, ensuring compatibility with Grafana, Jaeger, and Datadog via `BatchSpanProcessor`.
 - Scheduled red-team automation (issue #399): externalized the attack corpus to `agentwatch/security/payloads.json` (loadable via `load_corpus()`), plus a Celery task `agentwatch.tasks.run_redteam` that runs the red-team harness on a schedule and returns a JSON vulnerability report (bypassed = guardrails that failed).
