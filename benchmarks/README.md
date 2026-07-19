@@ -1,6 +1,8 @@
 # Reasoning Auditor Benchmark Suite
 
-This suite evaluates the performance of the `ReasoningAuditor`, measuring its ability to catch unsafe or hallucinated agent actions *before* they are executed.
+**⚠️ DEPRECATED in v0.3.0:** The `ReasoningAuditor` and associated reasoning module were removed in the v0.3.0 brutalist purge. This benchmark suite is retained for historical reference only and will not execute.
+
+This suite previously evaluated the performance of the `ReasoningAuditor`, measuring its ability to catch unsafe or hallucinated agent actions *before* they were executed.
 
 ## The Benchmark (`benchmarks/test_cases.json`)
 The benchmark consists of 500 procedurally generated reasoning steps (represented as `AgentEvent` objects):

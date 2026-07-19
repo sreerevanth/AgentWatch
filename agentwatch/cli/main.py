@@ -31,7 +31,6 @@ if TYPE_CHECKING:
 
     from agentwatch.core.policy_loader import CombinedVerdict
     from agentwatch.core.schema import RiskLevel, ToolCallData
-    from agentwatch.cost.reporting import CostReport
     from agentwatch.eval.runner import EvalReport
 
 app = typer.Typer(
@@ -1091,112 +1090,17 @@ def cost_report(
     as_json: bool = typer.Option(False, "--json", help="Emit JSON instead of a table."),
 ) -> None:
     """
-    [bold]Report[/bold] token usage, USD cost, and cost-per-successful-goal.
+    [bold red]DEPRECATED in v0.3.0[/bold red]
 
-    Aggregates recent sessions from the AgentWatch API over the last [b]--days[/b],
-    grouped by [b]--group-by[/b].
-
-    [b]Example Usage:[/b]
-    [dim]python -m agentwatch.cli.main cost report --days 30 --group-by framework[/dim]
+    The cost tracking module was removed in the v0.3.0 brutalist purge.
+    Token usage should be reported as part of standard AgentEvent metadata.
+    See MIGRATION-0.3.0.md for details.
     """
-    from agentwatch.cost.reporting import VALID_GROUP_BY, build_cost_report, parse_sessions
-
-    if group_by not in VALID_GROUP_BY:
-        console.print(
-            f"[red]Invalid --group-by {group_by!r}. Choose one of: {', '.join(VALID_GROUP_BY)}.[/red]"
-        )
-        raise typer.Exit(2)
-    if days < 1:
-        console.print("[red]--days must be >= 1.[/red]")
-        raise typer.Exit(2)
-
-    limit = 200  # /api/v1/sessions caps its page size at 200
-
-    async def _fetch() -> list[dict[str, object]]:
-        try:
-            import httpx
-        except ImportError:
-            console.print("[red]httpx not installed. Run: pip install httpx[/red]")
-            raise typer.Exit(1)
-
-        async with httpx.AsyncClient() as client:
-            try:
-                resp = await client.get(
-                    f"{api_url}/api/v1/sessions",
-                    params={"since_hours": days * 24, "limit": limit},
-                    headers=_api_headers(api_key),
-                    timeout=15.0,
-                )
-                resp.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                _handle_http_status_error(exc, api_url)
-            except httpx.HTTPError as exc:
-                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
-                raise typer.Exit(1)
-
-        payload = resp.json()
-        items = payload.get("sessions", [])
-        return list(items) if isinstance(items, list) else []
-
-    raw_sessions = asyncio.run(_fetch())
-    if len(raw_sessions) >= limit:
-        console.print(
-            f"[yellow]Note: the API returned its maximum of {limit} sessions, so this "
-            f"report may be incomplete. Narrow the window with a smaller --days.[/yellow]"
-        )
-    sessions, skipped = parse_sessions(raw_sessions)
-    if skipped:
-        console.print(f"[yellow]Skipped {skipped} session record(s) that failed to parse.[/yellow]")
-    report = build_cost_report(sessions, group_by=group_by, days=days)
-
-    if as_json:
-        console.print_json(data=report.to_dict())
-        return
-
-    _print_cost_report_table(report)
-
-
-def _print_cost_report_table(report: CostReport) -> None:
-    table = Table(
-        title=(
-            f"[bold green]C O S T   R E P O R T[/bold green]  "
-            f"[dim](last {report.days}d · by {report.group_by})[/dim]"
-        ),
-        box=box.DOUBLE_EDGE,
-        border_style="bold cyan",
-    )
-    table.add_column(report.group_by.capitalize(), style="bold cyan")
-    table.add_column("Sessions", justify="right", style="dim white")
-    table.add_column("Tokens", justify="right", style="green")
-    table.add_column("USD", justify="right", style="yellow")
-    table.add_column("Successful", justify="right", style="cyan")
-    table.add_column("USD / success", justify="right", style="bold yellow")
-
-    for row in report.rows:
-        cps = row.cost_per_successful_goal
-        table.add_row(
-            row.group,
-            str(row.sessions),
-            f"{row.total_tokens:,}",
-            f"${row.total_usd:,.4f}",
-            str(row.successful),
-            "—" if cps is None else f"${cps:,.4f}",
-        )
-
-    if report.rows:
-        table.add_section()
-        table.add_row(
-            "[bold]TOTAL[/bold]",
-            str(report.total_sessions),
-            f"[bold]{report.total_tokens:,}[/bold]",
-            f"[bold]${report.total_usd:,.4f}[/bold]",
-            "",
-            "",
-        )
-
-    console.print(table)
-    if not report.rows:
-        console.print("[dim]No sessions found in the selected window.[/dim]")
+    console.print("[bold red]ERROR: Cost reporting deprecated in v0.3.0[/bold red]")
+    console.print("The agentwatch.cost module was removed in the v0.3.0 brutalist purge.")
+    console.print("Token usage should be reported in AgentEvent metadata.")
+    console.print("See MIGRATION-0.3.0.md for migration guidance.")
+    raise typer.Exit(1)
 
 
 # ---------------------------------------------
@@ -2056,12 +1960,7 @@ def _print_live_event(event) -> None:
         console.print(f"[dim]{ts}[/dim] {icon} [bold]{name}[/bold]{risk_str}{status_str}")
         if cmd:
             console.print(f"         [dim]{cmd}[/dim]")
-        if event.is_blocked:
-            from agentwatch.reasoning.auditor import ReasoningAuditor
-
-            signals = ReasoningAuditor.detect_risk_signals(event)
-            if signals:
-                console.print(f"         [red]⚠ risk signals: {', '.join(signals)}[/red]")
+        # Note: Risk signal detection removed in v0.3.0 (reasoning module purged)
 
     elif event.event_type == EventType.SAFETY_BLOCK:
         console.print(f"[dim]{ts}[/dim] {icon} [bold red]SAFETY BLOCK[/bold red]")

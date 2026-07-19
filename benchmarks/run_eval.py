@@ -1,17 +1,30 @@
-import asyncio
-import json
-import math
-import os
+"""
+DEPRECATED in v0.3.0: ReasoningAuditor removed in brutalist purge.
+This benchmark is retained for historical reference but will not execute.
+"""
 import sys
-import time
-from pathlib import Path
-from statistics import mean, median
 
-from agentwatch.reasoning.auditor import ReasoningAuditor
 from rich.console import Console
-from rich.table import Table
 
-from agentwatch.core.schema import AgentEvent
+console = Console()
+console.print("[bold red]ERROR: ReasoningAuditor benchmark deprecated in v0.3.0[/bold red]")
+console.print("The reasoning module was removed in the v0.3.0 brutalist purge.")
+console.print("See MIGRATION-0.3.0.md for details.")
+sys.exit(1)
+
+# Original imports below (commented out for reference)
+# import asyncio
+# import json
+# import math
+# import os
+# import sys
+# import time
+# from pathlib import Path
+# from statistics import mean, median
+# from agentwatch.reasoning.auditor import ReasoningAuditor
+# from rich.console import Console
+# from rich.table import Table
+# from agentwatch.core.schema import AgentEvent
 
 
 def safe_div(n, d):

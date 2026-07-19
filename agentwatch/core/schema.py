@@ -261,7 +261,7 @@ class ReasoningStyleFingerprint(BaseModel):
 
     @classmethod
     def from_dataclass(cls, other: object) -> ReasoningStyleFingerprint:
-        """Adapt the dataclass form in ``agentwatch.reasoning.fingerprint``.
+        """Adapt a dataclass form (legacy reasoning fingerprint, removed in v0.3.0).
 
         Returns:
             A pydantic instance mirroring the dataclass fields.

@@ -32,7 +32,22 @@ This guide outlines what was removed and how you should migrate away from those 
 - **Migration:** Custom policy enforcement can be built using the standard Circuit Breaker tools by logging your own governance events.
 
 ## Breaking Changes to the Core API
-- Imports from `agentwatch.orchestration`, `agentwatch.memory`, `agentwatch.reasoning`, or `agentwatch.cost` will result in a `ModuleNotFoundError`. 
+
+### Module Imports
+- Imports from `agentwatch.orchestration`, `agentwatch.memory`, `agentwatch.reasoning`, or `agentwatch.cost` will result in a `ModuleNotFoundError`.
+- The following specific imports are no longer available:
+  - `agentwatch.memory.governance` (used for GDPR erasure)
+  - `agentwatch.reasoning.auditor.ReasoningAuditor`
+  - `agentwatch.cost.tracker.CostTracker`
+  - `agentwatch.cost.reporting` (cost reports and FinOps)
+  - `agentwatch.cost.semantic_cache.SemanticCache`
+
+### CLI Commands
+- `agentwatch cost report` command is deprecated and will exit with an error message directing users to the migration guide.
+- The MCP server's `cost_provider` now returns stub data with a deprecation warning.
+
+### Backward Compatibility Stubs
+- `agentwatch.adapters.base` semantic cache functions (`get_semantic_cache`, `set_semantic_cache`, `before_provider_call`, `after_provider_call`) now return no-op stubs for backward compatibility but log deprecation warnings.
 - `agentwatch.governance.audit_log.PersistentAuditLog` no longer supports the bloated `SqlAlchemyAuditStore`.
 
 Please update your imports and application logic accordingly to align with this simpler, more stable version of AgentWatch.

@@ -17,9 +17,9 @@ The scope is now tightly defined around:
 ### What We Removed (The Bloat)
 - **Orchestration Layer:** Eliminated theoretical multi-agent routing. Your agents should dictate their own orchestration; AgentWatch will monitor them.
 - **Complex Memory Engine:** Removed the over-engineered contextual graph storage.
-- **Reasoning Auditor:** Stripped out the logic fingerprinting and theoretical auditor models that complicated the dependency tree without delivering immediate value.
+- **Reasoning Auditor:** Stripped out the logic fingerprinting and theoretical auditor models that complicated the dependency tree without delivering immediate value. The `benchmarks/run_eval.py` benchmark suite is deprecated.
 - **Governance Modules:** Removed EU AI Act speculative features.
-- **Cost Tracking Overhead:** Cut premature cost-tracking optimizations that bogged down processing.
+- **Cost Tracking Overhead:** Cut premature cost-tracking optimizations that bogged down processing. The `agentwatch cost report` CLI command is deprecated, and semantic caching has been removed from adapters.
 
 ### Why This Matters
 By deleting over 11,000 lines of non-essential code, we have achieved:
