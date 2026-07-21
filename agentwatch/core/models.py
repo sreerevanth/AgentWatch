@@ -7,10 +7,7 @@ for PostgreSQL persistence.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import TYPE_CHECKING, Any
-
-if TYPE_CHECKING:
-    from agentwatch.governance.audit_log import AuditRecord
+from typing import Any
 
 from sqlalchemy import (
     Boolean,
@@ -359,7 +356,7 @@ class Repository:
         d = delete(SessionRecord).where(SessionRecord.session_id.in_(session_ids))
         result = await self._session.execute(d)
         await self._session.flush()
-        return result.rowcount
+        return result.rowcount or 0
 
     async def erase_user_data(
         self, user_id: str, *, scope: str = "all", tenant_id: str | None = None
@@ -410,68 +407,63 @@ class Repository:
         await self._session.flush()
         return deleted
 
-
-class SqlAlchemyAuditStore:
-    """AuditStore over the ``audit_log`` table.
-
-    Writes flush on the caller's session; wrap ``read_head`` + ``write`` in
-    ``session.begin()`` to append atomically.
-    """
-
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
-
-    async def read_head(self) -> tuple[int, str]:
-        from sqlalchemy import func, select
-
-        from agentwatch.governance.audit_log import GENESIS_HASH
-
-        count = (
-            await self._session.execute(select(func.count()).select_from(AuditLogRecord))
-        ).scalar_one()
-        head = (
-            await self._session.execute(
-                select(AuditLogRecord.record_hash).order_by(AuditLogRecord.seq.desc()).limit(1)
-            )
-        ).scalar_one_or_none()
-        return count, head or GENESIS_HASH
-
-    async def write(self, record: AuditRecord) -> None:
-        self._session.add(
-            AuditLogRecord(
-                seq=record.seq,
-                timestamp=record.timestamp,
-                actor=record.actor,
-                action=record.action,
-                target=record.target,
-                details=dict(record.details),
-                prev_hash=record.prev_hash,
-                record_hash=record.record_hash,
-            )
-        )
-        await self._session.flush()
-
-    async def read_all(self) -> list[AuditRecord]:
+    async def get_session_ids(self, where: dict[str, str]) -> list[str]:
+        """Retrieve session IDs matching a filter (e.g. agent_id=)."""
         from sqlalchemy import select
 
-        from agentwatch.governance.audit_log import AuditRecord
+        filters: list[Any] = []
+        for k, v in where.items():
+            col = getattr(SessionRecord, k, None)
+            if col is not None:
+                filters.append(col == v)
+        if not filters:
+            return []
+        q = select(SessionRecord.session_id).where(*filters)
+        result = await self._session.execute(q)
+        return list(result.scalars())
 
-        rows = (
-            await self._session.execute(select(AuditLogRecord).order_by(AuditLogRecord.seq))
-        ).scalars()
-        return [
-            AuditRecord(
-                seq=r.seq,
-                timestamp=r.timestamp,
-                actor=r.actor,
-                action=r.action,
-                target=r.target,
-                details=dict(r.details or {}),
-                prev_hash=r.prev_hash,
-                record_hash=r.record_hash,
-            )
-            for r in rows
-        ]
+    async def count_sessions(self, where: dict[str, str]) -> int:
+        """Count sessions matching a filter."""
+        from sqlalchemy import func, select
+
+        filters: list[Any] = []
+        for k, v in where.items():
+            col = getattr(SessionRecord, k, None)
+            if col is not None:
+                filters.append(col == v)
+        if not filters:
+            return 0
+        q = select(func.count()).select_from(SessionRecord).where(*filters)
+        result = await self._session.execute(q)
+        return result.scalar_one()
+
+    async def count_events(self, where: dict[str, str]) -> int:
+        """Count events matching a filter (e.g. agent_id=)."""
+        from sqlalchemy import func, select
+
+        filters: list[Any] = []
+        for k, v in where.items():
+            col = getattr(EventRecord, k, None)
+            if col is not None:
+                filters.append(col == v)
+        if not filters:
+            return 0
+        q = select(func.count()).select_from(EventRecord).where(*filters)
+        result = await self._session.execute(q)
+        return result.scalar_one()
+
+    async def delete_session(self, session_id: str) -> int:
+        """Delete a single session (and its task dependencies). Returns 1 if deleted."""
+        return await self.prune_sessions([session_id])
+
+    async def delete_events_by_session(self, session_id: str) -> int:
+        """Delete events tied to a session and return the number removed."""
+        from sqlalchemy import delete
+
+        d = delete(EventRecord).where(EventRecord.session_id == session_id)
+        result = await self._session.execute(d)
+        await self._session.flush()
+        return result.rowcount
 
 
 class TenantRepository:
