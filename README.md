@@ -257,6 +257,67 @@ That's it. Zero config for default settings, or customize via the [.env.example]
 
 ---
 
+## 🛠️ Troubleshooting
+
+If you encounter issues while setting up AgentWatch, try these common fixes.
+
+### ModuleNotFoundError
+
+If you see a `ModuleNotFoundError`, one or more required Python packages may be missing.
+
+```bash
+pip install -r requirements.txt
+```
+
+If you're using a virtual environment, make sure it is activated before installing dependencies.
+
+### Docker not running
+
+Some AgentWatch features require Docker.
+
+```bash
+docker --version
+docker ps
+```
+
+If Docker isn't running, start Docker Desktop (Windows/macOS) or the Docker service (Linux).
+
+### Port already in use
+
+```md
+### Port already in use
+
+If the application cannot start because a port is occupied, check the default AgentWatch ports and stop the process using that port.
+
+Default ports:
+
+- API: `8000`
+- Frontend Dashboard: `3000`
+
+Linux/macOS:
+
+```bash
+lsof -i :8000
+lsof -i :3000
+
+### Python version mismatch
+
+Verify your Python version:
+
+```bash
+python --version
+```
+
+Use the version recommended in this README.
+
+### Missing environment variables
+
+Create your environment file:
+
+```bash
+cp .env.example .env
+Then update the required configuration values before running the application.
+
 ## 🔌 Supported Frameworks
 
 AgentWatch wraps your existing agent. **You change nothing.** Detailed guides for each framework live in the [`docs/adapters/`](docs/adapters/) directory.
