@@ -1784,27 +1784,20 @@ class _MemoryErasureTarget:
         try:
             from agentwatch.memory.governance import list_memory_entries
         except Exception as exc:  # noqa: BLE001 — surfaced via ErasureTargetResult
-            raise RuntimeError(
-                f"memory_and_causal backend unavailable: {exc}"
-            ) from exc
+            raise RuntimeError(f"memory_and_causal backend unavailable: {exc}") from exc
         items = await list_memory_entries()
         return sum(
             1
             for entry in items
             if identifier in (entry.get("user_id", "") or "")
-            and (
-                self._tenant_id is None
-                or entry.get("tenant_id") == self._tenant_id
-            )
+            and (self._tenant_id is None or entry.get("tenant_id") == self._tenant_id)
         )
 
     async def erase_matching(self, identifier: str, scope: ErasureScope) -> int:
         try:
             from agentwatch.memory.governance import drop_memory_entries
         except Exception as exc:  # noqa: BLE001 — surfaced via ErasureTargetResult
-            raise RuntimeError(
-                f"memory_and_causal backend unavailable: {exc}"
-            ) from exc
+            raise RuntimeError(f"memory_and_causal backend unavailable: {exc}") from exc
         try:
             removed = await drop_memory_entries(
                 identifier=identifier,

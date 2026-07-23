@@ -7,7 +7,10 @@ for PostgreSQL persistence.
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from agentwatch.governance.audit_log import AuditRecord
 
 from sqlalchemy import (
     Boolean,
@@ -464,6 +467,69 @@ class Repository:
         result = await self._session.execute(d)
         await self._session.flush()
         return result.rowcount
+
+
+class SqlAlchemyAuditStore:
+    """AuditStore over the ``audit_log`` table.
+
+    Writes flush on the caller's session; wrap ``read_head`` + ``write`` in
+    ``session.begin()`` to append atomically.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def read_head(self) -> tuple[int, str]:
+        from sqlalchemy import func, select
+
+        from agentwatch.governance.audit_log import GENESIS_HASH
+
+        count = (
+            await self._session.execute(select(func.count()).select_from(AuditLogRecord))
+        ).scalar_one()
+        head = (
+            await self._session.execute(
+                select(AuditLogRecord.record_hash).order_by(AuditLogRecord.seq.desc()).limit(1)
+            )
+        ).scalar_one_or_none()
+        return count, head or GENESIS_HASH
+
+    async def write(self, record: AuditRecord) -> None:
+        self._session.add(
+            AuditLogRecord(
+                seq=record.seq,
+                timestamp=record.timestamp,
+                actor=record.actor,
+                action=record.action,
+                target=record.target,
+                details=dict(record.details),
+                prev_hash=record.prev_hash,
+                record_hash=record.record_hash,
+            )
+        )
+        await self._session.flush()
+
+    async def read_all(self) -> list[AuditRecord]:
+        from sqlalchemy import select
+
+        from agentwatch.governance.audit_log import AuditRecord
+
+        rows = (
+            await self._session.execute(select(AuditLogRecord).order_by(AuditLogRecord.seq))
+        ).scalars()
+        return [
+            AuditRecord(
+                seq=r.seq,
+                timestamp=r.timestamp,
+                actor=r.actor,
+                action=r.action,
+                target=r.target,
+                details=dict(r.details or {}),
+                prev_hash=r.prev_hash,
+                record_hash=r.record_hash,
+            )
+            for r in rows
+        ]
 
 
 class TenantRepository:
