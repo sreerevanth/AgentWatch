@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
+import threading
 from collections import defaultdict
 from collections.abc import Callable, Coroutine
 from datetime import UTC, datetime
@@ -114,6 +115,7 @@ class EventBus:
         self._type_index: dict[EventType, set[str]] = defaultdict(set)
         self._global_handlers: set[str] = set()  # subscribed to all events
         self._lock = asyncio.Lock()
+        self._thread_lock = threading.Lock()
         self._event_log: list[AgentEvent] = []
         self._max_log_size = 10_000
         self._stats: dict[str, int] = defaultdict(int)
@@ -138,24 +140,25 @@ class EventBus:
         def decorator(fn: AnyHandler) -> AnyHandler:
             _id = handler_id or f"{fn.__module__}.{fn.__qualname__}"
 
-            # CodeRabbit: Clean stale registration if ID is reused
-            if _id in self._handlers:
-                self.unsubscribe(_id)
+            with self._thread_lock:
+                # Clean stale registration if ID is reused
+                if _id in self._handlers:
+                    self._unsubscribe_locked(_id)
 
-            is_async = inspect.iscoroutinefunction(fn)
-            reg = HandlerRegistration(
-                handler_id=_id,
-                handler=fn,
-                event_filter=event_filter,
-                is_async=is_async,
-            )
-            self._handlers[_id] = reg
+                is_async = inspect.iscoroutinefunction(fn)
+                reg = HandlerRegistration(
+                    handler_id=_id,
+                    handler=fn,
+                    event_filter=event_filter,
+                    is_async=is_async,
+                )
+                self._handlers[_id] = reg
 
-            if event_types:
-                for et in event_types:
-                    self._type_index[et].add(_id)
-            else:
-                self._global_handlers.add(_id)
+                if event_types:
+                    for et in event_types:
+                        self._type_index[et].add(_id)
+                else:
+                    self._global_handlers.add(_id)
 
             logger.debug("Registered handler %s for %s", _id, event_types or "ALL")
             return fn
@@ -182,26 +185,35 @@ class EventBus:
         """
         _id = handler_id or f"{fn.__module__}.{fn.__qualname__}.{id(fn)}"
 
-        # CodeRabbit: Clean stale registration if ID is reused
-        if _id in self._handlers:
-            self.unsubscribe(_id)
+        with self._thread_lock:
+            # Clean stale registration if ID is reused
+            if _id in self._handlers:
+                self._unsubscribe_locked(_id)
 
-        is_async = inspect.iscoroutinefunction(fn)
-        reg = HandlerRegistration(
-            handler_id=_id,
-            handler=fn,
-            event_filter=event_filter,
-            is_async=is_async,
-        )
-        self._handlers[_id] = reg
+            is_async = inspect.iscoroutinefunction(fn)
+            reg = HandlerRegistration(
+                handler_id=_id,
+                handler=fn,
+                event_filter=event_filter,
+                is_async=is_async,
+            )
+            self._handlers[_id] = reg
 
-        if event_types:
-            for et in event_types:
-                self._type_index[et].add(_id)
-        else:
-            self._global_handlers.add(_id)
+            if event_types:
+                for et in event_types:
+                    self._type_index[et].add(_id)
+            else:
+                self._global_handlers.add(_id)
 
         return _id
+
+    def _unsubscribe_locked(self, handler_id: str) -> None:
+        if handler_id not in self._handlers:
+            return
+        self._handlers.pop(handler_id, None)
+        self._global_handlers.discard(handler_id)
+        for ids in self._type_index.values():
+            ids.discard(handler_id)
 
     def unsubscribe(self, handler_id: str) -> None:
         """Remove a handler and clear it from all type indexes.
@@ -209,12 +221,8 @@ class EventBus:
         Args:
             handler_id: ID returned by :meth:`subscribe_fn` or the decorator.
         """
-        if handler_id not in self._handlers:
-            return
-        self._handlers.pop(handler_id, None)
-        self._global_handlers.discard(handler_id)
-        for ids in self._type_index.values():
-            ids.discard(handler_id)
+        with self._thread_lock:
+            self._unsubscribe_locked(handler_id)
 
     async def publish(self, event: AgentEvent) -> None:
         """Publish an event to all matching handlers.
@@ -228,24 +236,25 @@ class EventBus:
             event: The normalized event to fan out and log.
         """
         async with self._lock:
-            # Log to in-memory buffer
-            self._event_log.append(event)
-            if len(self._event_log) > self._max_log_size:
-                self._event_log = self._event_log[-self._max_log_size :]
+            with self._thread_lock:
+                # Log to in-memory buffer
+                self._event_log.append(event)
+                if len(self._event_log) > self._max_log_size:
+                    self._event_log = self._event_log[-self._max_log_size :]
 
-            self._stats["total_published"] += 1
-            self._stats[f"type.{event.event_type.value}"] += 1
+                self._stats["total_published"] += 1
+                self._stats[f"type.{event.event_type.value}"] += 1
 
-            # Snapshot handler IDs under the lock so subscribe/unsubscribe
-            # that happens concurrently does not mutate the set mid-iteration.
-            handler_ids: set[str] = set()
-            handler_ids.update(self._global_handlers)
-            handler_ids.update(self._type_index.get(event.event_type, set()))
-            handlers_to_dispatch = [
-                self._handlers[hid]
-                for hid in handler_ids
-                if hid in self._handlers and self._handler_accepts(self._handlers[hid], event)
-            ]
+                # Snapshot handler IDs under the lock so subscribe/unsubscribe
+                # that happens concurrently does not mutate the set mid-iteration.
+                handler_ids: set[str] = set()
+                handler_ids.update(self._global_handlers)
+                handler_ids.update(self._type_index.get(event.event_type, set()))
+                handlers_to_dispatch = [
+                    self._handlers[hid]
+                    for hid in handler_ids
+                    if hid in self._handlers and self._handler_accepts(self._handlers[hid], event)
+                ]
 
         # Dispatch outside the lock to avoid holding it during handler I/O
         tasks = [self._dispatch(reg, event) for reg in handlers_to_dispatch]
@@ -344,7 +353,8 @@ class EventBus:
         Returns:
             Matching events, most recent first.
         """
-        events = list(reversed(self._event_log))
+        with self._thread_lock:
+            events = list(reversed(self._event_log))
         if event_type:
             events = [e for e in events if e.event_type == event_type]
         if session_id:
@@ -357,13 +367,15 @@ class EventBus:
         Returns:
             Copy of internal stats (e.g. ``total_published``, ``type.*``).
         """
-        result = dict(self._stats)
-        result["active_subscribers"] = self.handler_count()
-        return result
+        with self._thread_lock:
+            result = dict(self._stats)
+            result["active_subscribers"] = self.handler_count()
+            return result
 
     def handler_count(self) -> int:
         """Return the number of registered handlers."""
-        return len(self._handlers)
+        with self._thread_lock:
+            return len(self._handlers)
 
 
 # Singleton bus instance
