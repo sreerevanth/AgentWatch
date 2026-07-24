@@ -1,0 +1,382 @@
+# Instincts generated from https://github.com/sreerevanth/AgentWatch
+# Generated: 2026-07-24T14:04:22.744Z
+# Version: 2.0
+# NOTE: This file supplements (does not replace) any existing curated instincts.
+# High-confidence manually curated instincts should be preserved alongside these.
+
+---
+id: AgentWatch-commit-conventional
+trigger: "when writing a commit message"
+confidence: 0.85
+domain: git
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Commit Conventional
+
+## Action
+
+Use conventional commit format with prefixes: docs, fix
+
+## Evidence
+
+- 4 commits analyzed
+- Detected conventional commit pattern
+- Examples: fix(security): upgrade next 14.2.30 -> 15.5.20, clearing 4 high-severity CVEs (Closes #596), docs: add Next 15 migration note with runtime validation (addresses review on #630)
+
+---
+id: AgentWatch-commit-length
+trigger: "when writing a commit message"
+confidence: 0.6
+domain: git
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Commit Length
+
+## Action
+
+Write moderate-length commit messages (~78 characters)
+
+## Evidence
+
+- Average commit message length: 78 chars
+- Based on 4 commits
+
+---
+id: AgentWatch-naming-files
+trigger: "when creating a new file"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Naming Files
+
+## Action
+
+Use snake_case naming convention
+
+## Evidence
+
+- Analyzed file naming patterns in repository
+- Dominant pattern: snake_case
+
+---
+id: AgentWatch-import-relative
+trigger: "when importing modules"
+confidence: 0.75
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Import Relative
+
+## Action
+
+Use relative imports for project files
+
+## Evidence
+
+- Import analysis shows relative import pattern
+- Example: import { x } from '../lib/x'
+
+---
+id: AgentWatch-export-style
+trigger: "when exporting from a module"
+confidence: 0.7
+domain: code-style
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Export Style
+
+## Action
+
+Prefer named exports
+
+## Evidence
+
+- Export pattern analysis
+- Dominant style: named
+
+---
+id: AgentWatch-test-separate
+trigger: "when writing tests"
+confidence: 0.8
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Test Separate
+
+## Action
+
+Place tests in the tests/ or __tests__/ directory, mirroring src structure
+
+## Evidence
+
+- Separate test directory pattern detected
+- Tests live in dedicated test folders
+
+---
+id: AgentWatch-test-naming
+trigger: "when creating a test file"
+confidence: 0.85
+domain: testing
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Test Naming
+
+## Action
+
+Name test files using the pattern: *.test.ts
+
+## Evidence
+
+- File pattern: *.test.ts
+- Consistent across test files
+
+---
+id: AgentWatch-workflow-documentation-update-single-file
+trigger: "when doing documentation update single file"
+confidence: 0.6
+domain: workflow
+source: repo-analysis
+source_repo: https://github.com/sreerevanth/AgentWatch
+---
+
+# AgentWatch Workflow Documentation Update Single File
+
+## Action
+
+Follow the documentation-update-single-file workflow:
+1. Edit a specific markdown file in the documentation directory (e.g., NEXT_15_MIGRATION.md).
+2. Commit the change with a 'docs:' prefix and a brief description.
+
+## Evidence
+
+- Workflow detected from commit patterns
+- Frequency: ~2x per month
+- Files: frontend/NEXT_15_MIGRATION.md
+
+---
+id: agentwatch-instinct-naming-files
+trigger: "When creating or renaming a file in the codebase"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Naming Files
+
+## Action
+
+Use snake_case for file names
+
+## Evidence
+
+- Pattern in namingConventions.files: snake_case
+
+---
+id: agentwatch-instinct-naming-functions
+trigger: "When defining a new function"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Naming Functions
+
+## Action
+
+Use camelCase for function names
+
+## Evidence
+
+- Pattern in namingConventions.functions: camelCase
+
+---
+id: agentwatch-instinct-naming-classes
+trigger: "When defining a new class"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Naming Classes
+
+## Action
+
+Use PascalCase for class names
+
+## Evidence
+
+- Pattern in namingConventions.classes: PascalCase
+
+---
+id: agentwatch-instinct-naming-constants
+trigger: "When defining a constant"
+confidence: 0.9
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Naming Constants
+
+## Action
+
+Use SCREAMING_SNAKE_CASE for constant names
+
+## Evidence
+
+- Pattern in namingConventions.constants: SCREAMING_SNAKE_CASE
+
+---
+id: agentwatch-instinct-import-style
+trigger: "When importing modules in Python files"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Import Style
+
+## Action
+
+Use relative imports
+
+## Evidence
+
+- Pattern in importStyle: relative
+
+---
+id: agentwatch-instinct-export-style
+trigger: "When exporting modules or symbols"
+confidence: 0.8
+domain: code-style
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Export Style
+
+## Action
+
+Use named exports
+
+## Evidence
+
+- Pattern in exportStyle: named
+
+---
+id: agentwatch-instinct-testing-file-pattern
+trigger: "When adding a new test file"
+confidence: 0.9
+domain: testing
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Testing File Pattern
+
+## Action
+
+Name the file with the pattern '*.test.ts'
+
+## Evidence
+
+- Pattern in testing.filePattern: *.test.ts
+
+---
+id: agentwatch-instinct-testing-type-unit
+trigger: "When writing tests"
+confidence: 0.7
+domain: testing
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Testing Type Unit
+
+## Action
+
+Write unit tests
+
+## Evidence
+
+- Pattern in testing.testTypes: unit
+
+---
+id: agentwatch-instinct-git-commit-prefix
+trigger: "When making a commit"
+confidence: 0.9
+domain: git
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Git Commit Prefix
+
+## Action
+
+Use a conventional commit prefix such as 'docs:' or 'fix:'
+
+## Evidence
+
+- Seen in commit: fix(security): upgrade next 14.2.30 -> 15.5.20, clearing 4 high-severity CVEs (Closes #596)
+- Seen in commit: docs: add Next 15 migration note with runtime validation (addresses review on #630)
+
+---
+id: agentwatch-instinct-git-commit-length
+trigger: "When writing a commit message"
+confidence: 0.7
+domain: git
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Git Commit Length
+
+## Action
+
+Keep the commit message concise, around 78 characters on average
+
+## Evidence
+
+- Pattern in commits.averageLength: 78
+
+---
+id: agentwatch-instinct-doc-update-single-file
+trigger: "When someone needs to update documentation for a migration, feature, or review feedback"
+confidence: 0.9
+domain: workflow
+source: repo-analysis
+source_repo: sreerevanth/AgentWatch
+---
+
+# Agentwatch Instinct Doc Update Single File
+
+## Action
+
+Edit the relevant markdown file in the documentation directory and commit with a 'docs:' prefix and a brief description
+
+## Evidence
+
+- Workflow: documentation-update-single-file
+- Seen in commit: docs: add Next 15 migration note with runtime validation (addresses review on #630)
+- Pattern in files: frontend/NEXT_15_MIGRATION.md
+
