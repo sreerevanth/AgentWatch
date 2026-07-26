@@ -1,14 +1,9 @@
-import type { AgentSession, DashboardSummary } from "../../api";
+import type {
+  BlockedEventsResponse,
+  DashboardSummary,
+  SessionsResponse,
+} from "../../api";
 import { api } from "../config";
-
-interface BlockedEvent {
-  event_id: string;
-  session_id: string;
-  agent_id: string;
-  timestamp: string;
-  risk_level: string;
-  reasons: string[];
-}
 
 export const useDashboardSummary = () => {
   const query = api.useQuery<DashboardSummary>({
@@ -24,12 +19,12 @@ export const useDashboardSummary = () => {
 };
 
 export const useSessions = () => {
-  const query = api.useQuery<AgentSession[]>({
+  const query = api.useQuery<SessionsResponse>({
     url: "/sessions",
     key: ["sessions"],
   });
   return {
-    sessions: query.data ?? [],
+    sessions: query.data?.sessions ?? [],
     isSessionsLoading: query.isLoading,
     sessionsError: query.error,
     ...query,
@@ -37,12 +32,12 @@ export const useSessions = () => {
 };
 
 export const useBlockedEvents = () => {
-  const query = api.useQuery<BlockedEvent[]>({
+  const query = api.useQuery<BlockedEventsResponse>({
     url: "/safety/blocked",
     key: ["safety", "blocked"],
   });
   return {
-    blockedEvents: query.data ?? [],
+    blockedEvents: query.data?.blocked_events ?? [],
     isBlockedLoading: query.isLoading,
     blockedError: query.error,
     ...query,

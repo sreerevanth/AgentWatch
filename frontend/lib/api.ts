@@ -61,6 +61,16 @@ export interface AgentSession {
   final_confidence?: number
 }
 
+export interface SessionsResponse {
+  sessions: AgentSession[]
+  total: number
+}
+
+export interface BlockedEventsResponse {
+  blocked_events: AgentEvent[]
+  total: number
+}
+
 export interface DashboardSummary {
   total_sessions: number
   active_sessions: number
