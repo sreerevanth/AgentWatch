@@ -13,6 +13,7 @@ def custom_execution_wrapper(func):
         result = func(*args, **kwargs)
         # 3. Publish completion event
         return result
+
     return wrapper
 ```
 

@@ -41,6 +41,7 @@ Wait until you have three instances before abstracting. Duplication is often bet
 # Instead of a factory/registry pattern:
 FORMATTERS = {"json": JsonFormatter, "csv": CsvFormatter}
 
+
 def get_formatter(name: str) -> Formatter:
     return FORMATTERS[name]()
 ```

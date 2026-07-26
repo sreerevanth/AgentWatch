@@ -60,6 +60,7 @@ Configure structlog for JSON output with consistent fields.
 import logging
 import structlog
 
+
 def configure_logging(log_level: str = "INFO") -> None:
     """Configure structured logging for the application."""
     structlog.configure(
@@ -71,13 +72,12 @@ def configure_logging(log_level: str = "INFO") -> None:
             structlog.processors.format_exc_info,
             structlog.processors.JSONRenderer(),
         ],
-        wrapper_class=structlog.make_filtering_bound_logger(
-            getattr(logging, log_level.upper())
-        ),
+        wrapper_class=structlog.make_filtering_bound_logger(getattr(logging, log_level.upper())),
         context_class=dict,
         logger_factory=structlog.PrintLoggerFactory(),
         cache_logger_on_first_use=True,
     )
+
 
 # Initialize at application startup
 configure_logging("INFO")
@@ -96,6 +96,7 @@ from contextvars import ContextVar
 correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
 
 logger = structlog.get_logger()
+
 
 def process_request(request: Request) -> Response:
     """Process request with structured logging."""
@@ -174,6 +175,7 @@ import structlog
 
 correlation_id: ContextVar[str] = ContextVar("correlation_id", default="")
 
+
 def set_correlation_id(cid: str | None = None) -> str:
     """Set correlation ID for current context."""
     cid = cid or str(uuid.uuid4())
@@ -181,8 +183,10 @@ def set_correlation_id(cid: str | None = None) -> str:
     structlog.contextvars.bind_contextvars(correlation_id=cid)
     return cid
 
+
 # FastAPI middleware example
 from fastapi import Request
+
 
 async def correlation_middleware(request: Request, call_next):
     """Middleware to set and propagate correlation ID."""
@@ -199,6 +203,7 @@ Propagate to outbound requests:
 
 ```python
 import httpx
+
 
 async def call_downstream_service(endpoint: str, data: dict) -> dict:
     """Call downstream service with correlation ID."""
