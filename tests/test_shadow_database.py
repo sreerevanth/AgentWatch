@@ -213,13 +213,34 @@ def test_apply_leaves_the_model_alone_when_the_query_is_refused():
     assert db.row_count("orders") == 1000
 
 
-def test_apply_handles_insert_and_truncate():
+def test_apply_handles_insert():
     db = _db(orders=100)
     db.apply(QueryIntent(QueryOperation.INSERT, "orders", rows_affected=10))
+
     assert db.row_count("orders") == 110
 
+
+def test_truncate_ignores_a_supplied_row_count():
+    """DROP and TRUNCATE take the whole table whatever the caller claims.
+
+    Neither can carry a WHERE clause, so a small `rows_affected` is either a mistake or
+    an attempt to slip past MAX_ROW_DELETE_PCT. Believing it would disable the invariant
+    for the two most destructive operations there are.
+    """
+    db = _db(orders=110)
+
+    result = db.simulate(QueryIntent(QueryOperation.TRUNCATE, "orders", rows_affected=0))
+    assert result.rows_affected == 110
+    assert result.estimated is True
+    assert StateInvariant.MAX_ROW_DELETE_PCT in _invariants(result)
+
+    dropped = db.simulate(QueryIntent(QueryOperation.DROP, "orders", rows_affected=1))
+    assert dropped.rows_affected == 110
+    assert StateInvariant.MAX_ROW_DELETE_PCT in _invariants(dropped)
+
+    # And the refusal means the model still shows the rows as present.
     db.apply(QueryIntent(QueryOperation.TRUNCATE, "orders", rows_affected=0))
-    assert db.row_count("orders") == 0
+    assert db.row_count("orders") == 110
 
 
 def test_delete_cannot_drive_a_row_count_negative():

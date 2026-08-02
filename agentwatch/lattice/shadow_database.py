@@ -142,6 +142,10 @@ class QueryMutationResult:
 
 _DESTRUCTIVE = frozenset({QueryOperation.DELETE, QueryOperation.DROP, QueryOperation.TRUNCATE})
 
+#: Operations with no WHERE clause in SQL: they always take the whole table, so a
+#: caller-supplied row count is not believed for them.
+_ALWAYS_WHOLE_TABLE = frozenset({QueryOperation.DROP, QueryOperation.TRUNCATE})
+
 #: Operations that remove or overwrite existing rows wholesale when unqualified.
 _WHOLE_TABLE_WHEN_UNQUALIFIED = frozenset(
     {QueryOperation.DELETE, QueryOperation.UPDATE, QueryOperation.DROP, QueryOperation.TRUNCATE}
@@ -262,12 +266,20 @@ class ShadowDatabase:
     def _resolve_rows(self, intent: QueryIntent, table: str) -> tuple[int, bool]:
         """Return (rows_affected, was_estimated).
 
-        An unqualified DELETE or UPDATE reaches the whole table. So does one whose reach the
-        caller could not determine — `rows_affected=None` is treated as the full table
-        rather than zero, because assuming the smaller number on an unknown is precisely
-        how an unbounded statement slips through.
+        DROP and TRUNCATE cannot be scoped by a WHERE clause — by SQL semantics they take
+        the entire table — so a caller-supplied count is ignored for them. Trusting it
+        would let `TRUNCATE users` arrive with `rows_affected=0` and slip past
+        MAX_ROW_DELETE_PCT entirely, which is the opposite of what that invariant is for.
+
+        An unqualified DELETE or UPDATE reaches the whole table too. So does one whose
+        reach the caller could not determine — `rows_affected=None` is treated as the full
+        table rather than zero, because assuming the smaller number on an unknown is
+        precisely how an unbounded statement slips through.
         """
         table_size = self.table_sizes.get(table, 0)
+
+        if intent.operation in _ALWAYS_WHOLE_TABLE:
+            return table_size, True
 
         if intent.rows_affected is not None:
             return max(0, intent.rows_affected), False
