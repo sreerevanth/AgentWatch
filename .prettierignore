@@ -1,0 +1,15 @@
+agentwatch/
+agentwatch.egg-info/
+.pytest_cache/
+.ruff_cache/
+.pytest-tmp/
+node_modules/
+.next/
+out/
+build/
+dist/
+coverage/
+*.lock
+package-lock.json
+benchmark_artifacts/
+reference_artifacts/

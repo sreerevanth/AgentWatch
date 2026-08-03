@@ -12,6 +12,14 @@ Three independent codebases in one repo:
 
 **Critical:** `frontend/` and `agentwatch-landing/` are separate Next.js apps with different versions. Do not mix deps or share components between them.
 
+## Formatting (issue #644)
+
+- **Python** (`agentwatch/`): `ruff format agentwatch/` (config in `[tool.ruff.format]` of `pyproject.toml`). Double quotes, docstring-code-format on.
+- **Frontend** (`frontend/`): `npm run format` (Prettier 3.4 with the shared `.prettierrc.json`).
+- **Landing** (`agentwatch-landing/`): `npm run format` (Prettier 3.4).
+- **All-in-one**: `make format` from the repo root runs all three.
+- Verify without modifying: `make format-check`.
+
 ## Python
 
 ```bash
