@@ -1,49 +1,38 @@
+# AgentWatch Dashboard (Next.js 14) — multi-stage Docker build.
+# Uses Next.js's standalone output mode so the runtime image only carries
+# the resolved dependencies + traced assets (typically <150MB total),
+# not the entire frontend/node_modules tree.
+
+FROM node:20-alpine AS deps
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --no-audit --no-fund
+
 FROM node:20-alpine AS builder
 WORKDIR /app
-
-# Install deps first (separate layer so it caches unless lockfile changes)
-COPY package.json package-lock.json ./
-RUN npm ci
-
-# Copy source — .dockerignore excludes node_modules/.next so we never
-# overwrite the just-installed Linux-native packages with Windows ones
-COPY . .
-
-# NEXT_PUBLIC_* vars are inlined at build time, not available at runtime.
-# Pass them as build args so they are baked into the JS bundle correctly.
-ARG NEXT_PUBLIC_API_HOST
-ARG NEXT_PUBLIC_WS_URL
-ENV NEXT_PUBLIC_API_HOST=$NEXT_PUBLIC_API_HOST
-ENV NEXT_PUBLIC_WS_URL=$NEXT_PUBLIC_WS_URL
-
 ENV NEXT_TELEMETRY_DISABLED=1
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
 RUN npm run build
 
-# ── Runtime ────────────────────────────────────────────────────────────
-FROM node:20-alpine AS runner
+FROM node:20-alpine AS runtime
 WORKDIR /app
-ENV NODE_ENV=production
-ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_ENV=production \
+    NEXT_TELEMETRY_DISABLED=1 \
+    PORT=3000 \
+    HOSTNAME=0.0.0.0
 
-RUN addgroup --system --gid 1001 nodejs \
- && adduser  --system --uid 1001 nextjs
+RUN addgroup -g 10001 -S agentwatch \
+    && adduser -S -u 10001 -G agentwatch agentwatch
 
-# Standalone output: server.js + minimal node_modules + .next/ build artefacts
-COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
-# Static assets must live at .next/static relative to server.js
-COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
-# Public assets (favicon, etc.)
-COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=agentwatch:agentwatch /app/public ./public
+COPY --from=builder --chown=agentwatch:agentwatch /app/.next/standalone ./
+COPY --from=builder --chown=agentwatch:agentwatch /app/.next/static ./.next/static
 
-USER nextjs
-
-# Render (and every other cloud) sets $PORT at runtime.
-ENV PORT=3000
-# Docker sets HOSTNAME to the container ID; Next.js passes that to server.listen(),
-# which binds only to the container's bridge IP rather than 0.0.0.0. Render's reverse
-# proxy can't reach a bridge-only binding, causing 502 on every request.
-ENV HOSTNAME=0.0.0.0
+USER agentwatch
 EXPOSE 3000
 
-# Exec form (no shell wrapper): SIGTERM goes directly to node, not sh.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
+  CMD wget -q -O - http://localhost:3000/api/health || exit 1
+
 CMD ["node", "server.js"]

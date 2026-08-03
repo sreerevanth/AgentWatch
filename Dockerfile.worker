@@ -1,0 +1,21 @@
+# AgentWatch Celery worker image.
+# Mirrors the API runtime image but the entrypoint launches Celery
+# instead of uvicorn. Keeping it as a separate Dockerfile means the
+# CMD can be overridden per-service in docker-compose without rebuilding.
+
+FROM python:3.12-slim AS builder
+RUN apt-get update && apt-get install -y --no-install-recommends build-essential git \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /build
+COPY . .
+RUN pip wheel --no-cache-dir --wheel-dir /wheels .
+
+FROM python:3.12-slim AS runtime
+RUN useradd --create-home --uid 10001 agentwatch
+COPY --from=builder /wheels /wheels
+RUN pip install --no-cache-dir /wheels/*.whl && rm -rf /wheels
+USER agentwatch
+
+# Default CMD is the celery worker; the worker service in docker-compose
+# overrides this to set the broker URL via env vars.
+CMD ["celery", "-A", "agentwatch.tasks.celery_app", "worker", "--loglevel=info", "--concurrency=2"]

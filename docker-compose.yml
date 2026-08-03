@@ -53,8 +53,7 @@ services:
   worker:
     build:
       context: .
-      dockerfile: Dockerfile.api
-    command: celery -A agentwatch.tasks.celery_app worker --loglevel=info --concurrency=2
+      dockerfile: Dockerfile.worker
     environment:
       DATABASE_URL: postgresql+asyncpg://agentwatch:agentwatch@postgres:5432/agentwatch
       REDIS_URL: redis://redis:6379/0

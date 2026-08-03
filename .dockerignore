@@ -1,24 +1,35 @@
-.git
-.github
-.agents
-.ruff_cache
-.pytest_cache
-pytest-cache-files-*
-__pycache__
-*.pyc
-*.pyo
-*.egg-info
-.coverage
-coverage.json
-coverage.xml
-htmlcov
-dist
-build
-node_modules
-frontend/node_modules
-frontend/.next
-agentwatch-landing/node_modules
-agentwatch-landing/.next
-.env
-.env.*
+# Node
+node_modules/
+.next/
+out/
+build/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.pytest-tmp/
+
+# Build artifacts
+dist/
+coverage/
 *.log
+.DS_Store
+
+# Git
+.git/
+.github/
+
+# Tests
+tests/
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# IDE
+.vscode/
+.idea/
