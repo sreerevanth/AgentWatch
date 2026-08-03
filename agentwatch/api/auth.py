@@ -121,8 +121,7 @@ def require_permission(permission: str):
         @app.get("/api/v1/sessions")
         async def list_sessions(
             _perm: SAMLClaims | None = Depends(require_permission("session:read")),
-        ):
-            ...
+        ): ...
 
     When SAML enforcement is disabled the dependency is a no-op (returns
     ``None``). When enabled it verifies the token, resolves the role, and

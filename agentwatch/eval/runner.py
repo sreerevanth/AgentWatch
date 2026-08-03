@@ -8,8 +8,7 @@ Agent contract
 --------------
 The ``--agent`` script must expose a top-level callable::
 
-    def run(prompt: str) -> list[AgentEvent]:
-        ...
+    def run(prompt: str) -> list[AgentEvent]: ...
 
 The runner imports the script, calls ``run`` once per prompt, and feeds the
 returned events to the scorer. Everything here except :func:`load_agent` is pure
@@ -19,10 +18,7 @@ Dataset format
 --------------
 A JSON array of cases::
 
-    [
-      {"id": "case-1", "prompt": "...", "expected": "optional substring"},
-      {"prompt": "..."}
-    ]
+    [{"id": "case-1", "prompt": "...", "expected": "optional substring"}, {"prompt": "..."}]
 
 ``id`` defaults to the 1-based index; ``expected``, when present, must appear in
 the event trace for the case to pass (in addition to the confidence checks).
