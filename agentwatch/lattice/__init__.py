@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from agentwatch.lattice.attention_scatter import (
+    AttentionScatterDetector,
+    AttentionScatterReport,
+    compute_scatter_score,
+)
 from agentwatch.lattice.shadow_filesystem import (
     CRITICAL_SYSTEM_PATHS,
     FileAction,
@@ -12,10 +17,13 @@ from agentwatch.lattice.shadow_filesystem import (
 )
 
 __all__ = [
+    "AttentionScatterDetector",
+    "AttentionScatterReport",
     "CRITICAL_SYSTEM_PATHS",
     "FileAction",
     "FileOperation",
     "MutationResult",
     "MutationType",
     "ShadowFilesystem",
+    "compute_scatter_score",
 ]
