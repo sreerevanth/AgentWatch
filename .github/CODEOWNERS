@@ -1,0 +1,19 @@
+# These owners will be the default owners for everything in
+# the repo. Unless a later match takes precedence,
+# @sreerevanth will be requested for review when someone opens a pull request.
+*       @sreerevanth
+
+# Documentation
+/docs/  @sreerevanth
+*.md    @sreerevanth
+
+# Backend & APIs
+/agentwatch/   @sreerevanth
+/api/          @sreerevanth
+
+# Frontend
+/frontend/     @sreerevanth
+/agentwatch-landing/ @sreerevanth
+
+# CI/CD and GitHub Actions
+/.github/      @sreerevanth
