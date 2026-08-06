@@ -359,7 +359,7 @@ class Repository:
         d = delete(SessionRecord).where(SessionRecord.session_id.in_(session_ids))
         result = await self._session.execute(d)
         await self._session.flush()
-        return result.rowcount
+        return result.rowcount or 0
 
     async def erase_user_data(
         self, user_id: str, *, scope: str = "all", tenant_id: str | None = None
@@ -409,6 +409,64 @@ class Repository:
 
         await self._session.flush()
         return deleted
+
+    async def get_session_ids(self, where: dict[str, str]) -> list[str]:
+        """Retrieve session IDs matching a filter (e.g. agent_id=)."""
+        from sqlalchemy import select
+
+        filters: list[Any] = []
+        for k, v in where.items():
+            col = getattr(SessionRecord, k, None)
+            if col is not None:
+                filters.append(col == v)
+        if not filters:
+            return []
+        q = select(SessionRecord.session_id).where(*filters)
+        result = await self._session.execute(q)
+        return list(result.scalars())
+
+    async def count_sessions(self, where: dict[str, str]) -> int:
+        """Count sessions matching a filter."""
+        from sqlalchemy import func, select
+
+        filters: list[Any] = []
+        for k, v in where.items():
+            col = getattr(SessionRecord, k, None)
+            if col is not None:
+                filters.append(col == v)
+        if not filters:
+            return 0
+        q = select(func.count()).select_from(SessionRecord).where(*filters)
+        result = await self._session.execute(q)
+        return result.scalar_one()
+
+    async def count_events(self, where: dict[str, str]) -> int:
+        """Count events matching a filter (e.g. agent_id=)."""
+        from sqlalchemy import func, select
+
+        filters: list[Any] = []
+        for k, v in where.items():
+            col = getattr(EventRecord, k, None)
+            if col is not None:
+                filters.append(col == v)
+        if not filters:
+            return 0
+        q = select(func.count()).select_from(EventRecord).where(*filters)
+        result = await self._session.execute(q)
+        return result.scalar_one()
+
+    async def delete_session(self, session_id: str) -> int:
+        """Delete a single session (and its task dependencies). Returns 1 if deleted."""
+        return await self.prune_sessions([session_id])
+
+    async def delete_events_by_session(self, session_id: str) -> int:
+        """Delete events tied to a session and return the number removed."""
+        from sqlalchemy import delete
+
+        d = delete(EventRecord).where(EventRecord.session_id == session_id)
+        result = await self._session.execute(d)
+        await self._session.flush()
+        return result.rowcount
 
 
 class SqlAlchemyAuditStore:

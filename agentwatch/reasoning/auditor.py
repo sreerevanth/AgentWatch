@@ -8,7 +8,17 @@ from dataclasses import dataclass, field
 from statistics import mean
 from typing import Any, cast
 
-from agentwatch.core.schema import AgentEvent, EventType
+from agentwatch.core.schema import (
+    AgentEvent,
+    EventType,
+    ReasoningStyleFingerprint,
+    StyleSwapAlert,
+)
+from agentwatch.reasoning.fingerprint import (
+    StyleFingerprint,
+    detect_mid_session_change,
+    fingerprint,
+)
 
 JudgeCallback = Callable[[str, AgentEvent], Awaitable[dict[str, Any]]]
 
@@ -76,6 +86,22 @@ class AuditSummary:
             "weakest_step": self.weakest_step,
             "strongest_step": self.strongest_step,
             "audits": [audit.to_dict() for audit in self.audits],
+        }
+
+
+@dataclass
+class FingerprintReport:
+    """Bundle of style-fingerprint + swap-detection results for a session."""
+
+    session_id: str
+    fingerprint: ReasoningStyleFingerprint
+    swap_alert: StyleSwapAlert
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "session_id": self.session_id,
+            "fingerprint": self.fingerprint.model_dump(),
+            "swap_alert": self.swap_alert.model_dump(),
         }
 
 
@@ -175,6 +201,85 @@ class ReasoningAuditor:
         if event.is_blocked:
             signals.append("blocked_action")
         return signals
+
+    def fingerprint_session(
+        self,
+        events: list[AgentEvent],
+        *,
+        distance_threshold: float = 1.0,
+        split_ratio: float = 0.5,
+    ) -> FingerprintReport:
+        """Compute the session style fingerprint and detect mid-session swaps.
+
+        Args:
+            events: All events recorded for the session (any timeline order is
+                fine — the mid-session split is positional on the list you pass).
+            distance_threshold: Euclidean-style distance above which a fingerprint
+                delta is reported as a probable mid-session model swap.
+            split_ratio: Where to split the events list into halves when
+                comparing the first vs second half.
+
+        Returns:
+            A :class:`FingerprintReport` containing both the full-session
+            fingerprint and the swap-detection alert.
+        """
+        full = fingerprint(events)
+        detected, distance = detect_mid_session_change(
+            events,
+            split_ratio=split_ratio,
+            distance_threshold=distance_threshold,
+        )
+        # Compute both halves for diagnostic context, even when we cannot
+        # actually compare them — this lets downstream consumers see *why*
+        # detection returned ``False``.
+        cut = int(len(events) * split_ratio)
+        first, second = events[:cut], events[cut:]
+        plans_first = sum(1 for e in first if e.event_type == EventType.PLANNER_OUTPUT)
+        plans_second = sum(1 for e in second if e.event_type == EventType.PLANNER_OUTPUT)
+        first_fp = self._pydantic_fingerprint(fingerprint(first), sample_size=plans_first)
+        second_fp = self._pydantic_fingerprint(fingerprint(second), sample_size=plans_second)
+        session_id = events[0].session_id if events else ""
+        reason: str | None = None
+        if not detected:
+            if len(events) < 6:
+                reason = "insufficient_events"
+            elif plans_first == 0 or plans_second == 0:
+                # Genuine insufficient planner signal: one half has no planner
+                # output at all, so distance==0 is meaningless.
+                reason = "insufficient_planner_signal"
+            elif distance == 0.0:
+                # Identical planner fingerprints on both sides ⇒ identical
+                # style, distinct from missing-planner-signal case above.
+                reason = "style_identical"
+            else:
+                reason = "below_threshold"
+        plans_count = sum(1 for e in events if e.event_type == EventType.PLANNER_OUTPUT)
+        fp_pydantic = self._pydantic_fingerprint(full, sample_size=plans_count)
+        return FingerprintReport(
+            session_id=session_id,
+            fingerprint=fp_pydantic,
+            swap_alert=StyleSwapAlert(
+                session_id=session_id,
+                detected=detected,
+                distance=round(distance, 4),
+                threshold=distance_threshold,
+                first_half=first_fp,
+                second_half=second_fp,
+                reason=reason,
+            ),
+        )
+
+    @staticmethod
+    def _pydantic_fingerprint(
+        fp: StyleFingerprint,
+        *,
+        sample_size: int | None = None,
+    ) -> ReasoningStyleFingerprint:
+        """Bridge from the dataclass fingerprint to the schema model."""
+        instance = ReasoningStyleFingerprint.from_dataclass(fp)
+        if sample_size is not None:
+            instance = instance.model_copy(update={"sample_size": sample_size})
+        return instance
 
     def _build_prompt(self, event: AgentEvent) -> str:
         return (

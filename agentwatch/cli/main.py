@@ -7,12 +7,13 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import platform
 import sys
 import time
 from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING, NoReturn
+from typing import TYPE_CHECKING, Any, NoReturn
 
 import typer
 from rich import box
@@ -139,7 +140,6 @@ def main_callback(
 
 def _start_repl_session():
     """Run an interactive REPL shell for the CLI."""
-    import os
     import shlex
 
     from rich.panel import Panel
@@ -174,9 +174,7 @@ def _start_repl_session():
                 break
 
             if cmd_lower in ("clear", "cls"):
-                os.system(  # noqa: S605, S607
-                    "cls" if os.name == "nt" else "clear"
-                )  # nosec
+                console.clear()
                 continue
 
             args = shlex.split(cmd_line)
@@ -1363,7 +1361,6 @@ def top(
     async def _run() -> None:
         try:
             import asyncio
-            from typing import Any
 
             import httpx
             from rich.live import Live
@@ -2374,6 +2371,108 @@ def session_prune(
             console.print("\n[green]Prune complete.[/green]")
 
     asyncio.run(_run())
+
+
+# ─────────────────────────────────────────────
+# compliance commands
+# ---------------------------------------------
+
+
+compliance_app = typer.Typer(
+    name="compliance",
+    help="Compliance audit log export and reporting.",
+    no_args_is_help=True,
+)
+app.add_typer(compliance_app)
+
+
+@compliance_app.command(name="export-csv")
+def compliance_export_csv(
+    output: Path = typer.Option(
+        Path("compliance-audit.csv"), "--output", "-o", help="Output CSV file path"
+    ),
+    include_allowed: bool = typer.Option(
+        False,
+        "--include-allowed",
+        help="Include allowed actions (denials only by default)",
+    ),
+    api_url: str = typer.Option("http://localhost:8000", "--api"),
+    api_key: str | None = API_KEY_OPTION,
+) -> None:
+    """Export compliance audit log as CSV from the running API server."""
+
+    async def _run() -> None:
+        try:
+            import httpx
+        except ImportError:
+            console.print("[red]httpx not installed. Run: pip install httpx[/red]")
+            raise typer.Exit(1)
+
+        async with httpx.AsyncClient() as client:
+            try:
+                params: dict[str, Any] = {"format": "csv"}
+                if include_allowed:
+                    params["include_allowed"] = "true"
+                resp = await client.get(
+                    f"{api_url}/api/v1/governance/compliance-report",
+                    headers=_api_headers(api_key),
+                    params=params,
+                    timeout=10.0,
+                )
+                resp.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                _handle_http_status_error(exc, api_url)
+            except httpx.HTTPError as exc:
+                console.print(f"[red]Failed to connect to API at {api_url}: {exc}[/red]")
+                raise typer.Exit(1)
+
+        with open(output, "w", encoding="utf-8", newline="") as f:
+            f.write(resp.text)
+        console.print(f"[green]{output} created successfully[/green]")
+
+    asyncio.run(_run())
+
+
+_DEFAULT_AUDIT_LOG_PATH = Path(os.getenv("AGENTWATCH_AUDIT_LOG_PATH", "data/audit-log.jsonl"))
+
+
+@compliance_app.command(name="export-local")
+def compliance_export_local(
+    output: Path = typer.Option(
+        Path("compliance-audit.csv"), "--output", "-o", help="Output CSV file path"
+    ),
+    include_allowed: bool = typer.Option(
+        False,
+        "--include-allowed",
+        help="Include allowed actions (denials only by default)",
+    ),
+    audit_log: Path = typer.Option(
+        _DEFAULT_AUDIT_LOG_PATH,
+        "--audit-log",
+        help="Path to the persisted audit log JSONL file",
+    ),
+) -> None:
+    """Export compliance audit log from a local JSONL file as CSV."""
+    from agentwatch.governance.compliance_reporter import ComplianceReporter
+    from agentwatch.governance.engine import GovernanceEngine
+
+    engine = GovernanceEngine(audit_log_path=audit_log)
+    loaded = len(engine._audit_log)
+    if loaded == 0:
+        console.print(
+            f"[yellow]No audit entries found in {audit_log}. "
+            "The server persists audit data when AGENTWATCH_AUDIT_LOG_PATH is set.[/yellow]"
+        )
+        return
+
+    reporter = ComplianceReporter(engine)
+    csv_content = reporter.generate_csv(include_allowed=include_allowed)
+
+    with open(output, "w", encoding="utf-8", newline="") as f:
+        f.write(csv_content)
+    # Count actual exported rows (subtract 1 for header)
+    exported = max(0, csv_content.count("\n") - 1)
+    console.print(f"[green]{output} created successfully ({exported} entries exported)[/green]")
 
 
 # ─────────────────────────────────────────────

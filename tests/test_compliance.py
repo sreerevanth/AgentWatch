@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+import csv
+import io
 from datetime import UTC, datetime
 
 from agentwatch.governance.causal import AdverseOutcome, attribute
+from agentwatch.governance.compliance_reporter import ComplianceReporter
+from agentwatch.governance.engine import (
+    AuditEventType,
+    GovernanceEngine,
+    Permission,
+    Principal,
+)
 from agentwatch.governance.eu_ai_act import (
     EUAIActPackage,
     TechnicalDocumentation,
@@ -229,3 +238,78 @@ def test_iso42001_report_counts():
     rep = ams.report()
     assert rep.metrics["open_incidents"] == 1
     assert rep.metrics["high_risks"] == 1
+
+
+# ─────────────────────────────────────────────
+# CMP-010 — CSV Export (Issue #148)
+# ─────────────────────────────────────────────
+
+
+def _make_engine_with_entries() -> GovernanceEngine:
+    engine = GovernanceEngine()
+    viewer = Principal(principal_id="u1", name="Viewer", roles=["viewer"])
+    admin = Principal(principal_id="u2", name="Admin", roles=["admin"])
+    engine.register_principal(viewer)
+    engine.register_principal(admin)
+    engine.check_permission("u1", Permission.SAFETY_OVERRIDE, "policy")
+    engine.check_permission("u1", Permission.ADMIN_ALL, "config")
+    engine.record_action(
+        "u2", AuditEventType.CONFIG_CHANGE, "config", "updated", allowed=True
+    )
+    return engine
+
+
+def test_compliance_report_to_csv_has_header():
+    engine = _make_engine_with_entries()
+    reporter = ComplianceReporter(engine)
+    report = reporter.generate()
+    csv_output = report.to_csv()
+    reader = csv.reader(io.StringIO(csv_output))
+    header = next(reader)
+    assert "audit_id" in header
+    assert "event_type" in header
+    assert "allowed" in header
+
+
+def test_compliance_report_to_csv_contains_denials():
+    engine = _make_engine_with_entries()
+    reporter = ComplianceReporter(engine)
+    report = reporter.generate()
+    csv_output = report.to_csv()
+    assert "permission_denied" in csv_output
+
+
+def test_compliance_report_to_csv_empty_when_no_denials():
+    engine = GovernanceEngine()
+    engine.register_principal(Principal(principal_id="a", name="A", roles=["admin"]))
+    engine.record_action(
+        "a", AuditEventType.CONFIG_CHANGE, "c", "u", allowed=True
+    )
+    reporter = ComplianceReporter(engine)
+    report = reporter.generate()
+    csv_output = report.to_csv()
+    reader = csv.reader(io.StringIO(csv_output))
+    rows = list(reader)
+    assert len(rows) == 1
+
+
+def test_compliance_reporter_generate_csv_denials_only():
+    engine = _make_engine_with_entries()
+    reporter = ComplianceReporter(engine)
+    csv_output = reporter.generate_csv(include_allowed=False)
+    reader = csv.reader(io.StringIO(csv_output))
+    rows = list(reader)
+    assert len(rows) >= 2
+    for row in rows[1:]:
+        assert "permission_denied" in row[3] or "safety_override" in row[3]
+
+
+def test_compliance_reporter_generate_csv_includes_allowed():
+    engine = _make_engine_with_entries()
+    reporter = ComplianceReporter(engine)
+    csv_output = reporter.generate_csv(include_allowed=True)
+    reader = csv.reader(io.StringIO(csv_output))
+    rows = list(reader)
+    assert len(rows) >= 3
+    actions = [row[5] for row in rows[1:]]
+    assert "updated" in actions

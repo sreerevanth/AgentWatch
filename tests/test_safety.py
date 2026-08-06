@@ -10,6 +10,7 @@ from agentwatch.core.blast_radius import BlastRadiusEstimator, Reversibility
 from agentwatch.core.injection import scan_text
 from agentwatch.core.loop_detector import LoopDetector
 from agentwatch.core.policy_dsl import PolicyAction, PolicyEngine, Rule
+from agentwatch.core.recursion_depth_detector import RecursionDepthDetector
 from agentwatch.core.risk import score_event
 from agentwatch.core.safety import (
     RiskScorer,
@@ -298,7 +299,37 @@ def test_loop_detector_invalid_explicit_threshold_raises():
     with pytest.raises(ValueError, match="min_reps must be >= 1"):
         LoopDetector(min_reps=-5)
 
+# SAF-0XX — Recursion Depth Detector
 
+def test_recursion_depth_detector_detects_self_reflection():
+    detector = RecursionDepthDetector()
+
+    for _ in range(6):
+        event = AgentEvent(
+            session_id="s1",
+            agent_id="a1",
+            event_type=EventType.PLANNER_OUTPUT,
+            planner_output_preview="I think I should reconsider this.",
+        )
+        report = detector.observe(event)
+
+    assert report.detected
+    assert report.matches >= 6
+
+
+def test_recursion_depth_detector_ignores_normal_reasoning():
+    detector = RecursionDepthDetector()
+
+    event = AgentEvent(
+        session_id="s1",
+        agent_id="a1",
+        event_type=EventType.PLANNER_OUTPUT,
+        planner_output_preview="Searching for relevant documentation.",
+    )
+
+    report = detector.observe(event)
+
+    assert not report.detected
 # ─────────────────────────────────────────────
 # SAF-008 — Exfiltration
 # ─────────────────────────────────────────────
