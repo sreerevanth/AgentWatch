@@ -16,7 +16,7 @@
       "login": "SakethSumanBathini",
       "avatar_url": "https://github.com/SakethSumanBathini.png",
       "html_url": "https://github.com/SakethSumanBathini",
-      "contributions": 24
+      "contributions": 28
     },
     {
       "login": "anshul23102",
@@ -37,16 +37,16 @@
       "contributions": 16
     },
     {
+      "login": "arcgod-design",
+      "avatar_url": "https://github.com/arcgod-design.png",
+      "html_url": "https://github.com/arcgod-design",
+      "contributions": 14
+    },
+    {
       "login": "Prateeks16",
       "avatar_url": "https://github.com/Prateeks16.png",
       "html_url": "https://github.com/Prateeks16",
       "contributions": 11
-    },
-    {
-      "login": "arcgod-design",
-      "avatar_url": "https://github.com/arcgod-design.png",
-      "html_url": "https://github.com/arcgod-design",
-      "contributions": 9
     },
     {
       "login": "prachishelke1312",
@@ -100,6 +100,12 @@
       "login": "AshutoshDash1999",
       "avatar_url": "https://github.com/AshutoshDash1999.png",
       "html_url": "https://github.com/AshutoshDash1999",
+      "contributions": 2
+    },
+    {
+      "login": "ankitasahu83964",
+      "avatar_url": "https://github.com/ankitasahu83964.png",
+      "html_url": "https://github.com/ankitasahu83964",
       "contributions": 2
     },
     {
@@ -175,12 +181,6 @@
       "contributions": 1
     },
     {
-      "login": "ankitasahu83964",
-      "avatar_url": "https://github.com/ankitasahu83964.png",
-      "html_url": "https://github.com/ankitasahu83964",
-      "contributions": 1
-    },
-    {
       "login": "NeuralImprint",
       "avatar_url": "https://github.com/NeuralImprint.png",
       "html_url": "https://github.com/NeuralImprint",
@@ -190,6 +190,12 @@
       "login": "MrShirini",
       "avatar_url": "https://github.com/MrShirini.png",
       "html_url": "https://github.com/MrShirini",
+      "contributions": 1
+    },
+    {
+      "login": "Akshaya-125",
+      "avatar_url": "https://github.com/Akshaya-125.png",
+      "html_url": "https://github.com/Akshaya-125",
       "contributions": 1
     },
     {
@@ -223,6 +229,6 @@
       "contributions": 1
     }
   ],
-  "updated_at": "2026-07-16T08:24:59Z",
-  "total": 37
+  "updated_at": "2026-08-06T14:01:59Z",
+  "total": 38
 }
