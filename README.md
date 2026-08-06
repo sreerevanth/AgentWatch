@@ -508,6 +508,34 @@ We believe in fostering a collaborative, transparent AI engineering ecosystem. I
 
 ---
 
+## ❓ Frequently Asked Questions (FAQ)
+
+### 1. What is AgentWatch and what problem does it solve?
+AgentWatch is an AI safety and observability platform that audits agent reasoning and blocks risky actions before they execute, helping prevent silent failures and unintended side effects.
+
+### 2. Which Python and Node.js versions are supported?
+AgentWatch requires Python 3.12 or later. For the frontend, ensure you have Node.js installed before running the dashboard setup instructions.
+
+### 3. Do I need Docker to run the project?
+No. Docker is optional. It is recommended for quickly starting the dashboard and required services, but you can also run the backend and frontend separately during development by following the setup instructions in the Contributing section.
+
+### 4. How do I run the backend and frontend separately?
+Run the backend from the project root and start the frontend by navigating to the `frontend` directory and running the development server.
+
+### 5. Where can I find the API documentation?
+After starting the backend, the interactive API documentation is available at `http://localhost:8000/docs`.
+
+### 6. How can I contribute to AgentWatch?
+Read the Contributing section, pick an issue, create a feature branch, implement your changes, and submit a pull request.
+
+### 7. Where should I report bugs or request new features?
+Please open a GitHub Issue using the appropriate issue template.
+
+### 8. How do I join the community for support?
+Join the project's Discord server to ask questions, discuss ideas, and collaborate with other contributors.
+
+---
+
 ## 💬 Community
 
 **Discord** — [discord.gg/n2RzUmZ4](https://discord.gg/n2RzUmZ4)
