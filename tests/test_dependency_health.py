@@ -98,7 +98,11 @@ def test_circuit_breaker_reset():
 @pytest.mark.asyncio
 async def test_check_one_healthy():
     checker = DependencyHealthChecker()
-    checker.register("svc", lambda: asyncio.coroutine(lambda: _healthy_result("svc"))())
+
+    async def _check():
+        return _healthy_result("svc")
+
+    checker.register("svc", _check)
     result = await checker.check_one("svc")
     assert result.status == HealthStatus.HEALTHY
 
@@ -114,7 +118,11 @@ async def test_check_one_unregistered():
 @pytest.mark.asyncio
 async def test_check_one_circuit_open():
     checker = DependencyHealthChecker()
-    checker.register("svc", lambda: asyncio.coroutine(lambda: _healthy_result())())
+
+    async def _check():
+        return _healthy_result()
+
+    checker.register("svc", _check)
     breaker = checker._breakers["svc"]
     breaker._failure_count = 5
     breaker._state = CircuitState.OPEN
@@ -154,8 +162,15 @@ async def test_check_one_exception():
 @pytest.mark.asyncio
 async def test_check_all_healthy():
     checker = DependencyHealthChecker()
-    checker.register("a", lambda: asyncio.coroutine(lambda: _healthy_result("a"))())
-    checker.register("b", lambda: asyncio.coroutine(lambda: _healthy_result("b"))())
+
+    async def _check_a():
+        return _healthy_result("a")
+
+    async def _check_b():
+        return _healthy_result("b")
+
+    checker.register("a", _check_a)
+    checker.register("b", _check_b)
     report = await checker.check_all()
     assert report.overall == HealthStatus.HEALTHY
     assert len(report.checks) == 2
@@ -164,13 +179,15 @@ async def test_check_all_healthy():
 @pytest.mark.asyncio
 async def test_check_all_degraded():
     checker = DependencyHealthChecker()
-    checker.register("a", lambda: asyncio.coroutine(lambda: _healthy_result("a"))())
-    checker.register("b", lambda: asyncio.coroutine(lambda: _unhealthy_result("b", "slow"))())
 
-    async def _degraded():
+    async def _check_a():
+        return _healthy_result("a")
+
+    async def _check_b():
         return HealthCheckResult(name="b", status=HealthStatus.DEGRADED, latency_ms=50.0)
 
-    checker.register("b", _degraded)
+    checker.register("a", _check_a)
+    checker.register("b", _check_b)
     report = await checker.check_all()
     assert report.overall == HealthStatus.DEGRADED
 
@@ -178,8 +195,15 @@ async def test_check_all_degraded():
 @pytest.mark.asyncio
 async def test_check_all_unhealthy():
     checker = DependencyHealthChecker()
-    checker.register("a", lambda: asyncio.coroutine(lambda: _unhealthy_result("a"))())
-    checker.register("b", lambda: asyncio.coroutine(lambda: _unhealthy_result("b"))())
+
+    async def _check_a():
+        return _unhealthy_result("a")
+
+    async def _check_b():
+        return _unhealthy_result("b")
+
+    checker.register("a", _check_a)
+    checker.register("b", _check_b)
     report = await checker.check_all()
     assert report.overall == HealthStatus.UNHEALTHY
 
@@ -187,7 +211,11 @@ async def test_check_all_unhealthy():
 @pytest.mark.asyncio
 async def test_unhealthy_check_trips_circuit():
     checker = DependencyHealthChecker()
-    checker.register("svc", lambda: asyncio.coroutine(lambda: _unhealthy_result("svc"))())
+
+    async def _check():
+        return _unhealthy_result("svc")
+
+    checker.register("svc", _check)
     for _ in range(3):
         await checker.check_one("svc")
     assert checker.get_circuit_state("svc") == CircuitState.OPEN
@@ -196,7 +224,11 @@ async def test_unhealthy_check_trips_circuit():
 @pytest.mark.asyncio
 async def test_unregister():
     checker = DependencyHealthChecker()
-    checker.register("svc", lambda: asyncio.coroutine(lambda: _healthy_result("svc"))())
+
+    async def _check():
+        return _healthy_result("svc")
+
+    checker.register("svc", _check)
     checker.unregister("svc")
     result = await checker.check_one("svc")
     assert "No check registered" in result.message
@@ -205,7 +237,11 @@ async def test_unregister():
 @pytest.mark.asyncio
 async def test_reset_circuit():
     checker = DependencyHealthChecker()
-    checker.register("svc", lambda: asyncio.coroutine(lambda: _healthy_result("svc"))())
+
+    async def _check():
+        return _healthy_result("svc")
+
+    checker.register("svc", _check)
     checker._breakers["svc"]._state = CircuitState.OPEN
     assert checker.reset_circuit("svc") is True
     assert checker.get_circuit_state("svc") == CircuitState.CLOSED
@@ -250,7 +286,11 @@ async def test_concurrent_check_all():
     checker = DependencyHealthChecker()
     for i in range(5):
         name = f"svc_{i}"
-        checker.register(name, lambda n=name: asyncio.coroutine(lambda: _healthy_result(n))())
+
+        async def _check(n=name):
+            return _healthy_result(n)
+
+        checker.register(name, _check)
     report = await checker.check_all()
     assert report.overall == HealthStatus.HEALTHY
     assert len(report.checks) == 5
