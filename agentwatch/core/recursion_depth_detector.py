@@ -40,10 +40,7 @@ class RecursionDepthDetector:
         patterns: list[str] | None = None,
     ):
         self.threshold = threshold
-        self.patterns = [
-            re.compile(p, re.IGNORECASE)
-            for p in (patterns or DEFAULT_PATTERNS)
-        ]
+        self.patterns = [re.compile(p, re.IGNORECASE) for p in (patterns or DEFAULT_PATTERNS)]
         self.buffer = deque(maxlen=buffer_size)
 
     def observe(self, event: AgentEvent) -> RecursionDepthReport:
