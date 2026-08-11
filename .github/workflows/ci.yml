@@ -68,7 +68,7 @@ jobs:
           REDIS_URL: redis://localhost:6379/0
         run: pytest tests/ -v --cov=agentwatch --cov-report=xml --cov-report=html --cov-report=term-missing --cov-fail-under=70
       - name: Upload HTML coverage report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: html-coverage-report
           path: htmlcov/
