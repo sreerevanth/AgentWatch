@@ -1,4 +1,17 @@
-"""Reasoning step auditor with optional LLM-judge callback."""
+"""Reasoning step auditor with optional LLM-judge callback.
+
+.. deprecated::
+    The :class:`ReasoningAuditor` is **advisory-only** as of v2 (Phase 5 — see
+    issue #665). It no longer participates in blocking decisions: low scores
+    produce a ``WARNING`` verdict but never trigger ``ExecutionStatus.BLOCKED``.
+    Blocking is now owned by the Capability Lattice (``agentwatch.lattice.capability``)
+    and the State Lattice (``agentwatch.lattice.shadow_filesystem``).
+
+    The legacy ``_DESTRUCTIVE_PATTERNS`` substring matches that used to live
+    here have been moved to :mod:`agentwatch.lattice.capability` — the
+    auditor now imports them from there so dashboards reading
+    ``audit.risk_signals`` keep working unchanged.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +27,7 @@ from agentwatch.core.schema import (
     ReasoningStyleFingerprint,
     StyleSwapAlert,
 )
+from agentwatch.lattice.capability import detect_capability_signals
 from agentwatch.reasoning.fingerprint import (
     StyleFingerprint,
     detect_mid_session_change,
@@ -22,22 +36,21 @@ from agentwatch.reasoning.fingerprint import (
 
 JudgeCallback = Callable[[str, AgentEvent], Awaitable[dict[str, Any]]]
 
-# Substrings that mark a shell/tool command as destructive. Kept intentionally
-# conservative and lowercase; matched against the command + string arguments.
-_DESTRUCTIVE_PATTERNS = (
-    "rm -rf",
-    "rm -r ",
-    "rmdir",
-    "drop table",
-    "drop database",
-    "truncate ",
-    "mkfs",
-    "dd if=",
-    "shutdown",
-    "reboot",
-    "> /dev/sd",
-    ":(){:|:&};:",
-)
+# Advisory verdict taxonomy (Phase 5 — see issue #665).
+# Replaces the legacy v1 "sound"/"acceptable"/"weak" verdicts so consumers can
+# distinguish an advisory warning from a block signal at a glance.
+ADVISORY_CLEAN = "advisory_clean"
+ADVISORY_NOTE = "advisory_note"
+ADVISORY_WARN = "advisory_warn"
+
+# Back-compat aliases for any downstream consumer that still queries the
+# pre-v2 verdict names. New code should use the ``advisory_*`` constants above.
+LEGACY_VERDICT_SOUND = "sound"
+LEGACY_VERDICT_ACCEPTABLE = "acceptable"
+LEGACY_VERDICT_WEAK = "weak"
+
+ADVISORY_WARN_THRESHOLD = 0.40
+ADVISORY_NOTE_THRESHOLD = 0.70
 
 
 @dataclass
@@ -53,6 +66,9 @@ class StepAudit:
     risk_signals: list[str] = field(default_factory=list)
     confidence_breakdown: dict[str, float] = field(default_factory=dict)
     latency_ms: float = 0.0
+    # Phase 5 (#665): make the advisory-only semantics explicit. New code can
+    # ignore this field; legacy consumers can rely on the v1 risk_signals list.
+    is_advisory_only: bool = True
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -68,6 +84,7 @@ class StepAudit:
                 key: round(value, 3) for key, value in self.confidence_breakdown.items()
             },
             "latency_ms": round(self.latency_ms, 2),
+            "is_advisory_only": self.is_advisory_only,
         }
 
 
@@ -172,30 +189,19 @@ class ReasoningAuditor:
 
     @staticmethod
     def detect_risk_signals(event: AgentEvent) -> list[str]:
-        """Surface human-readable risk signals for a step, e.g. destructive
-        commands or overly-broad wildcards, so a block is explainable."""
-        signals: list[str] = []
-        tool_call = event.tool_call
-        if tool_call is not None:
-            command = (tool_call.raw_command or "").lower()
-            arg_text = (
-                " ".join(
-                    str(value).lower()
-                    for value in tool_call.arguments.values()
-                    if isinstance(value, str)
-                )
-                if tool_call.arguments
-                else ""
-            )
-            haystack = f"{command} {arg_text}".strip()
-            if any(pattern in haystack for pattern in _DESTRUCTIVE_PATTERNS):
-                signals.append("destructive_command")
-            if haystack.startswith("sudo") or "sudo " in haystack:
-                signals.append("privilege_escalation")
-            if "*" in haystack:
-                signals.append("broad_wildcard")
-            if any(token in haystack for token in ("curl ", "wget ", "http://", "https://")):
-                signals.append("external_fetch")
+        """Surface human-readable risk signals for a step.
+
+        Phase 5 (#665): the substring pattern matching now lives in the
+        Capability Lattice (``agentwatch.lattice.capability``). This method
+        stays as the canonical "v1 risk_signal name" surface so dashboards
+        and audit logs keep working unchanged. New code that needs to take
+        a blocking decision should call :func:`detect_capability_signals`
+        directly.
+
+        Tool-result-error and ``blocked_action`` markers remain here because
+        they describe the *outcome* of an action, not its structural risk.
+        """
+        signals = detect_capability_signals(event).to_risk_signal_names()
         if event.tool_result is not None and event.tool_result.error:
             signals.append("tool_error")
         if event.is_blocked:
@@ -321,10 +327,19 @@ class ReasoningAuditor:
             evidence.append("blocked_action")
 
         score = max(0.0, min(score, 1.0))
-        verdict = "sound" if score >= 0.75 else "acceptable" if score >= 0.5 else "weak"
+        # Phase 5 (#665): advisory-only verdict taxonomy. Replaces the v1
+        # "sound"/"acceptable"/"weak" names so consumers can tell at a glance
+        # that this output does not trigger any blocking decision.
+        if score >= ADVISORY_NOTE_THRESHOLD:
+            verdict = ADVISORY_CLEAN
+        elif score >= ADVISORY_WARN_THRESHOLD:
+            verdict = ADVISORY_NOTE
+        else:
+            verdict = ADVISORY_WARN
         rationale = (
-            "Heuristic audit based on observability artifacts because no external judge "
-            "callback is configured."
+            "Advisory heuristic audit based on observability artifacts because no "
+            "external judge callback is configured. This verdict is advisory-only — "
+            "blocking decisions are owned by the Capability and State lattices."
         )
 
         # Interpretable per-dimension decomposition (does not alter `score`).
