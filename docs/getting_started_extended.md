@@ -13,9 +13,11 @@ Verify setup by wrapping a dummy model agent:
 ```python
 from agentwatch import watch
 
+
 class TestAgent:
     def run(self, query: str) -> str:
         return f"Response to: {query}"
+
 
 agent = watch(TestAgent())
 agent.run("Verify connection parameters.")

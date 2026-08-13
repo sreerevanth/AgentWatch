@@ -18,19 +18,16 @@ from langchain.agents import AgentExecutor
 
 # Initialize the handler
 handler = AgentWatchCallbackHandler(
-    session_id="my-session-123", # Optional: defaults to a new UUID
-    agent_id="my-agent-456"      # Optional: helpful for multi-agent setups
+    session_id="my-session-123",  # Optional: defaults to a new UUID
+    agent_id="my-agent-456",  # Optional: helpful for multi-agent setups
 )
 
 # Use with AgentExecutor
-agent = AgentExecutor(
-    agent=..., 
-    tools=..., 
-    callbacks=[handler]
-)
+agent = AgentExecutor(agent=..., tools=..., callbacks=[handler])
 
 # Use with an LLM directly
 from langchain_openai import ChatOpenAI
+
 llm = ChatOpenAI(model="gpt-4", callbacks=[handler])
 ```
 

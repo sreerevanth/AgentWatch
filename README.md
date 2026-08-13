@@ -281,8 +281,8 @@ from agentwatch.reasoning.auditor import ReasoningAuditor
 auditor = ReasoningAuditor()
 audit = await auditor.audit_step(step.step_number, step)
 
-print(audit.score)        # 0.0 – 1.0 confidence in the step
-print(audit.rationale)    # why the auditor scored it this way
+print(audit.score)  # 0.0 – 1.0 confidence in the step
+print(audit.rationale)  # why the auditor scored it this way
 ```
 
 When the score drops below your threshold, the next action is **held — not logged after the fact.** An alert fires. You decide what happens next.

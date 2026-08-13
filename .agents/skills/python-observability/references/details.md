@@ -44,8 +44,10 @@ Instrument your endpoints:
 import time
 from functools import wraps
 
+
 def track_request(func):
     """Decorator to track request metrics."""
+
     @wraps(func)
     async def wrapper(request: Request, *args, **kwargs):
         method = request.method
@@ -67,7 +69,9 @@ def track_request(func):
         finally:
             duration = time.perf_counter() - start
             REQUEST_COUNT.labels(method=method, endpoint=endpoint, status=status).inc()
-            REQUEST_LATENCY.labels(method=method, endpoint=endpoint, status=status).observe(duration)
+            REQUEST_LATENCY.labels(method=method, endpoint=endpoint, status=status).observe(
+                duration
+            )
 
     return wrapper
 ```
@@ -105,6 +109,7 @@ import structlog
 
 logger = structlog.get_logger()
 
+
 @contextmanager
 def timed_operation(name: str, **extra_fields):
     """Context manager for timing and logging operations."""
@@ -132,6 +137,7 @@ def timed_operation(name: str, **extra_fields):
             **extra_fields,
         )
 
+
 # Usage
 with timed_operation("fetch_user_orders", user_id=user.id):
     orders = await order_repository.get_by_user(user.id)
@@ -149,6 +155,7 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
+
 def configure_tracing(service_name: str, otlp_endpoint: str) -> None:
     """Configure OpenTelemetry tracing."""
     provider = TracerProvider()
@@ -156,7 +163,9 @@ def configure_tracing(service_name: str, otlp_endpoint: str) -> None:
     provider.add_span_processor(processor)
     trace.set_tracer_provider(provider)
 
+
 tracer = trace.get_tracer(__name__)
+
 
 async def process_order(order_id: str) -> Order:
     """Process order with tracing."""

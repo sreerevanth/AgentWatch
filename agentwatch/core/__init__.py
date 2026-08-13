@@ -1,3 +1,4 @@
+from agentwatch.core.capabilities import AgentCapabilities, Capability
 from agentwatch.core.event_bus import EventBus, EventFilter, get_event_bus
 from agentwatch.core.safety import (
     DEFAULT_POLICY,
