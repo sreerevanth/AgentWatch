@@ -1,0 +1,6 @@
+interface:
+  display_name: "AgentWatch"
+  short_description: "Repo-specific patterns and workflows for AgentWatch"
+  default_prompt: "Use the AgentWatch repo skill to follow existing architecture, testing, and workflow conventions."
+policy:
+  allow_implicit_invocation: true
