@@ -1,4 +1,11 @@
 import datetime
+import os
+import tempfile
+
+# v3 stores must never touch a developer's real ~/.agentwatch or ./data during tests
+_AW3_TMP = tempfile.mkdtemp(prefix="agentwatch-tests-")
+os.environ["AGENTWATCH_HOME"] = _AW3_TMP
+os.environ["AGENTWATCH_STORE"] = f"sqlite:///{_AW3_TMP}/agentwatch-v3.db".replace("\\", "/")
 
 import agentwatch.memory.engine
 import agentwatch.scoring.drift

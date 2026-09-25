@@ -121,6 +121,8 @@ class TraceCollector:
     async def ingest(self, event: AgentEvent) -> None:
         """Process one event into the trace collection."""
         if self.hipaa_compliance_mode:
+            # Redact a private copy; never mutate the caller's (possibly shared) event object.
+            event = event.model_copy(deep=True)
             # Redact common text fields
             if event.goal:
                 event.goal = redact_phi(event.goal).redacted

@@ -18,7 +18,7 @@ def all_capabilities() -> list[Capability]:
 
 
 def _define() -> None:
-    E, V, P = Maturity.EXPERIMENTAL, Maturity.VALIDATED, Maturity.PRODUCTION  # noqa: N806 - table shorthand
+    E, V = Maturity.EXPERIMENTAL, Maturity.VALIDATED  # noqa: N806 - table shorthand
     items = [
         ("evidence.immutable_store", "1", V, "append-only observations, DB-enforced immutability, sealed Merkle segments",
          ("tests/v3/test_evidence.py",)),
