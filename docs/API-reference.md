@@ -4,6 +4,128 @@ Welcome to the central reference for the AgentWatch observability, safety, and r
 
 ---
 
+## Response Conventions
+
+This section describes what the API does today, so a new route has something to conform to. It is a
+description, not a proposal — everything below was checked against the running application, including
+the parts that are inconsistent.
+
+### Success responses have no envelope
+
+Payloads are returned at the top level. There is no `data` wrapper, no `success` flag, no metadata
+block.
+
+```http
+GET /api/v1/dashboard/summary
+200 OK
+
+{
+  "total_sessions": 12,
+  "active_sessions": 3,
+  "blocked_sessions": 1,
+  "estimated_cost_usd": 0.42
+}
+```
+
+A new route should return its payload directly and let the status code carry the success/failure
+signal.
+
+Five routes declare a `response_model` (`SessionListResponse`, `PruneResponse`, `TraceResponse`,
+`ConfidenceResponse`, `SafetyCheckResponse`); the other thirty return plain dictionaries or
+`model_dump()` output. Declaring a `response_model` is preferable for anything new — it validates the
+response, and it is what populates the OpenAPI schema that clients generate from.
+
+### Error responses come in three shapes
+
+This is the part worth knowing before you write a client, because **a single error parser will not
+work**.
+
+**Most errors** — 400, 404, 500 — use FastAPI's default handler, where `detail` is a string:
+
+```http
+GET /api/v1/sessions/does-not-exist
+404 Not Found
+
+{ "detail": "Session does-not-exist not found" }
+```
+
+**Validation errors** (422) reuse the same key with a *different type*. `detail` is a list of objects,
+not a string:
+
+```http
+GET /api/v1/sessions?limit=9999
+422 Unprocessable Entity
+
+{
+  "detail": [
+    {
+      "type": "less_than_equal",
+      "loc": ["query", "limit"],
+      "msg": "Input should be less than or equal to 200"
+    }
+  ]
+}
+```
+
+**Rate limiting** (429) uses a different key entirely — `error`, not `detail`:
+
+```http
+429 Too Many Requests
+
+{ "error": "rate_limit_exceeded" }
+```
+
+That last one comes from the custom handler in `server.py`; the other two are FastAPI's defaults.
+
+So a client reading errors has to check `detail` as a string, `detail` as a list, and `error`. That is
+the current contract. It is worth documenting precisely because it is the sort of thing that gets
+harder to change the more clients depend on it — and any consolidation would be a breaking change, so
+it belongs in a deliberate decision rather than a drive-by fix.
+
+### Status codes in use
+
+| code | meaning | used by |
+|---|---|---|
+| `200` | success | all successful reads and writes |
+| `400` | malformed request the schema can't catch | 3 routes |
+| `404` | the named resource does not exist | 10 routes |
+| `422` | request failed schema validation | raised automatically by FastAPI |
+| `429` | rate limit exceeded | the rate-limit middleware |
+| `500` | unhandled server-side failure | 2 routes |
+
+There is no `201` on creation and no `204` on deletion — creates and deletes return `200` with a body.
+Match that rather than introducing a new convention in a single route.
+
+### Pagination
+
+List endpoints take a `limit` query parameter with a server-side ceiling, and nothing else:
+
+| endpoint | default | max |
+|---|---|---|
+| `GET /api/v1/sessions` | 50 | 200 |
+| `GET /api/v1/sessions/{id}/events` | 500 | 2000 |
+| `GET /api/v1/safety/blocked` | 50 | 200 |
+
+**There is no `offset`, no `page` and no cursor.** Once a collection exceeds the ceiling, the rest of it
+is not reachable through the API. Exceeding the maximum is a `422`, not a silent clamp.
+
+If you add a list endpoint, follow the `limit` + `le=` pattern so the behaviour stays predictable. If
+you need to page beyond the ceiling, that is a design change worth raising as an issue rather than
+solving locally in one route.
+
+### Rate-limit headers
+
+Every response — including successful ones and the `429` itself — carries four headers:
+
+```
+X-RateLimit-User-Limit        X-RateLimit-User-Remaining
+X-RateLimit-Global-Limit      X-RateLimit-Global-Remaining
+```
+
+Per-user and global budgets are tracked separately, so a client can be rejected by the global limit
+while its own budget is untouched. Clients should read both.
+
+
 ## Python SDK Reference
 
 To start monitoring your AI agents, make sure you import the core functions from the root package:

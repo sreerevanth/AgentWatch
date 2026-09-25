@@ -59,6 +59,48 @@ AGENTWATCH_API_URL=http://localhost:8000
 NEXT_PUBLIC_API_URL=/api/v1
 ```
 
+#### `AGENTWATCH_API_URL` vs `NEXT_PUBLIC_API_URL`
+
+These two look interchangeable and are not. They are read by different halves of the dashboard, at
+different times, and setting the wrong one produces a dashboard that builds cleanly, starts cleanly,
+and talks to the wrong host — with no error to tell you so.
+
+```
+browser  ──( NEXT_PUBLIC_API_URL = /api/v1 )──▶  Next.js app
+                                                     │
+                                    pages/api/v1/[...path].ts   (reverse proxy)
+                                                     │
+                         ──( AGENTWATCH_API_URL = http://api:8000 )──▶  FastAPI
+```
+
+| | `NEXT_PUBLIC_API_URL` | `AGENTWATCH_API_URL` |
+|---|---|---|
+| read by | the **browser** (`frontend/lib/api/config.ts`) | the **server** (`frontend/pages/api/v1/[...path].ts`) |
+| read when | **build time** — inlined into the JS bundle | **request time** — from the live container env |
+| value | a **relative path** (`/api/v1`) | an **absolute URL** to the API |
+| to change it | **rebuild** the image | **restart** the container |
+
+**Why two.** The browser cannot resolve `http://api:8000` — `api` is a Docker-network hostname that
+only means anything inside the Compose network. So the browser is pointed at a relative path on the
+Next.js app itself, and a server-side route proxies that through to the API using the internal
+hostname. The browser never talks to the API directly.
+
+**The failure mode this prevents.** If the dashboard can't reach the API, the tempting fix is to point
+`NEXT_PUBLIC_API_URL` at the API directly — `http://api:8000`, or `http://localhost:8000`. That makes
+it worse: the browser then tries to resolve a hostname it cannot see, and requests fail from the
+client with nothing useful in the server logs. And because `NEXT_PUBLIC_*` is baked in at build time,
+editing it in `docker-compose.yml` has **no effect at all** until the image is rebuilt — so a
+correct-looking change can appear to do nothing, which sends people looking in the wrong place.
+
+If the dashboard can't reach the API, `AGENTWATCH_API_URL` is almost always the one you want.
+
+**Why the proxy exists at all.** An earlier version used a `next.config.js` rewrite. Rewrites are
+evaluated at build time, so `AGENTWATCH_API_URL` was baked into `routes-manifest.json` as
+`http://localhost:8000` — the env var isn't present during `docker build` — and the container then
+ignored whatever Compose set at runtime. The API route replaced it precisely so the value is read
+from the live environment on every request. That's also why it must stay an API route rather than
+going back to being a rewrite.
+
 ### Docker Requirements
 
 - Docker must be able to run Linux containers

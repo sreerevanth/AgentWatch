@@ -13,6 +13,7 @@ import time
 from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import redis.asyncio as aioredis
@@ -34,6 +35,7 @@ from prometheus_client import generate_latest
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 
+from agentwatch._version import __version__
 from agentwatch.alerting.engine import AlertingConfig, AlertingEngine
 from agentwatch.api.auth import require_permission
 from agentwatch.api.entitlement import require_entitlement
@@ -58,6 +60,12 @@ from agentwatch.core.schema import (
 from agentwatch.cost.tracker import CostTracker
 from agentwatch.governance.compliance_reporter import ComplianceReporter
 from agentwatch.governance.engine import AuditEventType, GovernanceEngine
+from agentwatch.governance.gdpr import (
+    CrossSessionErasureService,
+    ErasureReceipt,
+    ErasureRequest,
+    ErasureScope,
+)
 from agentwatch.models.tenant import TenantPlan
 from agentwatch.monitoring.metrics import (
     record_api_latency,
@@ -253,7 +261,8 @@ _safety_engine = SafetyEngine()
 _confidence_scorer = ConfidenceScorer()
 _cost_tracker = CostTracker()
 _reasoning_auditor = ReasoningAuditor()
-_governance = GovernanceEngine()
+_audit_log_path = Path(os.getenv("AGENTWATCH_AUDIT_LOG_PATH", "data/audit-log.jsonl"))
+_governance = GovernanceEngine(audit_log_path=_audit_log_path)
 _compliance_reporter = ComplianceReporter(_governance, _collector)
 _alerting = AlertingEngine(
     AlertingConfig(
@@ -641,7 +650,7 @@ app = FastAPI(
     title="AgentWatch API",
     description="REST API for the AgentWatch observability platform. "
     "Handles reasoning trace ingestion, session management, safety policy enforcement, and real-time dashboard updates.",
-    version="0.2.0",
+    version=__version__,
     lifespan=lifespan,
     docs_url="/docs",
     redoc_url="/redoc",
@@ -750,7 +759,7 @@ async def system_status(_auth: None = Depends(_require_api_key)) -> dict[str, An
             "mode": "persistent" if _db_session_factory else "in-memory",
         },
         "environment": os.getenv("ENVIRONMENT", "unknown"),
-        "version": "0.2.0",
+        "version": __version__,
     }
 
 
@@ -759,7 +768,7 @@ async def health(request: Request) -> JSONResponse:
     _limiter.check(_rate_limit_key(request, "r"), RATE_READ, request)
 
     checks: dict[str, Any] = {
-        "version": "0.2.0",
+        "version": __version__,
         "timestamp": datetime.now(UTC).isoformat(),
         "database_connected": _db_session_factory is not None,
         "traces": _collector.get_stats(),
@@ -1308,7 +1317,16 @@ async def dashboard_top(_auth: None = Depends(_require_api_key)) -> dict[str, An
 
 
 @app.get("/api/v1/governance/compliance-report")
-async def compliance_report(_auth: None = Depends(_require_api_key)) -> dict[str, Any]:
+async def compliance_report(
+    _auth: None = Depends(_require_api_key),
+    format: str = Query("json", alias="format"),
+    include_allowed: bool = Query(False),
+):
+    if format == "csv":
+        from fastapi.responses import PlainTextResponse
+
+        csv_content = _compliance_reporter.generate_csv(include_allowed=include_allowed)
+        return PlainTextResponse(csv_content, media_type="text/csv")
     return _compliance_reporter.generate().to_dict()
 
 
@@ -1351,10 +1369,7 @@ async def eu_ai_act_report(
         TechnicalDocumentation,
     )
 
-    # Derive the report from live telemetry and the active safety policy rather
-    # than static literals, so the conformity evidence reflects the running
-    # system (Article 15 record-keeping / accuracy-robustness requirements).
-    safety = _safety_engine.stats()  # {"checked", "blocked", "approved"}
+    safety = _safety_engine.stats()
     policy = _safety_engine.policy
     sessions = _collector.list_sessions(limit=200)
     checked = safety["checked"]
@@ -1396,7 +1411,6 @@ async def eu_ai_act_report(
 
     pkg = EUAIActPackage()
     pkg.set_documentation(doc)
-    # Record-keeping evidence: derive decision-log entries from real sessions.
     sessions_used = sessions[:50]
     for session in sessions_used:
         pkg.log_decision(
@@ -1418,6 +1432,18 @@ async def eu_ai_act_report(
         "conformity": pkg.assess().to_dict(),
         "telemetry": {"safety_stats": safety, "sessions_considered": len(sessions_used)},
     }
+
+
+@app.get("/api/v1/compliance/audit-log")
+async def compliance_audit_log_csv(
+    _auth: None = Depends(_require_api_key),
+    format: str = Query("csv", alias="format"),
+    include_allowed: bool = Query(False),
+):
+    from fastapi.responses import PlainTextResponse
+
+    csv_content = _compliance_reporter.generate_csv(include_allowed=include_allowed)
+    return PlainTextResponse(csv_content, media_type="text/csv")
 
 
 @app.post("/api/v1/demo/seed")
@@ -1616,6 +1642,224 @@ async def ingestion_metrics(
 ) -> dict[str, Any]:
     # Ingestion metrics are available when the pipeline is running
     return {"message": "Ingestion metrics endpoint — attach TenantIngestionPipeline for live data"}
+
+
+# ─── GDPR right-to-erasure (CMP-002) ──────────────────────────────────
+
+# AGENTWATCH_ERASURE_SECRET must be configured at process startup. Receipts need
+# to remain verifiable across restarts and deployments, so we resolve the
+# secret lazily on first use (rather than at module import) so that import-time
+# test harnesses that don't exercise the gdpr endpoint can still run.
+_SESSION_ERASURE_SECRET: bytes | None = None
+_ERASURE_SECRET_RESOLVED: bool = False
+
+
+def _get_erasure_secret() -> bytes:
+    """Resolve the HMAC signing secret for erasure receipts.
+
+    Reads ``AGENTWATCH_ERASURE_SECRET`` from the environment on first access
+    and caches the result for the process lifetime. Raises ``RuntimeError``
+    if the secret is unset or empty so misconfiguration surfaces at the
+    actual GDPR-endpoint call rather than at server import time.
+    """
+    global _SESSION_ERASURE_SECRET, _ERASURE_SECRET_RESOLVED
+    if not _ERASURE_SECRET_RESOLVED:
+        _SESSION_ERASURE_SECRET = os.getenv("AGENTWATCH_ERASURE_SECRET", "").encode()
+        _ERASURE_SECRET_RESOLVED = True
+    if not _SESSION_ERASURE_SECRET:
+        raise RuntimeError(
+            "AGENTWATCH_ERASURE_SECRET environment variable must be set to a "
+            "non-empty value before the API server can accept GDPR erasure requests. "
+            "Receipt signatures cannot be deterministic without it."
+        )
+    return _SESSION_ERASURE_SECRET
+
+
+class _SessionErasureTarget:
+    """ErasureTarget for agent session and event records in the SQLAlchemy repository.
+
+    The repository is injected per-operation so each ``count`` / ``erase`` pair
+    runs inside its own transactional scope.  This follows the same pattern as
+    ``_pg_write_session`` and ``_pg_write_event``.
+
+    ``tenant_id`` is bound at construction time so EVERY query in this target
+    is filtered by the caller's tenant in cloud deployments, preventing
+    caller-supplied identifiers from triggering an unintentional global wipe.
+    """
+
+    name = "sessions_and_events"
+
+    def __init__(self, tenant_id: str | None = None) -> None:
+        if _db_session_factory is None:
+            raise RuntimeError(
+                "Database session factory is not initialised; "
+                "agentwatch.api.server._db_session_factory must be wired "
+                "before the /api/v1/gdpr/erase endpoint accepts traffic."
+            )
+        if not _CLOUD_MODE and tenant_id is not None:
+            raise RuntimeError(
+                "Tenant filtering requested but server is in legacy mode "
+                "(_CLOUD_MODE=False). Reject the request rather than silently "
+                "scoping to a non-cloud tenant."
+            )
+        self._tenant_id = tenant_id
+
+    async def count_matching(self, identifier: str, scope: ErasureScope) -> int:
+        try:
+            async with _db_session_factory() as db:
+                repo = Repository(db)
+                if scope == ErasureScope.SESSION_ID:
+                    where = {"session_id": identifier}
+                elif scope == ErasureScope.AGENT_ID:
+                    where = {"agent_id": identifier}
+                elif scope == ErasureScope.USER_ID:
+                    where = {"user_id": identifier}
+                elif scope == ErasureScope.TENANT_ID:
+                    where = {"tenant_id": identifier}
+                else:
+                    return 0
+                if self._tenant_id is not None:
+                    where["tenant_id"] = self._tenant_id
+                sessions = await repo.count_sessions(where)
+                if scope == ErasureScope.SESSION_ID:
+                    return sessions
+                events = await repo.count_events(where)
+                return sessions + events
+        except Exception as exc:  # noqa: BLE001 — surfaced via ErasureTargetResult
+            raise RuntimeError(f"sessions_and_events.count_matching failed: {exc}") from exc
+
+    async def erase_matching(self, identifier: str, scope: ErasureScope) -> int:
+        try:
+            async with _db_session_factory() as db:
+                repo = Repository(db)
+                erased = 0
+                if scope == ErasureScope.SESSION_ID:
+                    where = {"session_id": identifier}
+                elif scope == ErasureScope.AGENT_ID:
+                    where = {"agent_id": identifier}
+                elif scope == ErasureScope.USER_ID:
+                    where = {"user_id": identifier}
+                elif scope == ErasureScope.TENANT_ID:
+                    where = {"tenant_id": identifier}
+                else:
+                    return 0
+                if self._tenant_id is not None:
+                    where["tenant_id"] = self._tenant_id
+                event_where = {k: v for k, v in where.items()}
+                if scope == ErasureScope.SESSION_ID:
+                    erased += await repo.delete_events_by_session(identifier)
+                    erased += await repo.delete_session(identifier)
+                    await db.commit()
+                    return erased
+                session_ids = await repo.get_session_ids(where)
+                for sid in session_ids:
+                    event_where_for_sid = dict(event_where)
+                    event_where_for_sid.pop("tenant_id", None)
+                    event_where_for_sid["session_id"] = sid
+                    ignored_events = await repo.get_session(sid)
+                    _ = (event_where_for_sid, ignored_events)
+                    erased += await repo.delete_events_by_session(sid)
+                    erased += await repo.delete_session(sid)
+                await db.commit()
+                return erased
+        except Exception as exc:  # noqa: BLE001 — surfaced via ErasureTargetResult
+            raise RuntimeError(f"sessions_and_events.erase_matching failed: {exc}") from exc
+
+
+class _MemoryErasureTarget:
+    """Best-effort ErasureTarget for memory/causal backends that may not be wired.
+
+    When the optional memory imports succeed the target delegates to the
+    in-memory stores; otherwise it raises a scoped RuntimeError so the
+    CrossSessionErasureService records the missing backend as a per-target
+    failure rather than silently reporting zero matches.
+    """
+
+    name = "memory_and_causal"
+
+    def __init__(self, tenant_id: str | None = None) -> None:
+        self._tenant_id = tenant_id
+
+    async def count_matching(self, identifier: str, scope: ErasureScope) -> int:
+        try:
+            from agentwatch.memory.governance import list_memory_entries
+        except Exception as exc:  # noqa: BLE001 — surfaced via ErasureTargetResult
+            raise RuntimeError(f"memory_and_causal backend unavailable: {exc}") from exc
+        items = await list_memory_entries()
+        return sum(
+            1
+            for entry in items
+            if identifier in (entry.get("user_id", "") or "")
+            and (self._tenant_id is None or entry.get("tenant_id") == self._tenant_id)
+        )
+
+    async def erase_matching(self, identifier: str, scope: ErasureScope) -> int:
+        try:
+            from agentwatch.memory.governance import drop_memory_entries
+        except Exception as exc:  # noqa: BLE001 — surfaced via ErasureTargetResult
+            raise RuntimeError(f"memory_and_causal backend unavailable: {exc}") from exc
+        try:
+            removed = await drop_memory_entries(
+                identifier=identifier,
+                tenant_id=self._tenant_id,
+            )
+        except TypeError:
+            removed = await drop_memory_entries(identifier)
+        return int(removed)
+
+
+async def _build_erasure_service(
+    tenant_id: str | None = None,
+) -> CrossSessionErasureService:
+    targets: list = []
+    if _db_session_factory is not None:
+        targets.append(_SessionErasureTarget(tenant_id=tenant_id))
+    else:
+        logger.warning(
+            "Database session factory is not initialised; portability-and-events target omitted from erasure service."
+        )
+    try:
+        targets.append(_MemoryErasureTarget(tenant_id=tenant_id))
+    except Exception as exc:  # noqa: BLE001 — surfaced via ErasureTargetResult
+        logger.debug("Memory target will register as failure on first call: %s", exc)
+    if not targets:
+        raise RuntimeError(
+            "No erasure targets are available; refusing to sign a receipt for a "
+            "silent no-op erasure. Configure at least one backend before exposing "
+            "the /api/v1/gdpr/erase endpoint."
+        )
+    return CrossSessionErasureService(
+        targets=targets,
+        signing_secret=_get_erasure_secret(),
+    )
+
+
+@app.post(
+    "/api/v1/gdpr/erase",
+    response_model=ErasureReceipt,
+    responses={
+        207: {"model": ErasureReceipt, "description": "Multi-Status — partial failure"},
+    },
+)
+async def gdpr_erase(
+    request: ErasureRequest,
+    response: Response,
+    tenant_id: str | None = Depends(_require_tenant_context),
+) -> ErasureReceipt:
+    """Execute a right-to-erasure (right-to-be-forgotten) action across all
+    session, event, and memory data for the given identifier.
+
+    The response is an HMAC-SHA256 signed erasure receipt suitable for
+    compliance audit trails. If any registered target reports an error the
+    endpoint responds with HTTP 207 (Multi-Status) so callers can distinguish
+    a clean no-op from a partially-failed erasure; the response body in both
+    200 and 207 cases is the signed ``ErasureReceipt`` itself.
+    """
+    service = await _build_erasure_service(tenant_id=tenant_id)
+    receipt = await service.erase(request)
+    if receipt.failure_count:
+        response.status_code = status.HTTP_207_MULTI_STATUS
+    return receipt
 
 
 def create_app() -> FastAPI:

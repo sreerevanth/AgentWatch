@@ -26,4 +26,8 @@ jobs:
         run: pip install bandit==1.9.4
 
       - name: Run Bandit
-        run: bandit -r agentwatch -b bandit-baseline.json
+        # No baseline. bandit-baseline.json was removed in #603: every finding it listed had
+        # since been fixed or suppressed inline with a justification, so it suppressed nothing —
+        # while remaining a broad positional mute that could swallow a genuinely new finding.
+        # Suppressions now live in the code as `# nosec <ID> — reason`; see SECURITY-BASELINE.md.
+        run: bandit -r agentwatch

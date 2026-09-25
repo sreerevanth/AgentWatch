@@ -15,7 +15,7 @@ import json
 import threading
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 # Hash that seeds the chain — the "previous hash" of the first record.
 GENESIS_HASH = "0" * 64
@@ -140,29 +140,133 @@ class AuditLog:
     def verify(self) -> bool:
         """Return whether the chain is intact (no record altered or reordered)."""
         with self._lock:
-            prev_hash = GENESIS_HASH
-            for expected_seq, record in enumerate(self._records):
-                if record.seq != expected_seq:
-                    return False
-                if record.prev_hash != prev_hash:
-                    return False
-                expected = _digest(
-                    record.seq,
-                    record.timestamp,
-                    record.actor,
-                    record.action,
-                    record.target,
-                    record.details,
-                    record.prev_hash,
-                )
-                if expected != record.record_hash:
-                    return False
-                prev_hash = record.record_hash
-            return True
+            return verify_chain(self._records)
 
     def __len__(self) -> int:
         with self._lock:
             return len(self._records)
 
 
-__all__ = ["GENESIS_HASH", "AuditRecord", "AuditLog"]
+def verify_chain(records: list[AuditRecord]) -> bool:
+    """Return whether an ordered record list forms an intact hash chain."""
+    prev_hash = GENESIS_HASH
+    for expected_seq, record in enumerate(records):
+        if record.seq != expected_seq:
+            return False
+        if record.prev_hash != prev_hash:
+            return False
+        expected = _digest(
+            record.seq,
+            record.timestamp,
+            record.actor,
+            record.action,
+            record.target,
+            record.details,
+            record.prev_hash,
+        )
+        if expected != record.record_hash:
+            return False
+        prev_hash = record.record_hash
+    return True
+
+
+@runtime_checkable
+class AuditStore(Protocol):
+    """Durable backing store for a hash-chained audit log."""
+
+    async def read_head(self) -> tuple[int, str]:
+        """Return (record_count, head_hash) for the next append."""
+        ...
+
+    async def write(self, record: AuditRecord) -> None:
+        """Append a formed record to storage."""
+        ...
+
+    async def read_all(self) -> list[AuditRecord]:
+        """Return all records in ascending seq order."""
+        ...
+
+
+class InMemoryAuditStore:
+    """List-backed AuditStore for tests and single-process use (not durable)."""
+
+    def __init__(self) -> None:
+        self._records: list[AuditRecord] = []
+        self._lock = threading.RLock()
+
+    async def read_head(self) -> tuple[int, str]:
+        with self._lock:
+            head = self._records[-1].record_hash if self._records else GENESIS_HASH
+            return len(self._records), head
+
+    async def write(self, record: AuditRecord) -> None:
+        with self._lock:
+            self._records.append(record.copy())
+
+    async def read_all(self) -> list[AuditRecord]:
+        with self._lock:
+            return [record.copy() for record in self._records]
+
+
+class PersistentAuditLog:
+    """Append-only, hash-chained audit log backed by an AuditStore.
+
+    Reads the previous hash from storage on each append, so the chain outlives
+    the process and instances sharing one store extend a single chain.
+    """
+
+    def __init__(self, store: AuditStore) -> None:
+        self._store = store
+
+    async def head_hash(self) -> str:
+        """Hash of the most recent persisted record (or genesis when empty)."""
+        _, head = await self._store.read_head()
+        return head
+
+    async def append(
+        self,
+        action: str,
+        target: str,
+        *,
+        actor: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> AuditRecord:
+        """Append a new record to the persisted chain and return a copy of it."""
+        details = dict(details or {})
+        seq, prev_hash = await self._store.read_head()
+        timestamp = datetime.now(UTC).isoformat()
+        record = AuditRecord(
+            seq=seq,
+            timestamp=timestamp,
+            actor=actor,
+            action=action,
+            target=target,
+            details=details,
+            prev_hash=prev_hash,
+            record_hash=_digest(seq, timestamp, actor, action, target, details, prev_hash),
+        )
+        await self._store.write(record)
+        return record.copy()
+
+    async def records(self) -> list[AuditRecord]:
+        """Return detached copies of the persisted records in chronological order."""
+        return await self._store.read_all()
+
+    async def verify(self) -> bool:
+        """Return whether the persisted chain is intact (nothing altered/reordered)."""
+        return verify_chain(await self._store.read_all())
+
+    async def count(self) -> int:
+        count, _ = await self._store.read_head()
+        return count
+
+
+__all__ = [
+    "GENESIS_HASH",
+    "AuditRecord",
+    "AuditLog",
+    "AuditStore",
+    "InMemoryAuditStore",
+    "PersistentAuditLog",
+    "verify_chain",
+]

@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/AgentWatch-v0.2.0-black?style=for-the-badge" alt="AgentWatch v0.2.0" />
+<img src="https://img.shields.io/pypi/v/agentwatch-ai?label=AgentWatch&color=black&style=for-the-badge" alt="AgentWatch on PyPI" />
 
 # AgentWatch
 

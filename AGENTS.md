@@ -12,6 +12,14 @@ Three independent codebases in one repo:
 
 **Critical:** `frontend/` and `agentwatch-landing/` are separate Next.js apps with different versions. Do not mix deps or share components between them.
 
+## Formatting (issue #644)
+
+- **Python** (`agentwatch/`): `ruff format agentwatch/` (config in `[tool.ruff.format]` of `pyproject.toml`). Double quotes, docstring-code-format on.
+- **Frontend** (`frontend/`): `npm run format` (Prettier 3.4 with the shared `.prettierrc.json`).
+- **Landing** (`agentwatch-landing/`): `npm run format` (Prettier 3.4).
+- **All-in-one**: `make format` from the repo root runs all three.
+- Verify without modifying: `make format-check`.
+
 ## Python
 
 ```bash
@@ -64,10 +72,20 @@ npm run dev
 ## Docker
 
 ```bash
-docker compose up -d   # Postgres (pgvector), Redis, API, worker, frontend
+docker compose up -d   # Postgres (pgvector), Redis, API, frontend
+docker compose --profile workers up -d   # + Celery worker
+docker compose --profile tracing up -d   # + Jaeger UI on :16686
 ```
 
-Services: `postgres` (pgvector:pg16), `redis`, `api` (FastAPI on :8000), `worker` (Celery), `frontend` (Next.js on :3000). Optional profiles: `workers`, `tracing` (Jaeger).
+Services: `postgres` (pgvector:pg16), `redis`, `api` (FastAPI on :8000, image: `Dockerfile.api`), `worker` (Celery, image: `Dockerfile.worker`, behind `workers` profile), `frontend` (Next.js 14 on :3000, image: `frontend/Dockerfile` standalone output). Optional: `jaeger` (`tracing` profile).
+
+Dockerfiles:
+
+- `Dockerfile.api` — Python 3.12-slim, multi-stage pip wheel build, non-root user, healthcheck on `/health`.
+- `Dockerfile.worker` — same builder/runtime pattern, CMD overridden in docker-compose to launch `celery worker`.
+- `frontend/Dockerfile` — Node 20-alpine, Next.js standalone output, non-root user, healthcheck on `/api/health`.
+
+`.dockerignore` excludes `.git`, `node_modules`, `.next`, `.pytest_cache`, `.ruff_cache`, tests, IDE configs.
 
 ## Environment
 

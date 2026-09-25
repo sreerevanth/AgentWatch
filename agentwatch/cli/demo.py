@@ -21,6 +21,7 @@ if hasattr(sys.stdout, "reconfigure"):
 if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 
+from agentwatch._version import __version__
 from agentwatch.core.event_bus import EventBus
 from agentwatch.core.safety import SafetyEngine
 from agentwatch.core.schema import (
@@ -566,13 +567,26 @@ async def demo_orchestration():
 
 
 async def run_demo():
+    # The banner is fixed-width box art, so the title cannot simply be interpolated — a version
+    # string of a different length would push the closing `|` out of alignment and the box would
+    # visibly break. The padding is computed from the border instead, so any version renders square.
+    _title = f"AgentWatch - Demo Suite v{__version__}"
+    _border = "+" + "-" * 62 + "+"
+    _interior = len(_border) - 2
+    _titled = "|" + " " * 9 + _title + " " * max(_interior - 9 - len(_title), 0) + "|"
+
     print(
-        bold("""
-+--------------------------------------------------------------+
-|         AgentWatch - Demo Suite v0.2.0                       |
-|  Reliability, Safety & Observability Layer for AI Agents     |
-+--------------------------------------------------------------+
-""")
+        bold(
+            "\n"
+            + _border
+            + "\n"
+            + _titled
+            + "\n"
+            + "|  Reliability, Safety & Observability Layer for AI Agents     |"
+            + "\n"
+            + _border
+            + "\n"
+        )
     )
 
     await demo_safety()

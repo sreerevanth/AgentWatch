@@ -66,6 +66,10 @@ class EventType(str, Enum):
     CONFIDENCE_SCORE = "confidence.score"
     ANOMALY_DETECTED = "anomaly.detected"
 
+    # Reasoning auditor
+    STYLE_FINGERPRINT_COMPUTED = "reasoning.style_fingerprint"
+    STYLE_SWAP_DETECTED = "reasoning.style_swap"
+
     # Generic
     CUSTOM = "custom"
 
@@ -238,6 +242,54 @@ class ConfidenceData(BaseModel):
     consistency_score: float = Field(ge=0.0, le=1.0, default=1.0)
     anomaly_flags: list[str] = Field(default_factory=list)
     explanation: str | None = None
+
+
+class ReasoningStyleFingerprint(BaseModel):
+    """Per-session stylistic profile of the model's reasoning output (RSN-008).
+
+    Captures *observable* artifacts of the reasoning style — not chain-of-thought
+    contents — so it can be used to detect silent mid-session model swaps
+    (e.g. a provider rolling out a new model version without changing the
+    exposed model name).
+    """
+
+    mean_planner_tokens: float = 0.0
+    lex_diversity: float = 0.0
+    tools_per_plan: float = 0.0
+    punctuation_rate: float = 0.0
+    sample_size: int = 0  # number of PLANNER_OUTPUT events used
+
+    @classmethod
+    def from_dataclass(cls, other: object) -> ReasoningStyleFingerprint:
+        """Adapt the dataclass form in ``agentwatch.reasoning.fingerprint``.
+
+        Returns:
+            A pydantic instance mirroring the dataclass fields.
+        """
+        return cls(
+            mean_planner_tokens=float(getattr(other, "mean_planner_tokens", 0.0)),
+            lex_diversity=float(getattr(other, "lex_diversity", 0.0)),
+            tools_per_plan=float(getattr(other, "tools_per_plan", 0.0)),
+            punctuation_rate=float(getattr(other, "punctuation_rate", 0.0)),
+            sample_size=int(getattr(other, "sample_size", 0)),
+        )
+
+
+class StyleSwapAlert(BaseModel):
+    """Alert raised when mid-session fingerprint drift suggests a model swap.
+
+    Distance is the Euclidean-style distance between the first-half and
+    second-half fingerprints, normalized to be roughly comparable across
+    sessions with different sizes.
+    """
+
+    session_id: str
+    detected: bool
+    distance: float
+    threshold: float
+    first_half: ReasoningStyleFingerprint
+    second_half: ReasoningStyleFingerprint
+    reason: str | None = None
 
 
 class AgentMessageData(BaseModel):

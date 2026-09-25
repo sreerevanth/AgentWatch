@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "install-nextjs-docs": "npx @next/codemod@canary agents-md"
+    "install-nextjs-docs": "npx @next/codemod@canary agents-md",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@gsap/react": "^2.1.2",
@@ -24,6 +26,7 @@
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "prettier": "^3.4.2",
     "tailwindcss": "^4",
     "typescript": "^5"
   },

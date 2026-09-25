@@ -1,0 +1,7 @@
+.next
+out
+build
+coverage
+jest.config.js
+public
+node_modules
