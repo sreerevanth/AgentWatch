@@ -13,6 +13,7 @@ import uuid
 from collections import Counter
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any
 
 from agentwatch.events.model import ComputationalEvent, EventKind, EventStatus
@@ -100,8 +101,8 @@ def summarize_run(
         attributes = lc.attributes
     elif root_like:
         name = root_like[0].operation
-    starts = [e.time.start for e in evs if e.time.start]
-    ends = [e.time.end or e.time.start for e in evs if (e.time.end or e.time.start)]
+    starts: list[datetime] = [e.time.start for e in evs if e.time.start is not None]
+    ends: list[datetime] = [t for e in evs if (t := e.time.end or e.time.start) is not None]
     declared = [(e, p) for e in evs for p in e.parents]
     resolved = sum(1 for _, p in declared if (p.key_space, p.value) in index)
     unresolved = [

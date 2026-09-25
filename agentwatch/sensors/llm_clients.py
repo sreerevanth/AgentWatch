@@ -119,7 +119,7 @@ class AnthropicClientSensor(_ClientSensor):
     provider = "anthropic"
 
     def request_ids(self, kwargs: dict[str, Any]) -> dict[str, str]:
-        answered = []
+        answered: list[str] = []
         for m in kwargs.get("messages") or []:
             content = m.get("content") if isinstance(m, dict) else None
             if isinstance(content, list):

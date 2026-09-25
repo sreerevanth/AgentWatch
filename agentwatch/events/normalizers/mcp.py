@@ -70,6 +70,8 @@ class MCPNormalizer(Normalizer):
         result: NormalizeResult,
     ) -> Any:
         req, res = parts.get("request"), parts.get("response")
+        anchor_obs = req or res
+        assert anchor_obs is not None  # a group always holds at least one message
         obs = [o for o in (req, res) if o]
         b = EventBuilder(self, ctx, obs)
         rq = (req.payload().get("message") or {}) if req else {}
@@ -106,7 +108,7 @@ class MCPNormalizer(Normalizer):
             b.status = EventStatus.UNKNOWN
             result.diagnostics.append(
                 Diagnostic(
-                    (req or res).obs_id,
+                    anchor_obs.obs_id,
                     "warning",
                     "no_response",
                     f"MCP request {jid} without response",

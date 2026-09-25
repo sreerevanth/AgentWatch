@@ -109,7 +109,7 @@ def _correlations(
                 "evidence_class": "CORRELATIONAL",
             }
         )
-    rows.sort(key=lambda r: -abs(r["difference"]))
+    rows.sort(key=lambda r: -abs(float(r["difference"])))  # type: ignore[arg-type]
     return {
         "status": "computed",
         "outcome": f"{target_sig} ends in ERROR/TIMEOUT",

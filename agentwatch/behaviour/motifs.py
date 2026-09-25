@@ -101,9 +101,9 @@ LEAF = (
 
 
 def _span(events: Sequence[ComputationalEvent]) -> tuple[str | None, str | None]:
-    starts = [e.time.start for e in events if e.time.start]
-    ends = [e.time.end or e.time.start for e in events if e.time.end or e.time.start]
-    return (min(starts).isoformat() if starts else None, max(ends).isoformat() if ends else None)  # type: ignore[type-var]
+    starts = [e.time.start for e in events if e.time.start is not None]
+    ends = [t for e in events if (t := e.time.end or e.time.start) is not None]
+    return (min(starts).isoformat() if starts else None, max(ends).isoformat() if ends else None)
 
 
 @REGISTRY.register(
@@ -365,34 +365,37 @@ def detect_context_expansion(
         return float(total), "input_bytes"
 
     out = []
+
+    def flush(seq: list[tuple[ComputationalEvent, float]], model: str) -> None:
+        if len(seq) >= 3 and seq[0][1] > 0 and seq[-1][1] / seq[0][1] >= 1.5:
+            evs_ = [x[0] for x in seq]
+            t0, t1 = _span(evs_)
+            out.append(
+                MotifInstance(
+                    "M005",
+                    run_id,
+                    [x.event_id for x in evs_],
+                    explanation=f"{model}: input grew {seq[0][1]:.0f}→{seq[-1][1]:.0f} over {len(evs_)} calls",
+                    measures={
+                        "sizes": [x[1] for x in seq],
+                        "unit": size(evs_[0])[1],
+                        "growth": round(seq[-1][1] / seq[0][1], 3),
+                    },
+                    evidence=[x.event_id for x in evs_],
+                    t_start=t0,
+                    t_end=t1,
+                )
+            )
+
     for model, evs in by_model.items():
         run_: list[tuple[ComputationalEvent, float]] = []
-        for e in evs + [None]:  # type: ignore[list-item]
-            if e is not None:
-                s, _ = size(e)
-                if not run_ or s > run_[-1][1]:
-                    run_.append((e, s))
-                    continue
-            if len(run_) >= 3 and run_[0][1] > 0 and run_[-1][1] / run_[0][1] >= 1.5:
-                seq = [x[0] for x in run_]
-                t0, t1 = _span(seq)
-                out.append(
-                    MotifInstance(
-                        "M005",
-                        run_id,
-                        [x.event_id for x in seq],
-                        explanation=f"{model}: input grew {run_[0][1]:.0f}→{run_[-1][1]:.0f} over {len(seq)} calls",
-                        measures={
-                            "sizes": [x[1] for x in run_],
-                            "unit": size(seq[0])[1],
-                            "growth": round(run_[-1][1] / run_[0][1], 3),
-                        },
-                        evidence=[x.event_id for x in seq],
-                        t_start=t0,
-                        t_end=t1,
-                    )
-                )
-            run_ = [(e, size(e)[0])] if e is not None else []
+        for e in evs:
+            s_, _ = size(e)
+            if run_ and s_ <= run_[-1][1]:
+                flush(run_, model)
+                run_ = []
+            run_.append((e, s_))
+        flush(run_, model)
     return out
 
 

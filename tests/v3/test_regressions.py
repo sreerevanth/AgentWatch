@@ -32,3 +32,18 @@ def test_hipaa_redaction_does_not_leak_into_other_handlers():
         trace = collector.get_trace("s")
         assert trace is not None
         assert "1234567" not in (trace.session.goal or ""), "collector keeps only its redacted copy"
+
+
+def test_motif_explanation_does_not_claim_none_when_motifs_exist():
+    """Regression: explain() used `lines.extend(...) or lines.append(...)`; extend returns
+    None, so 'No motifs detected.' was appended even when motifs were listed."""
+    from agentwatch.query.engine import explain
+
+    lines = explain(
+        {
+            "type": "motifs",
+            "result": [{"motif_id": "M001", "motif_name": "retry_loop", "explanation": "x"}],
+        }
+    )
+    assert lines == ["- M001 retry_loop: x"]
+    assert explain({"type": "motifs", "result": []}) == ["No motifs detected."]

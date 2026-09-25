@@ -349,9 +349,10 @@ def explain(res: dict[str, Any]) -> list[str]:
                 f"INTERVENTIONAL: branch {str(i['branch_id'])[:8]} — outcome changed: {i['outcome_changed']} (reproduction confidence {i['reproduction_confidence']})."
             )
     elif t == "motifs":
-        lines.extend(
-            f"- {m['motif_id']} {m['motif_name']}: {m['explanation']}" for m in r
-        ) or lines.append("No motifs detected.")
+        if r:
+            lines.extend(f"- {m['motif_id']} {m['motif_name']}: {m['explanation']}" for m in r)
+        else:
+            lines.append("No motifs detected.")
     elif t == "runs":
         lines.extend(
             f"- {x['run_id'][:8]} {x.get('name')} {x.get('status')} {x.get('started_at')}"

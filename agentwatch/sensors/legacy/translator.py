@@ -106,9 +106,8 @@ class LegacyTranslator:
             )
 
         errors = []
-        etype = data.get("event_type")
-        if hasattr(etype, "value"):
-            etype = etype.value
+        raw_type = data.get("event_type")
+        etype = str(getattr(raw_type, "value", raw_type)) if raw_type else None
         if not etype:
             errors.append("missing event_type")
         elif etype not in KNOWN_TYPES:

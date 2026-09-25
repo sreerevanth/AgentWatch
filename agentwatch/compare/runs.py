@@ -172,7 +172,10 @@ def compare(ws: Workspace, ref_a: str, ref_b: str) -> dict[str, Any]:
         )
     if candidates:
         divergence = min(candidates, key=lambda c: c[0])[1]
-        divergence["cone"] = _cone_share(ws, b["run"]["run_id"], divergence.get("b_event"), eb, ea)
+        b_event = divergence.get("b_event")
+        divergence["cone"] = _cone_share(
+            ws, b["run"]["run_id"], b_event if isinstance(b_event, dict) else None, eb, ea
+        )
 
     ca, cb = Counter(sa), Counter(sb)
     structural = {

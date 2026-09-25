@@ -104,7 +104,7 @@ def observe(
     console.print(
         f"\n[bold]observed run[/bold] {res.run_id}  ({res.observations} observations, exit code {res.exit_code})"
     )
-    console.print(f"next: [cyan]agentwatch inspect {res.run_id[:8]}[/cyan]")
+    console.print(f"next: [cyan]agentwatch inspect {(res.run_id or '')[:8]}[/cyan]")
     if res.exit_code:
         raise typer.Exit(res.exit_code)
 
@@ -145,7 +145,7 @@ def ingest(
         _fail(f"unknown format {fmt!r}")
         return
     report = engine.process()
-    out = {"format": fmt, "append": res.to_dict(), "processing": report}
+    out: dict[str, Any] = {"format": fmt, "append": res.to_dict(), "processing": report}
     if translations is not None:
         from collections import Counter
 
