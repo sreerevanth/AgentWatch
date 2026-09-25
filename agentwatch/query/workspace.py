@@ -102,6 +102,13 @@ class Workspace:
         return self.store.relations(self.interp_id, run_id=run_id, view=view)
 
     def graph(self, run_id: str | None = None, views: Iterable[str] | None = None) -> Graph:
+        key = (run_id, tuple(sorted(views)) if views else None)
+        cache = self.__dict__.setdefault("_graph_cache", {})
+        if key not in cache:
+            cache[key] = self._build_graph(run_id, views)
+        return cache[key]
+
+    def _build_graph(self, run_id: str | None, views: Iterable[str] | None) -> Graph:
         rels = self.relations(run_id)
         vs = set(views) if views else None
         events = self.events(run_id) if run_id is not None else list(self.all_events.values())

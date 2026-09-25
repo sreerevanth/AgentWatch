@@ -7,6 +7,7 @@ observed event are reported, not guessed.
 from __future__ import annotations
 
 import json
+import math
 import re
 from collections import defaultdict
 from collections.abc import Callable, Sequence
@@ -370,21 +371,37 @@ def build_information(
             by_run[rid].append(aid)
     for run_id, aids in by_run.items():
         aids.sort(key=lambda a: first_seen[(run_id, a)])
-        for i, x in enumerate(aids):
-            sx = shingles_of(x)
+        # Exact prefix-filtered similarity join. containment(y in x) >= t requires x to contain
+        # at least one of y's first |y| - ceil(t*|y|) + 1 shingles under any fixed global order
+        # (pigeonhole). Ordering by rarity keeps those prefixes, and so the index, small;
+        # every candidate is then verified exactly, so the result equals pairwise comparison.
+        df: dict[str, int] = defaultdict(int)
+        for a in aids:
+            for sh in shingles_of(a):
+                df[sh] += 1
+        index: dict[str, list[str]] = defaultdict(list)
+        pending: list[str] = []
+        pending_pos: int | None = None
+        for x in aids:
             fx = first_seen[(run_id, x)]
-            for y in aids[:i]:
-                if (
-                    first_seen[(run_id, y)] >= fx
-                    or item_parent.get((run_id, y)) == x
-                    or item_parent.get((run_id, x)) == y
-                ):
+            if pending_pos is not None and fx != pending_pos:
+                for y in pending:  # artifacts become candidates only for strictly later ones
+                    sy = shingles_of(y)
+                    keep = len(sy) - math.ceil(CONTAINMENT_THRESHOLD * len(sy)) + 1
+                    for sh in sorted(sy, key=lambda k: (df[k], k))[:keep]:
+                        index[sh].append(y)
+                pending = []
+            pending_pos = fx
+            pending.append(x)
+            sx = shingles_of(x)
+            candidates: set[str] = set()
+            for sh in sx:
+                candidates.update(index.get(sh, ()))
+            for y in sorted(candidates):
+                if item_parent.get((run_id, y)) == x or item_parent.get((run_id, x)) == y:
                     continue
                 sy = shingles_of(y)
-                inter = len(sx & sy)
-                if not inter:
-                    continue
-                containment = inter / len(sy)
+                containment = len(sx & sy) / len(sy)
                 if containment >= CONTAINMENT_THRESHOLD:
                     rels.append(
                         make_relation(
