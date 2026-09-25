@@ -194,8 +194,11 @@ class Recorder(Sensor):
         inputs: dict[str, Any] | None = None,
         links: list[Span | str] | None = None,
         facets: list[str] | None = None,
+        replayable: bool = False,
         **attributes: Any,
     ) -> Iterator[Span]:
+        """Record a span. ``replayable`` marks an instrumented call whose result a replay
+        controller can serve or substitute; only such spans get a call key."""
         parent = _current_span.get()
         run = _current_run.get()
         span = Span(self, kind, operation, actor=actor, object=object, run=run, parent=parent)
@@ -209,7 +212,7 @@ class Recorder(Sensor):
             span.link(other)
         span.facets.extend(facets or [])
         span.set(**attributes)
-        if run is not None:
+        if run is not None and replayable:
             span.call_key = f"{kind}|{operation}|{run.next_ordinal(kind, operation)}"
         self._emit_start(span)
         token = _current_span.set(span)
@@ -334,7 +337,7 @@ def instrumented_call(
         @functools.wraps(fn)
         async def async_wrapper(*args: Any, **kwargs: Any) -> Any:
             rec = recorder_getter()
-            with rec.span(kind, operation, actor=actor, object=object) as span:
+            with rec.span(kind, operation, actor=actor, object=object, replayable=True) as span:
                 span.input(_call_args(fn, args, kwargs), role=input_role)
                 controller = _replay.get()
                 if controller is not None:
@@ -351,7 +354,7 @@ def instrumented_call(
     @functools.wraps(fn)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         rec = recorder_getter()
-        with rec.span(kind, operation, actor=actor, object=object) as span:
+        with rec.span(kind, operation, actor=actor, object=object, replayable=True) as span:
             span.input(_call_args(fn, args, kwargs), role=input_role)
             controller = _replay.get()
             if controller is not None:
