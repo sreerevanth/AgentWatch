@@ -46,10 +46,20 @@ def event_kind(value: Any) -> EventKind:
 class NativeNormalizer(Normalizer):
     name = "native"
     version = "1"
-    source_kinds = frozenset({"native.span.start", "native.span.end", "native.run.start", "native.run.end", "native.point"})
+    source_kinds = frozenset(
+        {
+            "native.span.start",
+            "native.span.end",
+            "native.run.start",
+            "native.run.end",
+            "native.point",
+        }
+    )
     maturity = "VALIDATED"
 
-    def normalize(self, observations: Sequence[RawObservation], ctx: NormalizeContext) -> NormalizeResult:
+    def normalize(
+        self, observations: Sequence[RawObservation], ctx: NormalizeContext
+    ) -> NormalizeResult:
         result = NormalizeResult()
         starts: dict[str, RawObservation] = {}
         ends: dict[str, RawObservation] = {}
@@ -64,25 +74,42 @@ class NativeNormalizer(Normalizer):
             if sk.startswith("native.run"):
                 rid = obs.declared("run_id")
                 if not rid:
-                    result.diagnostics.append(Diagnostic(obs.obs_id, "error", "missing_run_id", "run observation without run_id"))
+                    result.diagnostics.append(
+                        Diagnostic(
+                            obs.obs_id, "error", "missing_run_id", "run observation without run_id"
+                        )
+                    )
                     continue
                 (run_starts if sk.endswith("start") else run_ends)[rid] = obs
                 continue
             sid = obs.declared("span_id")
             if not sid:
-                result.diagnostics.append(Diagnostic(obs.obs_id, "error", "missing_span_id", "span observation without span_id"))
+                result.diagnostics.append(
+                    Diagnostic(
+                        obs.obs_id, "error", "missing_span_id", "span observation without span_id"
+                    )
+                )
                 continue
             (starts if sk.endswith("start") else ends)[sid] = obs
 
         for rid in list(dict.fromkeys([*run_starts, *run_ends])):
-            result.events.append(self._run_event(rid, run_starts.get(rid), run_ends.get(rid), ctx, result))
+            result.events.append(
+                self._run_event(rid, run_starts.get(rid), run_ends.get(rid), ctx, result)
+            )
         for sid in list(dict.fromkeys([*starts, *ends])):
             result.events.append(self._span_event(sid, starts.get(sid), ends.get(sid), ctx, result))
         for obs in points:
             result.events.append(self._point_event(obs, ctx))
         return result
 
-    def _run_event(self, rid: str, start: RawObservation | None, end: RawObservation | None, ctx: NormalizeContext, result: NormalizeResult) -> Any:
+    def _run_event(
+        self,
+        rid: str,
+        start: RawObservation | None,
+        end: RawObservation | None,
+        ctx: NormalizeContext,
+        result: NormalizeResult,
+    ) -> Any:
         obs = [o for o in (start, end) if o is not None]
         b = EventBuilder(self, ctx, obs)
         sp: dict[str, Any] = start.payload() if start else {}
@@ -94,7 +121,14 @@ class NativeNormalizer(Normalizer):
         b.run_key = ("native.run", rid)
         b.time = temporal(start, end) if start else temporal(end, None)
         if end is None:
-            result.diagnostics.append(Diagnostic(start.obs_id if start else None, "warning", "unclosed_run", f"run {rid} has no end observation"))
+            result.diagnostics.append(
+                Diagnostic(
+                    start.obs_id if start else None,
+                    "warning",
+                    "unclosed_run",
+                    f"run {rid} has no end observation",
+                )
+            )
             b.status = EventStatus.UNKNOWN
         else:
             b.status = status_from(ep.get("outcome"))
@@ -112,7 +146,14 @@ class NativeNormalizer(Normalizer):
         # a run has no parent by definition; do not report it as missing
         return _drop_missing(ev, "parent")
 
-    def _span_event(self, sid: str, start: RawObservation | None, end: RawObservation | None, ctx: NormalizeContext, result: NormalizeResult) -> Any:
+    def _span_event(
+        self,
+        sid: str,
+        start: RawObservation | None,
+        end: RawObservation | None,
+        ctx: NormalizeContext,
+        result: NormalizeResult,
+    ) -> Any:
         obs = [o for o in (start, end) if o is not None]
         b = EventBuilder(self, ctx, obs)
         sp: dict[str, Any] = start.payload() if start else {}
@@ -123,7 +164,14 @@ class NativeNormalizer(Normalizer):
         b.operation = str(sp.get("operation") or "unknown")
         if start is None:
             b.kind = EventKind.UNKNOWN
-            result.diagnostics.append(Diagnostic(end.obs_id if end else None, "warning", "unpaired_end", f"span {sid} end without start"))
+            result.diagnostics.append(
+                Diagnostic(
+                    end.obs_id if end else None,
+                    "warning",
+                    "unpaired_end",
+                    f"span {sid} end without start",
+                )
+            )
         b.actor = entity(sp.get("actor"))
         b.object = entity(sp.get("object"))
         attrs = {**(sp.get("attributes") or {}), **(ep.get("attributes") or {})}
@@ -142,7 +190,11 @@ class NativeNormalizer(Normalizer):
             b.input(item.get("value"), role=item.get("role") or "input", label=item.get("label"))
         for item in ep.get("outputs") or []:
             b.output(item.get("value"), role=item.get("role") or "output", label=item.get("label"))
-        unfaithful = [i.get("role") for i in [*inputs, *(ep.get("outputs") or [])] if i.get("faithful") is False]
+        unfaithful = [
+            i.get("role")
+            for i in [*inputs, *(ep.get("outputs") or [])]
+            if i.get("faithful") is False
+        ]
         if unfaithful:
             b.attributes["non_json_values"] = unfaithful
         b.source_ids = [("native.span", sid)]
@@ -152,7 +204,10 @@ class NativeNormalizer(Normalizer):
             b.parents.append(DeclaredLink("parent", "native.span", parent))
         elif run_id:
             b.parents.append(DeclaredLink("parent", "native.run", run_id))
-        links = {(lnk["span_id"], lnk.get("relation", "depends_on")) for lnk in [*(sp.get("links") or []), *(ep.get("links") or [])]}
+        links = {
+            (lnk["span_id"], lnk.get("relation", "depends_on"))
+            for lnk in [*(sp.get("links") or []), *(ep.get("links") or [])]
+        }
         for other, relation in sorted(links):
             b.parents.append(DeclaredLink(relation, "native.span", other))
         if run_id:
@@ -160,7 +215,14 @@ class NativeNormalizer(Normalizer):
         b.time = temporal(start, end) if start else temporal(end, None)
         if end is None:
             b.status = EventStatus.UNKNOWN
-            result.diagnostics.append(Diagnostic(start.obs_id if start else None, "warning", "unpaired_start", f"span {sid} never ended"))
+            result.diagnostics.append(
+                Diagnostic(
+                    start.obs_id if start else None,
+                    "warning",
+                    "unpaired_start",
+                    f"span {sid} never ended",
+                )
+            )
         else:
             b.status = status_from(ep.get("status"))
             b.error = ep.get("error")
@@ -197,12 +259,16 @@ class NativeNormalizer(Normalizer):
         return _drop_missing(ev, "end_time")
 
 
-def _effects(kind: EventKind, obj: EntityRef | None, facets: list[str], attrs: dict[str, Any]) -> list[Effect]:
+def _effects(
+    kind: EventKind, obj: EntityRef | None, facets: list[str], attrs: dict[str, Any]
+) -> list[Effect]:
     if obj is None:
         return []
     target = obj.canonical
     if kind == EventKind.MEMORY_ACCESS:
-        access = attrs.get("access") or ("write" if "write" in facets else "read" if "read" in facets else None)
+        access = attrs.get("access") or (
+            "write" if "write" in facets else "read" if "read" in facets else None
+        )
         if access == "write":
             return [Effect(EffectKind.WRITE, target)]
         if access == "read":

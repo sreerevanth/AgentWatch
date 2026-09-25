@@ -44,11 +44,20 @@ def event_from_dict(d: dict[str, Any]) -> ComputationalEvent:
         actor=EntityRef.parse(d["actor"]) if d.get("actor") else None,
         object=EntityRef.parse(d["object"]) if d.get("object") else None,
         facets=tuple(d.get("facets") or ()),
-        inputs=tuple(ArtifactRef(a["artifact_id"], a["role"], a.get("label")) for a in d.get("inputs") or ()),
-        outputs=tuple(ArtifactRef(a["artifact_id"], a["role"], a.get("label")) for a in d.get("outputs") or ()),
-        effects=tuple(Effect(EffectKind(e["kind"]), e["target"], e.get("target_type", "entity")) for e in d.get("effects") or ()),
+        inputs=tuple(
+            ArtifactRef(a["artifact_id"], a["role"], a.get("label")) for a in d.get("inputs") or ()
+        ),
+        outputs=tuple(
+            ArtifactRef(a["artifact_id"], a["role"], a.get("label")) for a in d.get("outputs") or ()
+        ),
+        effects=tuple(
+            Effect(EffectKind(e["kind"]), e["target"], e.get("target_type", "entity"))
+            for e in d.get("effects") or ()
+        ),
         source_ids=tuple((s[0], s[1]) for s in d.get("source_ids") or ()),
-        parents=tuple(DeclaredLink(p["relation"], p["key_space"], p["value"]) for p in d.get("parents") or ()),
+        parents=tuple(
+            DeclaredLink(p["relation"], p["key_space"], p["value"]) for p in d.get("parents") or ()
+        ),
         run_key=(d["run_key"][0], d["run_key"][1]) if d.get("run_key") else None,
         error_json=dumps(d["error"]) if d.get("error") else None,
         resources_json=dumps(d.get("resources") or {}),

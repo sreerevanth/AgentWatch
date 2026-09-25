@@ -65,7 +65,12 @@ def execute(ws: Workspace, query: str) -> dict[str, Any]:
             if key in kv:
                 want = kv[key].upper() if key in ("kind", "status") else kv[key]
                 evs = [e for e in evs if (e.get(key) or "") == want]
-        return {"type": "events", "run_id": run["run_id"], "result": evs, "evidence": [e["event_id"] for e in evs]}
+        return {
+            "type": "events",
+            "run_id": run["run_id"],
+            "result": evs,
+            "evidence": [e["event_id"] for e in evs],
+        }
     if cmd in ("provenance", "dependents"):
         from agentwatch.provenance.lineage import dependents, lineage
 
@@ -86,7 +91,11 @@ def execute(ws: Workspace, query: str) -> dict[str, Any]:
         return {"type": "compare", "result": res, "evidence": ev}
     if cmd == "motifs":
         recs = ws.derived("motif_instance", ws.resolve_run(pos[0])["run_id"] if pos else None)
-        return {"type": "motifs", "result": recs, "evidence": [e for r in recs for e in r["events"]]}
+        return {
+            "type": "motifs",
+            "result": recs,
+            "evidence": [e for r in recs for e in r["events"]],
+        }
     if cmd in ("causes", "effects"):
         from agentwatch.causality.cones import causes, effects
 
@@ -99,7 +108,11 @@ def execute(ws: Workspace, query: str) -> dict[str, Any]:
         from agentwatch.behaviour.profile import genome
 
         profs = _scope_profiles(ws, pos[0] if pos else "all")
-        return {"type": "genome", "result": genome(profs, pos[0] if pos else "all"), "evidence": [p["run_id"] for p in profs]}
+        return {
+            "type": "genome",
+            "result": genome(profs, pos[0] if pos else "all"),
+            "evidence": [p["run_id"] for p in profs],
+        }
     if cmd == "drift":
         from agentwatch.behaviour.drift import drift
 
@@ -144,7 +157,7 @@ def _scope_profiles(ws: Workspace, scope: str) -> list[dict[str, Any]]:
         ids = {ws.resolve_run(x)["run_id"] for x in val.split(",") if x}
         return [p for p in profs if p["run_id"] in ids]
     if kind in ("variant", "attr") or "=" in val:
-        key, value = (val.split("=", 1) if "=" in val else ("variant", val))
+        key, value = val.split("=", 1) if "=" in val else ("variant", val)
         return [p for p in profs if _run_attr(ws, runs.get(p["run_id"]), key) == value]
     rid = ws.resolve_run(scope)["run_id"]
     return [p for p in profs if p["run_id"] == rid]
@@ -164,15 +177,49 @@ def _run_attr(ws: Workspace, run: dict[str, Any] | None, key: str) -> Any:
 
 # ── natural language routing ───────────────────────────────────────────────
 NL_PATTERNS: list[tuple[re.Pattern[str], Callable[[re.Match[str]], str]]] = [
-    (re.compile(r"why did (?:run )?(?P<b>\S+) (?:take longer|use more tokens|cost more|behave differently|fail|differ)\w*.* than (?:run )?(?P<a>\S+?)[?.!]*$", re.I),
-     lambda m: f"compare {m['a']} {m['b']}"),
-    (re.compile(r"(?:how|what) (?:did|does) (?:run )?(?P<a>\S+) differ from (?:run )?(?P<b>\S+?)[?.!]*$", re.I), lambda m: f"compare {m['b']} {m['a']}"),
-    (re.compile(r"where did (?:artifact )?(?P<x>\S+?) come from[?.!]*$", re.I), lambda m: f"provenance {m['x']}"),
-    (re.compile(r"(?:which|what) retrievals? influenced (?:artifact )?(?P<x>\S+?)[?.!]*$", re.I), lambda m: f"provenance {m['x']}"),
-    (re.compile(r"(?:what|which) (?:later )?(?:outputs|events|artifacts)? ?depends? on (?:memory item |artifact )?(?P<x>\S+?)[?.!]*$", re.I), lambda m: f"dependents {m['x']}"),
+    (
+        re.compile(
+            r"why did (?:run )?(?P<b>\S+) (?:take longer|use more tokens|cost more|behave differently|fail|differ)\w*.* than (?:run )?(?P<a>\S+?)[?.!]*$",
+            re.I,
+        ),
+        lambda m: f"compare {m['a']} {m['b']}",
+    ),
+    (
+        re.compile(
+            r"(?:how|what) (?:did|does) (?:run )?(?P<a>\S+) differ from (?:run )?(?P<b>\S+?)[?.!]*$",
+            re.I,
+        ),
+        lambda m: f"compare {m['b']} {m['a']}",
+    ),
+    (
+        re.compile(r"where did (?:artifact )?(?P<x>\S+?) come from[?.!]*$", re.I),
+        lambda m: f"provenance {m['x']}",
+    ),
+    (
+        re.compile(r"(?:which|what) retrievals? influenced (?:artifact )?(?P<x>\S+?)[?.!]*$", re.I),
+        lambda m: f"provenance {m['x']}",
+    ),
+    (
+        re.compile(
+            r"(?:what|which) (?:later )?(?:outputs|events|artifacts)? ?depends? on (?:memory item |artifact )?(?P<x>\S+?)[?.!]*$",
+            re.I,
+        ),
+        lambda m: f"dependents {m['x']}",
+    ),
     (re.compile(r"why did (?:event )?(?P<x>\S+) fail[?.!]*$", re.I), lambda m: f"causes {m['x']}"),
-    (re.compile(r"what (?:happened|changed) (?:because of|after) (?:event )?(?P<x>\S+?)[?.!]*$", re.I), lambda m: f"effects {m['x']}"),
-    (re.compile(r"(?:which|what) motifs? (?:are|appear|occur)(?:red)? in (?:run )?(?P<x>\S+?)[?.!]*$", re.I), lambda m: f"motifs {m['x']}"),
+    (
+        re.compile(
+            r"what (?:happened|changed) (?:because of|after) (?:event )?(?P<x>\S+?)[?.!]*$", re.I
+        ),
+        lambda m: f"effects {m['x']}",
+    ),
+    (
+        re.compile(
+            r"(?:which|what) motifs? (?:are|appear|occur)(?:red)? in (?:run )?(?P<x>\S+?)[?.!]*$",
+            re.I,
+        ),
+        lambda m: f"motifs {m['x']}",
+    ),
 ]
 
 
@@ -192,15 +239,34 @@ def compile_question(question: str, planner: Planner | None = None) -> tuple[str
 def ask(ws: Workspace, question: str, planner: Planner | None = None) -> dict[str, Any]:
     structured, how = compile_question(question, planner)
     if structured is None:
-        return {"question": question, "answered": False, "compiled_by": how,
-                "message": "Could not map the question to a supported query. Try: 'why did <runB> take longer than <runA>', "
-                           "'where did <artifact> come from', 'why did <event> fail', 'what depends on <artifact>'.", "evidence": []}
+        return {
+            "question": question,
+            "answered": False,
+            "compiled_by": how,
+            "message": "Could not map the question to a supported query. Try: 'why did <runB> take longer than <runA>', "
+            "'where did <artifact> come from', 'why did <event> fail', 'what depends on <artifact>'.",
+            "evidence": [],
+        }
     try:
         res = execute(ws, structured)
     except (QueryError, NotFoundError, AmbiguousError) as exc:
-        return {"question": question, "answered": False, "compiled_by": how, "structured_query": structured, "message": str(exc), "evidence": []}
-    return {"question": question, "answered": True, "compiled_by": how, "structured_query": structured, "answer": explain(res),
-            "evidence": res["evidence"], "result": res["result"]}
+        return {
+            "question": question,
+            "answered": False,
+            "compiled_by": how,
+            "structured_query": structured,
+            "message": str(exc),
+            "evidence": [],
+        }
+    return {
+        "question": question,
+        "answered": True,
+        "compiled_by": how,
+        "structured_query": structured,
+        "answer": explain(res),
+        "evidence": res["evidence"],
+        "result": res["result"],
+    }
 
 
 def explain(res: dict[str, Any]) -> list[str]:
@@ -212,49 +278,85 @@ def explain(res: dict[str, Any]) -> list[str]:
         d = r["earliest_divergence"]
         if d:
             be = d.get("b_event") or {}
-            lines.append(f"Earliest divergence ({d['type']}): {be.get('label', 'end of run')} [{(be.get('event_id') or '')[:8]}] — " + "; ".join(d["reasons"]) + ".")
+            lines.append(
+                f"Earliest divergence ({d['type']}): {be.get('label', 'end of run')} [{(be.get('event_id') or '')[:8]}] — "
+                + "; ".join(d["reasons"])
+                + "."
+            )
             cone = d.get("cone") or {}
             if cone.get("latency_share") is not None:
-                lines.append(f"{cone['events_in_cone']} of {cone['events_total']} events and {cone['latency_share']:.0%} of leaf latency in run {b['run_id'][:8]} lie in that point's dependency cone (dependency, not causation).")
+                lines.append(
+                    f"{cone['events_in_cone']} of {cone['events_total']} events and {cone['latency_share']:.0%} of leaf latency in run {b['run_id'][:8]} lie in that point's dependency cone (dependency, not causation)."
+                )
         else:
             lines.append("No structural or content divergence was found between the two runs.")
         res_ = r["resources"]
-        for k in ("duration_ms", "tokens_in", "tokens_out", "retries", "errors", "tool_calls", "model_calls"):
+        for k in (
+            "duration_ms",
+            "tokens_in",
+            "tokens_out",
+            "retries",
+            "errors",
+            "tool_calls",
+            "model_calls",
+        ):
             v = res_[k]
             if v["delta"]:
                 lines.append(f"{k}: {v['a']:g} → {v['b']:g} ({v['delta']:+g}).")
         for m, c in r["motifs"].items():
             if c["a"] != c["b"]:
                 lines.append(f"motif {m}: {c['a']} → {c['b']} instances.")
-        lines.append(f"Structural similarity {r['structural']['alignment_similarity']:.2f}; same system version: {r['fingerprint']['same_system_version']}.")
+        lines.append(
+            f"Structural similarity {r['structural']['alignment_similarity']:.2f}; same system version: {r['fingerprint']['same_system_version']}."
+        )
     elif t == "provenance":
         m = r["metrics"]
-        lines.append(f"Lineage depth {m['provenance_depth']}, {m['transformations']} transformations, {len(m['origins'])} origins; weakest path confidence {m['weakest_path_confidence']}.")
+        lines.append(
+            f"Lineage depth {m['provenance_depth']}, {m['transformations']} transformations, {len(m['origins'])} origins; weakest path confidence {m['weakest_path_confidence']}."
+        )
         from agentwatch.provenance.lineage import render
 
         lines.extend(render(r))
     elif t == "dependents":
-        lines.append(f"{r['count']} dependent nodes; {len(r['affected_outputs'])} final outputs affected.")
-        lines.extend(f"- {d['description'].get('label')} ({d['node'][:20]}) via {d['rel_type']}" for d in r["dependents"][:15])
+        lines.append(
+            f"{r['count']} dependent nodes; {len(r['affected_outputs'])} final outputs affected."
+        )
+        lines.extend(
+            f"- {d['description'].get('label')} ({d['node'][:20]}) via {d['rel_type']}"
+            for d in r["dependents"][:15]
+        )
     elif t in ("causes", "effects"):
         key = "dependencies" if t == "causes" else "dependents"
-        lines.append(f"{len(r[key])} structural {key} (OBSERVATIONAL: possible influence, not established).")
+        lines.append(
+            f"{len(r[key])} structural {key} (OBSERVATIONAL: possible influence, not established)."
+        )
         lines.extend(f"- {d['label']} [{d['node'][6:14]}] via {d['via']}" for d in r[key][:10])
         if t == "causes":
             c = r["correlations"]
             if c.get("status") == "computed":
                 for row in c["associations"][:3]:
-                    lines.append(f"CORRELATIONAL: failure rate {row['failure_rate_with']} with {row['upstream_signature']} vs {row['failure_rate_without']} without (n={row['n_with']}/{row['n_without']}).")
+                    lines.append(
+                        f"CORRELATIONAL: failure rate {row['failure_rate_with']} with {row['upstream_signature']} vs {row['failure_rate_without']} without (n={row['n_with']}/{row['n_without']})."
+                    )
             else:
                 lines.append(f"Correlations: {c.get('status')}.")
         for h in r["hypotheses"]:
-            lines.append(f"Hypothesis ({h['status']}, evidence class {h['evidence_class']}): {h['statement']}")
+            lines.append(
+                f"Hypothesis ({h['status']}, evidence class {h['evidence_class']}): {h['statement']}"
+            )
         for i in r["interventions"]:
-            lines.append(f"INTERVENTIONAL: branch {str(i['branch_id'])[:8]} — outcome changed: {i['outcome_changed']} (reproduction confidence {i['reproduction_confidence']}).")
+            lines.append(
+                f"INTERVENTIONAL: branch {str(i['branch_id'])[:8]} — outcome changed: {i['outcome_changed']} (reproduction confidence {i['reproduction_confidence']})."
+            )
     elif t == "motifs":
-        lines.extend(f"- {m['motif_id']} {m['motif_name']}: {m['explanation']}" for m in r) or lines.append("No motifs detected.")
+        lines.extend(
+            f"- {m['motif_id']} {m['motif_name']}: {m['explanation']}" for m in r
+        ) or lines.append("No motifs detected.")
     elif t == "runs":
-        lines.extend(f"- {x['run_id'][:8]} {x.get('name')} {x.get('status')} {x.get('started_at')}" for x in r)
+        lines.extend(
+            f"- {x['run_id'][:8]} {x.get('name')} {x.get('status')} {x.get('started_at')}"
+            for x in r
+        )
     elif t == "events":
         lines.extend(f"- {e['event_id'][:8]} {e['kind']} {e['operation']} {e['status']}" for e in r)
     elif t == "drift":

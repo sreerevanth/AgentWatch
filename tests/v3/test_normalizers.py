@@ -40,24 +40,43 @@ def test_native_parents_multiparent_and_runs(engine, sink):
     rels = [p["relation"] for p in join["parents"]]
     assert rels.count("depends_on") == 2 and "parent" in rels
     graph_rels = engine.store.relations(iid, all_runs=True, view="EXECUTION")
-    deps = [r for r in graph_rels if r["type"] == "DEPENDS_ON" and r["head"] == [f"event:{join['event_id']}"]]
+    deps = [
+        r
+        for r in graph_rels
+        if r["type"] == "DEPENDS_ON" and r["head"] == [f"event:{join['event_id']}"]
+    ]
     assert len(deps) == 2
     assert all(e["run_id"] for e in evs)
 
 
 def test_unpaired_span_is_reported_not_dropped(engine):
     ref = SensorRef("native", "1", "n1")
-    d = ObservationDraft(sensor=ref, source_kind="native.span.start", payload={"kind": "TOOL_INVOCATION", "operation": "t"},
-                         source_seq=1, observed_at=datetime.now(UTC), declared_ids={"span_id": "s1"})
+    d = ObservationDraft(
+        sensor=ref,
+        source_kind="native.span.start",
+        payload={"kind": "TOOL_INVOCATION", "operation": "t"},
+        source_seq=1,
+        observed_at=datetime.now(UTC),
+        declared_ids={"span_id": "s1"},
+    )
     evs, diags, _ = events_of(engine, [d])
     assert len(evs) == 1 and evs[0]["status"] == "UNKNOWN"
-    assert "end_time" in evs[0]["missing"] and "run" in evs[0]["missing"] and "parent" in evs[0]["missing"]
+    assert (
+        "end_time" in evs[0]["missing"]
+        and "run" in evs[0]["missing"]
+        and "parent" in evs[0]["missing"]
+    )
     assert any(x["code"] == "unpaired_start" for x in diags)
     assert evs[0]["run_id"] is None  # no run was declared, none is invented
 
 
 def test_unknown_source_kind_gets_diagnostic(engine):
-    d = ObservationDraft(sensor=SensorRef("x", "1", "x1"), source_kind="mystery.thing", payload={}, observed_at=datetime.now(UTC))
+    d = ObservationDraft(
+        sensor=SensorRef("x", "1", "x1"),
+        source_kind="mystery.thing",
+        payload={},
+        observed_at=datetime.now(UTC),
+    )
     evs, diags, _ = events_of(engine, [d])
     assert evs == [] and diags[0]["code"] == "no_normalizer"
 
@@ -76,11 +95,19 @@ def test_rebuild_is_deterministic(engine, sink):
 # ── legacy ────────────────────────────────────────────────────────────────
 def test_legacy_translation_reports_loss():
     t = LegacyTranslator()
-    ev = AgentEvent(session_id="s1", agent_id="a1", event_type=EventType.TOOL_CALL,
-                    tool_call=ToolCallData(tool_name="bash", raw_command="ls", arguments={"command": "ls"}))
+    ev = AgentEvent(
+        session_id="s1",
+        agent_id="a1",
+        event_type=EventType.TOOL_CALL,
+        tool_call=ToolCallData(tool_name="bash", raw_command="ls", arguments={"command": "ls"}),
+    )
     r = t.translate(ev)
     assert r.status == TranslationStatus.ACCEPTED_WITH_LOSS
-    assert "parent" in r.lost_fields and "call_result_pairing" in r.lost_fields and "timestamp_provenance" in r.lost_fields
+    assert (
+        "parent" in r.lost_fields
+        and "call_result_pairing" in r.lost_fields
+        and "timestamp_provenance" in r.lost_fields
+    )
     assert r.inferred_fields == []
     bad = t.translate({"event_id": "x", "event_type": "nope"})
     assert bad.status == TranslationStatus.REJECTED and bad.draft is None
@@ -96,9 +123,24 @@ def test_legacy_interpretations_are_flagged(engine):
 
 
 def test_legacy_pairs_only_by_declared_tool_id(engine):
-    call = AgentEvent(session_id="s", agent_id="a", event_type=EventType.TOOL_CALL, tool_call=ToolCallData(tool_name="read", tool_id="tu1"))
-    res = AgentEvent(session_id="s", agent_id="a", event_type=EventType.TOOL_RESULT, tool_result=ToolResultData(tool_name="read", tool_id="tu1", output="data"))
-    orphan = AgentEvent(session_id="s", agent_id="a", event_type=EventType.TOOL_RESULT, tool_result=ToolResultData(tool_name="read", output="other"))
+    call = AgentEvent(
+        session_id="s",
+        agent_id="a",
+        event_type=EventType.TOOL_CALL,
+        tool_call=ToolCallData(tool_name="read", tool_id="tu1"),
+    )
+    res = AgentEvent(
+        session_id="s",
+        agent_id="a",
+        event_type=EventType.TOOL_RESULT,
+        tool_result=ToolResultData(tool_name="read", tool_id="tu1", output="data"),
+    )
+    orphan = AgentEvent(
+        session_id="s",
+        agent_id="a",
+        event_type=EventType.TOOL_RESULT,
+        tool_result=ToolResultData(tool_name="read", output="other"),
+    )
     engine.ingest_legacy([call, res, orphan])
     engine.process()
     evs = engine.store.events(engine.interp_id_for("default"))
@@ -112,7 +154,9 @@ def test_legacy_pairs_only_by_declared_tool_id(engine):
 
 
 def test_legacy_mutation_of_original_does_not_change_evidence(engine):
-    ev = AgentEvent(session_id="s", agent_id="a", event_type=EventType.GOAL_SET, goal="original goal")
+    ev = AgentEvent(
+        session_id="s", agent_id="a", event_type=EventType.GOAL_SET, goal="original goal"
+    )
     engine.ingest_legacy([ev])
     ev.goal = "tampered after ingest"
     obs = engine.store.observations()[0]
@@ -134,7 +178,11 @@ def test_otel_genai_mapping(engine):
     assert root["kind"] == "OPERATION" and "parent" not in root["missing"]
     db = by_op["postgresql:select"]
     assert db["kind"] == "RETRIEVAL"
-    assert {"relation": "depends_on", "key_space": "otel.span", "value": f"{'a' * 32}/{'2' * 16}"} in db["parents"]
+    assert {
+        "relation": "depends_on",
+        "key_space": "otel.span",
+        "value": f"{'a' * 32}/{'2' * 16}",
+    } in db["parents"]
     assert len({e["run_id"] for e in evs}) == 1
     run = engine.store.runs(iid)[0]
     assert run["completeness"] == 1.0
@@ -146,8 +194,20 @@ def test_langchain_sensor_preserves_parent_run_id(engine):
     h = AgentWatchLangChainSensor(sink)
     root, llm, tool = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
     h.on_chain_start({"name": "AgentExecutor"}, {"input": "q"}, run_id=root)
-    h.on_chat_model_start({"kwargs": {"model": "claude-sonnet-5"}}, [[SimpleNamespace(type="human", content="hi")]], run_id=llm, parent_run_id=root)
-    h.on_llm_end(SimpleNamespace(generations=[[SimpleNamespace(text="call tool")]], llm_output={"token_usage": {"prompt_tokens": 5, "completion_tokens": 2}}), run_id=llm, parent_run_id=root)
+    h.on_chat_model_start(
+        {"kwargs": {"model": "claude-sonnet-5"}},
+        [[SimpleNamespace(type="human", content="hi")]],
+        run_id=llm,
+        parent_run_id=root,
+    )
+    h.on_llm_end(
+        SimpleNamespace(
+            generations=[[SimpleNamespace(text="call tool")]],
+            llm_output={"token_usage": {"prompt_tokens": 5, "completion_tokens": 2}},
+        ),
+        run_id=llm,
+        parent_run_id=root,
+    )
     h.on_tool_start({"name": "search"}, "q", run_id=tool, parent_run_id=root)
     h.on_tool_error(RuntimeError("boom"), run_id=tool, parent_run_id=root)
     h.on_chain_end({"output": "done"}, run_id=root)
@@ -168,13 +228,53 @@ def test_langchain_sensor_preserves_parent_run_id(engine):
 def test_claude_code_stream(engine):
     lines = [
         {"type": "system", "subtype": "init", "session_id": "S", "model": "claude-sonnet-5"},
-        {"type": "assistant", "session_id": "S", "message": {"id": "m1", "model": "claude-sonnet-5", "content": [
-            {"type": "text", "text": "Reading"}, {"type": "tool_use", "id": "tu1", "name": "Read", "input": {"file": "a.py"}},
-            {"type": "tool_use", "id": "tu2", "name": "Grep", "input": {"pattern": "x"}}], "usage": {"input_tokens": 10, "output_tokens": 4}}},
-        {"type": "user", "session_id": "S", "message": {"content": [{"type": "tool_result", "tool_use_id": "tu1", "content": "print(1)"},
-                                                               {"type": "tool_result", "tool_use_id": "tu2", "content": "no match", "is_error": True}]}},
-        {"type": "assistant", "session_id": "S", "message": {"id": "m2", "model": "claude-sonnet-5", "content": [{"type": "text", "text": "Done"}]}},
-        {"type": "result", "session_id": "S", "subtype": "success", "is_error": False, "total_cost_usd": 0.01, "duration_ms": 900, "result": "Done"},
+        {
+            "type": "assistant",
+            "session_id": "S",
+            "message": {
+                "id": "m1",
+                "model": "claude-sonnet-5",
+                "content": [
+                    {"type": "text", "text": "Reading"},
+                    {"type": "tool_use", "id": "tu1", "name": "Read", "input": {"file": "a.py"}},
+                    {"type": "tool_use", "id": "tu2", "name": "Grep", "input": {"pattern": "x"}},
+                ],
+                "usage": {"input_tokens": 10, "output_tokens": 4},
+            },
+        },
+        {
+            "type": "user",
+            "session_id": "S",
+            "message": {
+                "content": [
+                    {"type": "tool_result", "tool_use_id": "tu1", "content": "print(1)"},
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "tu2",
+                        "content": "no match",
+                        "is_error": True,
+                    },
+                ]
+            },
+        },
+        {
+            "type": "assistant",
+            "session_id": "S",
+            "message": {
+                "id": "m2",
+                "model": "claude-sonnet-5",
+                "content": [{"type": "text", "text": "Done"}],
+            },
+        },
+        {
+            "type": "result",
+            "session_id": "S",
+            "subtype": "success",
+            "is_error": False,
+            "total_cost_usd": 0.01,
+            "duration_ms": 900,
+            "result": "Done",
+        },
     ]
     evs, diags, iid = events_of(engine, drafts_from_lines(lines, live=True))
     tools = {e["operation"]: e for e in evs if e["kind"] == "TOOL_INVOCATION"}
@@ -188,15 +288,24 @@ def test_claude_code_stream(engine):
 # ── provider SDK clients ──────────────────────────────────────────────────
 class _Completions:
     def create(self, **kw):
-        return {"id": "resp1", "model": kw["model"], "choices": [{"message": {"content": "hello", "tool_calls": [{"id": "call1"}]}}], "usage": {"prompt_tokens": 3, "completion_tokens": 1}}
+        return {
+            "id": "resp1",
+            "model": kw["model"],
+            "choices": [{"message": {"content": "hello", "tool_calls": [{"id": "call1"}]}}],
+            "usage": {"prompt_tokens": 3, "completion_tokens": 1},
+        }
 
 
 def test_openai_client_sensor_passthrough_and_linkage(engine, sink):
     client = SimpleNamespace(chat=SimpleNamespace(completions=_Completions()))
     instrument_openai(client, sink)
     with aw.run("r"):
-        out = client.chat.completions.create(model="gpt-4o", messages=[{"role": "user", "content": "hi"}])
-        client.chat.completions.create(model="gpt-4o", messages=[{"role": "tool", "tool_call_id": "call1", "content": "42"}])
+        out = client.chat.completions.create(
+            model="gpt-4o", messages=[{"role": "user", "content": "hi"}]
+        )
+        client.chat.completions.create(
+            model="gpt-4o", messages=[{"role": "tool", "tool_call_id": "call1", "content": "42"}]
+        )
     assert out["choices"][0]["message"]["content"] == "hello"  # return value unchanged
     evs, diags, iid = events_of(engine, sink.drafts)
     calls = [e for e in evs if e["kind"] == "MODEL_INVOCATION"]
@@ -226,8 +335,23 @@ def test_anthropic_client_error_is_recorded_and_reraised(engine, sink):
 def test_mcp_tap_pairs_by_jsonrpc_id(engine):
     sink = ListSink()
     tap = MCPTap(sink, server="github")
-    tap.record("client->server", {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "search_issues", "arguments": {"q": "bug"}}})
-    tap.record("server->client", {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": "3 issues"}]}})
+    tap.record(
+        "client->server",
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {"name": "search_issues", "arguments": {"q": "bug"}},
+        },
+    )
+    tap.record(
+        "server->client",
+        {"jsonrpc": "2.0", "id": 1, "result": {"content": [{"type": "text", "text": "3 issues"}]}},
+    )
     evs, _, _ = events_of(engine, sink.drafts)
-    assert len(evs) == 1 and evs[0]["kind"] == "TOOL_INVOCATION" and evs[0]["object"] == "tool:mcp/github/search_issues"
+    assert (
+        len(evs) == 1
+        and evs[0]["kind"] == "TOOL_INVOCATION"
+        and evs[0]["object"] == "tool:mcp/github/search_issues"
+    )
     assert evs[0]["status"] == "OK"

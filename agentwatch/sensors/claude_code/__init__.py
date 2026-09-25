@@ -38,7 +38,11 @@ def declared_ids_for(line: dict[str, Any]) -> dict[str, str]:
         for block in msg.get("content") or []:
             if isinstance(block, dict) and block.get("type") == "tool_use" and block.get("id"):
                 uses.append(str(block["id"]))
-            if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("tool_use_id"):
+            if (
+                isinstance(block, dict)
+                and block.get("type") == "tool_result"
+                and block.get("tool_use_id")
+            ):
                 results.append(str(block["tool_use_id"]))
         if uses:
             ids["tool_use_ids"] = ",".join(uses)
@@ -47,10 +51,18 @@ def declared_ids_for(line: dict[str, Any]) -> dict[str, str]:
     return ids
 
 
-def drafts_from_lines(lines: Iterable[str | dict[str, Any]], *, live: bool = False, tenant_id: str = "default", instance_id: str | None = None) -> list[ObservationDraft]:
+def drafts_from_lines(
+    lines: Iterable[str | dict[str, Any]],
+    *,
+    live: bool = False,
+    tenant_id: str = "default",
+    instance_id: str | None = None,
+) -> list[ObservationDraft]:
     from datetime import UTC, datetime
 
-    ref = SensorRef("claude_code", SENSOR_VERSION, instance_id or f"claude-code-{uuid.uuid4().hex[:8]}")
+    ref = SensorRef(
+        "claude_code", SENSOR_VERSION, instance_id or f"claude-code-{uuid.uuid4().hex[:8]}"
+    )
     drafts = []
     seq = 0
     for raw in lines:
@@ -69,22 +81,29 @@ def drafts_from_lines(lines: Iterable[str | dict[str, Any]], *, live: bool = Fal
         if ts:
             observed, clock = parse_ts(ts), ClockInfo(source="source", clock_id="claude_code")
         elif live:
-            observed, clock = datetime.now(UTC), ClockInfo(source="sensor", clock_id=ref.instance_id)
+            observed, clock = (
+                datetime.now(UTC),
+                ClockInfo(source="sensor", clock_id=ref.instance_id),
+            )
         else:
             observed, clock = None, ClockInfo(source="missing")
-        drafts.append(ObservationDraft(
-            sensor=ref,
-            source_kind=f"claude_code.{line.get('type', 'unknown')}",
-            payload=line,
-            source_seq=seq,
-            observed_at=observed,
-            clock=clock,
-            declared_ids=declared_ids_for(line),
-            tenant_id=tenant_id,
-        ))
+        drafts.append(
+            ObservationDraft(
+                sensor=ref,
+                source_kind=f"claude_code.{line.get('type', 'unknown')}",
+                payload=line,
+                source_seq=seq,
+                observed_at=observed,
+                clock=clock,
+                declared_ids=declared_ids_for(line),
+                tenant_id=tenant_id,
+            )
+        )
     return drafts
 
 
 def drafts_from_file(path: str | Path, tenant_id: str = "default") -> list[ObservationDraft]:
     with Path(path).open(encoding="utf-8") as fh:
-        return drafts_from_lines(fh, live=False, tenant_id=tenant_id, instance_id=f"claude-code-file:{Path(path).name}")
+        return drafts_from_lines(
+            fh, live=False, tenant_id=tenant_id, instance_id=f"claude-code-file:{Path(path).name}"
+        )

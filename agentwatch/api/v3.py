@@ -32,7 +32,9 @@ def get_engine() -> Engine:
     with _engine_lock:
         if _engine is None:
             # server default keeps v3 data next to the v0.2 audit log (./data), not in $HOME
-            _engine = Engine(os.environ.get("AGENTWATCH_STORE") or "sqlite:///data/agentwatch-v3.db")
+            _engine = Engine(
+                os.environ.get("AGENTWATCH_STORE") or "sqlite:///data/agentwatch-v3.db"
+            )
         return _engine
 
 
@@ -111,7 +113,9 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
 
     # ── ingestion ──────────────────────────────────────────────────────────
     @router.post("/api/v3/observations", tags=["v3 evidence"])
-    def post_observations(batch: ObservationBatch, tenant_id: str = Depends(tenant)) -> dict[str, Any]:
+    def post_observations(
+        batch: ObservationBatch, tenant_id: str = Depends(tenant)
+    ) -> dict[str, Any]:
         drafts, rejected = [], []
         for i, raw in enumerate(batch.observations):
             try:
@@ -127,21 +131,34 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
 
     @router.post("/v1/traces", tags=["v3 evidence"])
     async def otlp_traces(request: Request, tenant_id: str = Depends(tenant)) -> Response:
-        from agentwatch.sensors.otel import drafts_from_spans, spans_from_otlp_json, spans_from_otlp_protobuf
+        from agentwatch.sensors.otel import (
+            drafts_from_spans,
+            spans_from_otlp_json,
+            spans_from_otlp_protobuf,
+        )
 
         body = await request.body()
         ctype = request.headers.get("content-type", "")
         try:
-            spans = spans_from_otlp_protobuf(body) if "protobuf" in ctype else spans_from_otlp_json(json.loads(body or b"{}"))
+            spans = (
+                spans_from_otlp_protobuf(body)
+                if "protobuf" in ctype
+                else spans_from_otlp_json(json.loads(body or b"{}"))
+            )
         except RuntimeError as exc:
             raise HTTPException(415, str(exc)) from exc
         except (ValueError, TypeError) as exc:
             raise HTTPException(400, f"invalid OTLP payload: {exc}") from exc
         res = get_engine().ingest(drafts_from_spans(spans, tenant_id=tenant_id))
-        return Response(content=json.dumps({"partialSuccess": {"rejectedSpans": len(res.rejected)}}), media_type="application/json")
+        return Response(
+            content=json.dumps({"partialSuccess": {"rejectedSpans": len(res.rejected)}}),
+            media_type="application/json",
+        )
 
     @router.post("/api/v3/legacy/events", tags=["v3 evidence"])
-    def legacy_events(events: list[dict[str, Any]] = Body(...), tenant_id: str = Depends(tenant)) -> dict[str, Any]:
+    def legacy_events(
+        events: list[dict[str, Any]] = Body(...), tenant_id: str = Depends(tenant)
+    ) -> dict[str, Any]:
         results, appended = get_engine().ingest_legacy(events, tenant_id=tenant_id)
         return {"translations": [r.to_dict() for r in results], "append": appended.to_dict()}
 
@@ -161,30 +178,48 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
         obs = eng.store.get_observation(obs_id)
         if obs is None or obs.tenant_id != tenant_id:
             raise HTTPException(404, "observation not found")
-        return {"observation": obs.to_dict(), "inclusion_proof": eng.store.inclusion_proof(obs_id),
-                "derived_events": [{"event_id": e, "interp_id": i} for e, i in eng.store.events_for_observation(obs_id)]}
+        return {
+            "observation": obs.to_dict(),
+            "inclusion_proof": eng.store.inclusion_proof(obs_id),
+            "derived_events": [
+                {"event_id": e, "interp_id": i} for e, i in eng.store.events_for_observation(obs_id)
+            ],
+        }
 
     # ── status ─────────────────────────────────────────────────────────────
     @router.get("/api/v3/status", tags=["v3"])
     def status_(w: Workspace = Depends(ws)) -> dict[str, Any]:
         from agentwatch.analysis.capabilities import all_capabilities
 
-        return {"interp_id": w.interp_id, "interpretation": w.store.get_interpretation(w.interp_id),
-                "observations": w.store.count_observations(w.tenant_id), "capabilities": [c.to_dict() for c in all_capabilities()],
-                "reexecution_enabled": _reexecution_allowed()}
+        return {
+            "interp_id": w.interp_id,
+            "interpretation": w.store.get_interpretation(w.interp_id),
+            "observations": w.store.count_observations(w.tenant_id),
+            "capabilities": [c.to_dict() for c in all_capabilities()],
+            "reexecution_enabled": _reexecution_allowed(),
+        }
 
     @router.get("/api/v3/live", tags=["v3"])
     def live(limit: int = Query(50, le=500), w: Workspace = Depends(ws)) -> dict[str, Any]:
         runs = w.runs(limit=20)
         active = [r for r in runs if r.get("status") == "UNKNOWN" or not r.get("ended_at")]
-        events = sorted(w.store.events(w.interp_id), key=lambda e: e["time"]["start"] or "", reverse=True)[:limit]
+        events = sorted(
+            w.store.events(w.interp_id), key=lambda e: e["time"]["start"] or "", reverse=True
+        )[:limit]
         diags = w.diagnostics()
         actors: dict[str, int] = {}
         for e in events:
             if e.get("actor"):
                 actors[e["actor"]] = actors.get(e["actor"], 0) + 1
-        return {"interp_id": w.interp_id, "active_runs": active, "recent_runs": runs, "recent_events": events,
-                "actors": actors, "unresolved": [d for d in diags if d["level"] != "info"][:100], "diagnostic_count": len(diags)}
+        return {
+            "interp_id": w.interp_id,
+            "active_runs": active,
+            "recent_runs": runs,
+            "recent_events": events,
+            "actors": actors,
+            "unresolved": [d for d in diags if d["level"] != "info"][:100],
+            "diagnostic_count": len(diags),
+        }
 
     @router.get("/api/v3/capabilities", tags=["v3"])
     def capabilities() -> list[dict[str, Any]]:
@@ -203,7 +238,10 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
 
         def go() -> dict[str, Any]:
             s = summarize(w, ref)
-            s["tree"] = [{"depth": d, "event_id": e["event_id"]} for d, e in tree(w, s["run"]["run_id"], s["events"])]
+            s["tree"] = [
+                {"depth": d, "event_id": e["event_id"]}
+                for d, e in tree(w, s["run"]["run_id"], s["events"])
+            ]
             s["motif_instances"] = w.derived("motif_instance", s["run"]["run_id"])
             s["profile"] = next(iter(w.derived("behaviour_profile", s["run"]["run_id"])), None)
             return s
@@ -212,10 +250,19 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
 
     @router.get("/api/v3/runs/{ref}/events", tags=["v3 runs"])
     def run_events(ref: str, kind: str | None = None, w: Workspace = Depends(ws)) -> dict[str, Any]:
-        return guard(lambda: {"run_id": w.resolve_run(ref)["run_id"], "events": w.events(w.resolve_run(ref)["run_id"], kind=kind)})
+        return guard(
+            lambda: {
+                "run_id": w.resolve_run(ref)["run_id"],
+                "events": w.events(w.resolve_run(ref)["run_id"], kind=kind),
+            }
+        )
 
     @router.get("/api/v3/runs/{ref}/graph", tags=["v3 graph"])
-    def run_graph(ref: str, view: str = Query("all", pattern="^(all|execution|information|causal)$"), w: Workspace = Depends(ws)) -> dict[str, Any]:
+    def run_graph(
+        ref: str,
+        view: str = Query("all", pattern="^(all|execution|information|causal)$"),
+        w: Workspace = Depends(ws),
+    ) -> dict[str, Any]:
         def go() -> dict[str, Any]:
             rid = w.resolve_run(ref)["run_id"]
             if view == "causal":
@@ -227,7 +274,13 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
                 if view != "all":
                     rels = [r for r in rels if r["view"] == view.upper()]
             nodes = sorted({n for r in rels for n in r["tail"] + r["head"]})
-            return {"run_id": rid, "view": view, "nodes": [w.describe_node(n) for n in nodes], "relations": rels, "stats": w.graph(rid).stats()}
+            return {
+                "run_id": rid,
+                "view": view,
+                "nodes": [w.describe_node(n) for n in nodes],
+                "relations": rels,
+                "stats": w.graph(rid).stats(),
+            }
 
         return guard(go)
 
@@ -247,10 +300,23 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
             e = w.event(ref)
             g = w.graph(e.get("run_id"))
             node = f"event:{e['event_id']}"
-            return {"event": e, "evidence": w.event_evidence(e["event_id"]),
-                    "incoming": [{**g.relations[r], "other": w.describe_node(o)} for r, o in g.inc.get(node, [])],
-                    "outgoing": [{**g.relations[r], "other": w.describe_node(o)} for r, o in g.out.get(node, [])],
-                    "motifs": [m for m in w.derived("motif_instance", e.get("run_id")) if e["event_id"] in m["events"]] if e.get("run_id") else []}
+            return {
+                "event": e,
+                "evidence": w.event_evidence(e["event_id"]),
+                "incoming": [
+                    {**g.relations[r], "other": w.describe_node(o)} for r, o in g.inc.get(node, [])
+                ],
+                "outgoing": [
+                    {**g.relations[r], "other": w.describe_node(o)} for r, o in g.out.get(node, [])
+                ],
+                "motifs": [
+                    m
+                    for m in w.derived("motif_instance", e.get("run_id"))
+                    if e["event_id"] in m["events"]
+                ]
+                if e.get("run_id")
+                else [],
+            }
 
         return guard(go)
 
@@ -310,14 +376,17 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
         return guard(lambda: run_drift(_scope_profiles(w, baseline), _scope_profiles(w, candidate)))
 
     @router.get("/api/v3/states", tags=["v3 behaviour"])
-    def states(runs: str | None = None, window: int = 4, w: Workspace = Depends(ws)) -> dict[str, Any]:
+    def states(
+        runs: str | None = None, window: int = 4, w: Workspace = Depends(ws)
+    ) -> dict[str, Any]:
         from agentwatch.state.latent import infer_states
 
         return guard(lambda: infer_states(w, runs.split(",") if runs else None, window=window))
 
     @router.get("/api/v3/forecast/{ref}", tags=["v3 behaviour"])
     def forecast(ref: str, w: Workspace = Depends(ws)) -> dict[str, Any]:
-        from agentwatch.forecasting.trajectory import evaluate, forecast as fc
+        from agentwatch.forecasting.trajectory import evaluate
+        from agentwatch.forecasting.trajectory import forecast as fc
 
         return guard(lambda: evaluate(w) if ref == "evaluate" else fc(w, ref))
 
@@ -344,16 +413,35 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
     def propose(req: HypothesisRequest, w: Workspace = Depends(ws)) -> dict[str, Any]:
         from agentwatch.causality.hypotheses import propose as do
 
-        return guard(lambda: do(w, cause=req.cause, effect=req.effect, statement=req.statement, proposer=req.proposer, relation=req.relation, rationale=req.rationale))
+        return guard(
+            lambda: do(
+                w,
+                cause=req.cause,
+                effect=req.effect,
+                statement=req.statement,
+                proposer=req.proposer,
+                relation=req.relation,
+                rationale=req.rationale,
+            )
+        )
 
     @router.post("/api/v3/hypotheses/{hid}/evidence", tags=["v3 causality"])
     def add_evidence(hid: str, req: EvidenceRequest, w: Workspace = Depends(ws)) -> dict[str, Any]:
-        from agentwatch.causality.hypotheses import add_evidence as do, get
+        from agentwatch.causality.hypotheses import add_evidence as do
+        from agentwatch.causality.hypotheses import get
 
         def go() -> dict[str, Any]:
             get(w, hid)
-            do(w, hid, kind=req.kind, direction=req.direction, summary=req.summary, refs=req.refs, experiment_id=req.experiment_id,
-               reproduction_confidence=req.reproduction_confidence)
+            do(
+                w,
+                hid,
+                kind=req.kind,
+                direction=req.direction,
+                summary=req.summary,
+                refs=req.refs,
+                experiment_id=req.experiment_id,
+                reproduction_confidence=req.reproduction_confidence,
+            )
             return get(w, hid)
 
         return guard(go)
@@ -361,11 +449,15 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
     # ── lab ────────────────────────────────────────────────────────────────
     def _require_reexecution(level: str) -> None:
         if level in ("L2", "L3") and not _reexecution_allowed():
-            raise HTTPException(403, "re-execution is disabled on this server (set AGENTWATCH_ALLOW_REEXECUTION=1); L0/L1 replay is available")
+            raise HTTPException(
+                403,
+                "re-execution is disabled on this server (set AGENTWATCH_ALLOW_REEXECUTION=1); L0/L1 replay is available",
+            )
 
     @router.post("/api/v3/replay", tags=["v3 lab"])
     def replay(req: ReplayRequest, w: Workspace = Depends(ws)) -> dict[str, Any]:
-        from agentwatch.lab.replay import ReplayUnavailableError, replay as do
+        from agentwatch.lab.replay import ReplayUnavailableError
+        from agentwatch.lab.replay import replay as do
 
         level = req.level.upper()
         _require_reexecution(level)
@@ -383,7 +475,10 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
 
         def go() -> dict[str, Any]:
             br = create_branch(w, req.run, req.at, req.substitute, level=req.level.upper())
-            return {"branch": br, "result": execute_branch(w, br["branch_id"]) if req.execute else None}
+            return {
+                "branch": br,
+                "result": execute_branch(w, br["branch_id"]) if req.execute else None,
+            }
 
         return guard(go)
 
@@ -404,10 +499,22 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
 
         try:
             res = execute(w, req.text)
-            return {"answered": True, "structured_query": req.text, "compiled_by": "structured", "answer": explain(res), "evidence": res["evidence"], "result": res["result"]}
+            return {
+                "answered": True,
+                "structured_query": req.text,
+                "compiled_by": "structured",
+                "answer": explain(res),
+                "evidence": res["evidence"],
+                "result": res["result"],
+            }
         except QueryError:
             return ask(w, req.text)
         except (NotFoundError, AmbiguousError) as exc:
-            return {"answered": False, "structured_query": req.text, "message": str(exc), "evidence": []}
+            return {
+                "answered": False,
+                "structured_query": req.text,
+                "message": str(exc),
+                "evidence": [],
+            }
 
     return router

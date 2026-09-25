@@ -27,7 +27,13 @@ class ObservationSink(Protocol):
 class SensorContext:
     """Per-sensor-instance state: identity and a monotonic sequence counter."""
 
-    def __init__(self, sensor_type: str, sensor_version: str, sink: ObservationSink, tenant_id: str = "default") -> None:
+    def __init__(
+        self,
+        sensor_type: str,
+        sensor_version: str,
+        sink: ObservationSink,
+        tenant_id: str = "default",
+    ) -> None:
         self.ref = SensorRef(sensor_type, sensor_version, f"{sensor_type}-{uuid.uuid4().hex[:12]}")
         self.sink = sink
         self.tenant_id = tenant_id
@@ -59,7 +65,10 @@ class SensorContext:
                 payload=payload,
                 source_seq=self.next_seq(),
                 observed_at=observed_at or now,
-                clock=ClockInfo(source=clock_source or ("source" if observed_at else "sensor"), clock_id=self.ref.instance_id),
+                clock=ClockInfo(
+                    source=clock_source or ("source" if observed_at else "sensor"),
+                    clock_id=self.ref.instance_id,
+                ),
                 declared_ids=ids,
                 tenant_id=self.tenant_id,
             )

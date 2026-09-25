@@ -24,7 +24,13 @@ class AmbiguousError(LookupError):
 
 
 class Workspace:
-    def __init__(self, engine: Engine | Store | str | None = None, tenant_id: str = "default", *, process: bool = True) -> None:
+    def __init__(
+        self,
+        engine: Engine | Store | str | None = None,
+        tenant_id: str = "default",
+        *,
+        process: bool = True,
+    ) -> None:
         self.engine = engine if isinstance(engine, Engine) else Engine(engine)
         self.store = self.engine.store
         self.tenant_id = tenant_id
@@ -105,14 +111,26 @@ class Workspace:
         art = self.store.artifact(self.tenant_id, aid, with_content=with_content)
         if art is None:
             raise NotFoundError(f"artifact {ref!r} not found")
-        art["labels"] = sorted({a.get("label") for e in self.all_events.values() for a in e["outputs"] + e["inputs"] if a["artifact_id"] == aid and a.get("label")})
+        art["labels"] = sorted(
+            {
+                a.get("label")
+                for e in self.all_events.values()
+                for a in e["outputs"] + e["inputs"]
+                if a["artifact_id"] == aid and a.get("label")
+            }
+        )
         return art
 
     def resolve_artifact_id(self, ref: str) -> str:
         ref = ref.removeprefix("artifact:")
         if self.store.artifact(self.tenant_id, ref, with_content=False):
             return ref
-        by_label = {a["artifact_id"] for e in self.all_events.values() for a in e["outputs"] if a.get("label") == ref}
+        by_label = {
+            a["artifact_id"]
+            for e in self.all_events.values()
+            for a in e["outputs"]
+            if a.get("label") == ref
+        }
         if len(by_label) == 1:
             return by_label.pop()
         if len(by_label) > 1:
@@ -146,14 +164,41 @@ class Workspace:
         kind, _, ident = node.partition(":")
         if kind == "event":
             e = self.all_events.get(ident) or self.event(ident)
-            return {"node": node, "type": "event", "label": f"{e['kind']} {e['operation']}", "actor": e.get("actor"), "status": e["status"],
-                    "start": e["time"]["start"], "run_id": e.get("run_id")}
+            return {
+                "node": node,
+                "type": "event",
+                "label": f"{e['kind']} {e['operation']}",
+                "actor": e.get("actor"),
+                "status": e["status"],
+                "start": e["time"]["start"],
+                "run_id": e.get("run_id"),
+            }
         if kind == "artifact":
             art = self.store.artifact(self.tenant_id, ident, with_content=False) or {}
-            labels = sorted({a.get("label") for e in self.all_events.values() for a in e["outputs"] + e["inputs"] if a["artifact_id"] == ident and a.get("label")})
-            roles = sorted({a.get("role") for e in self.all_events.values() for a in e["outputs"] + e["inputs"] if a["artifact_id"] == ident})
-            return {"node": node, "type": "artifact", "label": labels[0] if labels else (art.get("preview") or "")[:60], "roles": roles,
-                    "preview": art.get("preview"), "size_bytes": art.get("size_bytes")}
+            labels = sorted(
+                {
+                    a.get("label")
+                    for e in self.all_events.values()
+                    for a in e["outputs"] + e["inputs"]
+                    if a["artifact_id"] == ident and a.get("label")
+                }
+            )
+            roles = sorted(
+                {
+                    a.get("role")
+                    for e in self.all_events.values()
+                    for a in e["outputs"] + e["inputs"]
+                    if a["artifact_id"] == ident
+                }
+            )
+            return {
+                "node": node,
+                "type": "artifact",
+                "label": labels[0] if labels else (art.get("preview") or "")[:60],
+                "roles": roles,
+                "preview": art.get("preview"),
+                "size_bytes": art.get("size_bytes"),
+            }
         return {"node": node, "type": "entity", "label": ident}
 
     def entities(self) -> list[dict[str, Any]]:

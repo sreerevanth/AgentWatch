@@ -24,13 +24,21 @@ class Step:
     frm: str | None  # neighbour we came from
 
     def to_dict(self) -> dict[str, Any]:
-        return {"node": self.node, "depth": self.depth, "via": self.via, "rel_type": self.rel_type, "from": self.frm}
+        return {
+            "node": self.node,
+            "depth": self.depth,
+            "via": self.via,
+            "rel_type": self.rel_type,
+            "from": self.frm,
+        }
 
 
 class Graph:
     def __init__(self, relations: Sequence[dict[str, Any]]) -> None:
         self.relations = {r["rel_id"]: r for r in relations}
-        self.out: dict[str, list[tuple[str, str]]] = defaultdict(list)  # node -> [(rel_id, neighbour)]
+        self.out: dict[str, list[tuple[str, str]]] = defaultdict(
+            list
+        )  # node -> [(rel_id, neighbour)]
         self.inc: dict[str, list[tuple[str, str]]] = defaultdict(list)
         self.nodes: set[str] = set()
         for r in relations:
@@ -93,13 +101,49 @@ class Graph:
                 q.append((nb, depth + 1))
         return out
 
-    def ancestors(self, node: str, *, views: Iterable[str] | None = None, types: Iterable[str] | None = None, max_depth: int = 50,
-                  min_confidence: float = 0.0, min_evidence: EvidenceClass | None = None, skip_kinds: Iterable[str] = ()) -> list[Step]:
-        return self._walk(node, self.inc, views=views, types=types, max_depth=max_depth, min_confidence=min_confidence, min_evidence=min_evidence, skip_kinds=skip_kinds)
+    def ancestors(
+        self,
+        node: str,
+        *,
+        views: Iterable[str] | None = None,
+        types: Iterable[str] | None = None,
+        max_depth: int = 50,
+        min_confidence: float = 0.0,
+        min_evidence: EvidenceClass | None = None,
+        skip_kinds: Iterable[str] = (),
+    ) -> list[Step]:
+        return self._walk(
+            node,
+            self.inc,
+            views=views,
+            types=types,
+            max_depth=max_depth,
+            min_confidence=min_confidence,
+            min_evidence=min_evidence,
+            skip_kinds=skip_kinds,
+        )
 
-    def descendants(self, node: str, *, views: Iterable[str] | None = None, types: Iterable[str] | None = None, max_depth: int = 50,
-                    min_confidence: float = 0.0, min_evidence: EvidenceClass | None = None, skip_kinds: Iterable[str] = ()) -> list[Step]:
-        return self._walk(node, self.out, views=views, types=types, max_depth=max_depth, min_confidence=min_confidence, min_evidence=min_evidence, skip_kinds=skip_kinds)
+    def descendants(
+        self,
+        node: str,
+        *,
+        views: Iterable[str] | None = None,
+        types: Iterable[str] | None = None,
+        max_depth: int = 50,
+        min_confidence: float = 0.0,
+        min_evidence: EvidenceClass | None = None,
+        skip_kinds: Iterable[str] = (),
+    ) -> list[Step]:
+        return self._walk(
+            node,
+            self.out,
+            views=views,
+            types=types,
+            max_depth=max_depth,
+            min_confidence=min_confidence,
+            min_evidence=min_evidence,
+            skip_kinds=skip_kinds,
+        )
 
     def parents(self, node: str, *, types: Iterable[str] = ("CONTAINS",)) -> list[str]:
         tset = set(types)
@@ -137,7 +181,11 @@ class Graph:
 
     def stats(self, event_nodes: Iterable[str] | None = None) -> dict[str, Any]:
         """Structural statistics over the CONTAINS tree + DEPENDS_ON edges between events."""
-        events = set(event_nodes) if event_nodes is not None else {n for n in self.nodes if n.startswith("event:")}
+        events = (
+            set(event_nodes)
+            if event_nodes is not None
+            else {n for n in self.nodes if n.startswith("event:")}
+        )
         struct = {"CONTAINS", "DEPENDS_ON", "RESPONDS_TO"}
         children: dict[str, list[str]] = defaultdict(list)
         has_parent: set[str] = set()
@@ -159,7 +207,11 @@ class Graph:
             if d < 10_000:
                 q.extend((c, d + 1) for c in children.get(n, []))
         fanouts = [len(v) for v in children.values() if v]
-        multi_parent = sum(1 for n in events if sum(1 for r in self.inc.get(n, []) if self.relations[r[0]]["type"] in struct) > 1)
+        multi_parent = sum(
+            1
+            for n in events
+            if sum(1 for r in self.inc.get(n, []) if self.relations[r[0]]["type"] in struct) > 1
+        )
         by_type: dict[str, int] = defaultdict(int)
         for r in self.relations.values():
             by_type[f"{r['view']}.{r['type']}"] += 1

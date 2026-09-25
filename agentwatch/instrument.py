@@ -4,8 +4,10 @@ Usage::
 
     from agentwatch import instrument as aw
 
+
     @aw.tool("web_search")
     def search(q): ...
+
 
     with aw.run("research"):
         with aw.span("OPERATION", "plan", actor="agent:planner"):
@@ -48,7 +50,9 @@ class NullSink:
 _recorder: Recorder | None = None
 
 
-def configure(sink: ObservationSink | None = None, *, tenant_id: str = "default", system: str | None = None) -> Recorder:
+def configure(
+    sink: ObservationSink | None = None, *, tenant_id: str = "default", system: str | None = None
+) -> Recorder:
     """Install the process-wide recorder."""
     global _recorder
     _recorder = Recorder(sink or NullSink(), tenant_id=tenant_id, system=system)
@@ -59,7 +63,9 @@ def recorder() -> Recorder:
     global _recorder
     if _recorder is None:
         path = os.environ.get("AGENTWATCH_OBSERVE_FILE")
-        _recorder = Recorder(FileSink(path) if path else NullSink(), system=os.environ.get("AGENTWATCH_SYSTEM"))
+        _recorder = Recorder(
+            FileSink(path) if path else NullSink(), system=os.environ.get("AGENTWATCH_SYSTEM")
+        )
     return _recorder
 
 
@@ -83,10 +89,14 @@ def event(kind: str, operation: str, **kwargs: Any) -> None:
     recorder().event(kind, operation, **kwargs)
 
 
-def _decorator(kind: str, name: str | None, actor: str | None, object_prefix: str) -> Callable[[F], F]:
+def _decorator(
+    kind: str, name: str | None, actor: str | None, object_prefix: str
+) -> Callable[[F], F]:
     def wrap(fn: F) -> F:
         op = name or fn.__name__
-        return instrumented_call(recorder, kind, op, fn, actor=actor, object=f"{object_prefix}:{op}")  # type: ignore[return-value]
+        return instrumented_call(
+            recorder, kind, op, fn, actor=actor, object=f"{object_prefix}:{op}"
+        )  # type: ignore[return-value]
 
     return wrap
 
@@ -100,33 +110,57 @@ def model(name: str, *, actor: str | None = None) -> Callable[[F], F]:
     """Record each call as a MODEL_INVOCATION of model ``name`` (e.g. ``anthropic/claude-sonnet-5``)."""
 
     def wrap(fn: F) -> F:
-        return instrumented_call(recorder, "MODEL_INVOCATION", name, fn, actor=actor, object=f"model:{name}", input_role="prompt", output_role="completion")  # type: ignore[return-value]
+        return instrumented_call(
+            recorder,
+            "MODEL_INVOCATION",
+            name,
+            fn,
+            actor=actor,
+            object=f"model:{name}",
+            input_role="prompt",
+            output_role="completion",
+        )  # type: ignore[return-value]
 
     return wrap
 
 
 def retriever(name: str, *, actor: str | None = None) -> Callable[[F], F]:
     def wrap(fn: F) -> F:
-        return instrumented_call(recorder, "RETRIEVAL", name, fn, actor=actor, object=f"index:{name}", input_role="query", output_role="documents")  # type: ignore[return-value]
+        return instrumented_call(
+            recorder,
+            "RETRIEVAL",
+            name,
+            fn,
+            actor=actor,
+            object=f"index:{name}",
+            input_role="query",
+            output_role="documents",
+        )  # type: ignore[return-value]
 
     return wrap
 
 
 def memory_write(store: str, key: str, value: Any, *, actor: str | None = None) -> None:
-    with recorder().span("MEMORY_ACCESS", f"write:{store}", actor=actor, object=f"memory:{store}", facets=["write"]) as s:
+    with recorder().span(
+        "MEMORY_ACCESS", f"write:{store}", actor=actor, object=f"memory:{store}", facets=["write"]
+    ) as s:
         s.input(value, role="value", label=key)
         s.set(key=key, access="write")
 
 
 def memory_read(store: str, key: str, value: Any, *, actor: str | None = None) -> Any:
-    with recorder().span("MEMORY_ACCESS", f"read:{store}", actor=actor, object=f"memory:{store}", facets=["read"]) as s:
+    with recorder().span(
+        "MEMORY_ACCESS", f"read:{store}", actor=actor, object=f"memory:{store}", facets=["read"]
+    ) as s:
         s.set(key=key, access="read")
         s.output(value, role="value", label=key)
     return value
 
 
 def message(sender: str, receiver: str, content: Any, *, channel: str | None = None) -> None:
-    with recorder().span("MESSAGE", f"send:{channel or receiver}", actor=sender, object=receiver) as s:
+    with recorder().span(
+        "MESSAGE", f"send:{channel or receiver}", actor=sender, object=receiver
+    ) as s:
         s.input(content, role="message")
         s.output(content, role="message")
 
@@ -139,7 +173,13 @@ def delegate(sender: str, receiver: str, task: Any) -> None:
 
 def artifact(name: str, content: Any, *, actor: str | None = None) -> None:
     """Record that the program produced a named artifact (file, report, patch)."""
-    with recorder().span("STATE_MUTATION", f"write_artifact:{name}", actor=actor, object=f"file:{name}", facets=["artifact_creation"]) as s:
+    with recorder().span(
+        "STATE_MUTATION",
+        f"write_artifact:{name}",
+        actor=actor,
+        object=f"file:{name}",
+        facets=["artifact_creation"],
+    ) as s:
         s.output(content, role="artifact", label=name)
 
 

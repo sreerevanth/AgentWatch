@@ -23,7 +23,9 @@ def test_hipaa_redaction_does_not_leak_into_other_handlers():
         bus.subscribe_fn(collector.ingest, handler_id="collector")
         bus.subscribe_fn(persist, handler_id="persist")
         original = "MRN: 1234567 diagnosed with diabetes"
-        event = AgentEvent(session_id="s", agent_id="a", event_type=EventType.SESSION_START, goal=original)
+        event = AgentEvent(
+            session_id="s", agent_id="a", event_type=EventType.SESSION_START, goal=original
+        )
         asyncio.run(bus.publish(event))
         assert event.goal == original, "publisher's object must not be mutated"
         assert seen == [original], "other handlers see the event as published"

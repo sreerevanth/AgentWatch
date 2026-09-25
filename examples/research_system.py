@@ -58,7 +58,11 @@ def summarize(prompt: str) -> str:
 @aw.model("local/extractive-summarizer-v2", actor="agent:researcher")
 def summarize_v2(prompt: str) -> str:
     sentences = [s.strip() for s in prompt.split("\n") if s.strip().startswith("-")]
-    return "Detailed findings: " + " ".join(s.lstrip("- ") for s in sentences) + " Further research is recommended."
+    return (
+        "Detailed findings: "
+        + " ".join(s.lstrip("- ") for s in sentences)
+        + " Further research is recommended."
+    )
 
 
 _calc_failures = {"remaining": 0}
@@ -70,7 +74,12 @@ def calculator(expression: str) -> float:
         _calc_failures["remaining"] -= 1
         raise TimeoutError("calculator backend timed out")
     a, op, b = expression.split()
-    return {"+": float(a) + float(b), "-": float(a) - float(b), "*": float(a) * float(b), "/": float(a) / float(b)}[op]
+    return {
+        "+": float(a) + float(b),
+        "-": float(a) - float(b),
+        "*": float(a) * float(b),
+        "/": float(a) / float(b),
+    }[op]
 
 
 def research(topic: str, variant: str) -> str:
@@ -97,10 +106,23 @@ def research(topic: str, variant: str) -> str:
                     break
                 except TimeoutError:
                     continue
-            estimate = f"A 5 kWh/day array produces about {value:.0f} kWh per year." if value else "Estimate unavailable."
+            estimate = (
+                f"A 5 kWh/day array produces about {value:.0f} kWh per year."
+                if value
+                else "Estimate unavailable."
+            )
 
-        with aw.span("OPERATION", "write", actor="agent:writer", links=[research_span, analysis_span]) as write:
-            note = aw.memory_read("notes", "notes:solar", MEMORY["notes:solar"] if variant != "stale_memory" else "Old note: solar panels are mostly used on satellites.", actor="agent:writer")
+        with aw.span(
+            "OPERATION", "write", actor="agent:writer", links=[research_span, analysis_span]
+        ) as write:
+            note = aw.memory_read(
+                "notes",
+                "notes:solar",
+                MEMORY["notes:solar"]
+                if variant != "stale_memory"
+                else "Old note: solar panels are mostly used on satellites.",
+                actor="agent:writer",
+            )
             aw.message("agent:writer", "agent:reviewer", {"draft": note[:80]})
             report = f"# {topic.title()}\n\n{note}\n\n{estimate}\n"
             write.output(report, role="draft")
@@ -110,11 +132,21 @@ def research(topic: str, variant: str) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--variant", default="normal", choices=["normal", "flaky_tool", "bad_retrieval", "model_v2", "stale_memory"])
+    parser.add_argument(
+        "--variant",
+        default="normal",
+        choices=["normal", "flaky_tool", "bad_retrieval", "model_v2", "stale_memory"],
+    )
     parser.add_argument("--topic", default="solar photovoltaic electricity")
     args = parser.parse_args()
     VARIANT["name"] = args.variant
-    with aw.run("research_system", variant=args.variant, topic=args.topic, system="research_system", code_version="1.0") as run:
+    with aw.run(
+        "research_system",
+        variant=args.variant,
+        topic=args.topic,
+        system="research_system",
+        code_version="1.0",
+    ) as run:
         report = research(args.topic, args.variant)
         if hasattr(run, "set_outcome"):
             run.set_outcome("ok")

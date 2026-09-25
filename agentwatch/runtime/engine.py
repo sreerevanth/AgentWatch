@@ -54,10 +54,14 @@ class Engine:
         self.analyzers = list(analyzers) if analyzers is not None else default_analyzers()
 
     # ── ingestion ──────────────────────────────────────────────────────────
-    def ingest(self, drafts: Sequence[ObservationDraft], policy: PayloadPolicy | None = None) -> AppendResult:
+    def ingest(
+        self, drafts: Sequence[ObservationDraft], policy: PayloadPolicy | None = None
+    ) -> AppendResult:
         return self.store.append(drafts, policy or self.policy)
 
-    def ingest_legacy(self, events: Iterable[Any], tenant_id: str = "default") -> tuple[list[TranslationResult], AppendResult]:
+    def ingest_legacy(
+        self, events: Iterable[Any], tenant_id: str = "default"
+    ) -> tuple[list[TranslationResult], AppendResult]:
         translator = LegacyTranslator(tenant_id=tenant_id)
         results = [translator.translate(e, tenant_id=tenant_id) for e in events]
         drafts = [r.draft for r in results if r.draft is not None]
@@ -67,11 +71,17 @@ class Engine:
     def pipeline(self) -> dict[str, Any]:
         return {
             "pipeline": PIPELINE_VERSION,
-            "normalizers": {n.name: n.version for n in sorted(self.normalizers, key=lambda n: n.name)},
+            "normalizers": {
+                n.name: n.version for n in sorted(self.normalizers, key=lambda n: n.name)
+            },
             "resolver": f"{RESOLVER}@{RESOLVER_VERSION}",
             "graph": [EXEC_BUILDER, INFO_BUILDER],
             "analyzers": {a.name: a.version for a in sorted(self.analyzers, key=lambda a: a.name)},
-            "policy": {"capture": self.policy.capture, "redact_secrets": self.policy.redact_secrets, "redact_pii": self.policy.redact_pii},
+            "policy": {
+                "capture": self.policy.capture,
+                "redact_secrets": self.policy.redact_secrets,
+                "redact_pii": self.policy.redact_pii,
+            },
         }
 
     def interp_id_for(self, tenant_id: str) -> str:
@@ -86,7 +96,11 @@ class Engine:
     def is_stale(self, tenant_id: str = "default") -> bool:
         interp = self.store.get_interpretation(self.interp_id_for(tenant_id))
         latest = self.store.latest_obs_id(tenant_id)
-        return interp is None or interp.get("processed_through") != latest or interp.get("status") != "active"
+        return (
+            interp is None
+            or interp.get("processed_through") != latest
+            or interp.get("status") != "active"
+        )
 
     # ── processing ─────────────────────────────────────────────────────────
     def process(self, tenant_id: str = "default", *, force: bool = False) -> dict[str, Any]:
@@ -98,7 +112,9 @@ class Engine:
         through = self.store.latest_obs_id(tenant_id)
         observations = list(self.store.iter_all_observations(tenant_id)) if through else []
         observations = [o for o in observations if through is None or o.obs_id <= through]
-        self.store.activate_interpretation(tenant_id, interp_id, self.pipeline(), sha256_hex(canonical_json(self.pipeline())))
+        self.store.activate_interpretation(
+            tenant_id, interp_id, self.pipeline(), sha256_hex(canonical_json(self.pipeline()))
+        )
         built = self.build(tenant_id, interp_id, observations)
         t_build = time.perf_counter()
         event_docs = []
@@ -136,16 +152,29 @@ class Engine:
         stats["total_ms"] = round((time.perf_counter() - t0) * 1000, 1)
         return {"interp_id": interp_id, "skipped": False, **stats}
 
-    def build(self, tenant_id: str, interp_id: str, observations: Sequence[RawObservation]) -> dict[str, Any]:
+    def build(
+        self, tenant_id: str, interp_id: str, observations: Sequence[RawObservation]
+    ) -> dict[str, Any]:
         """Pure derivation from evidence (no store writes). Used by process() and replay."""
-        ctx = NormalizeContext(tenant_id=tenant_id, interp_id=interp_id, artifact_key=self.store.artifact_key(tenant_id))
+        ctx = NormalizeContext(
+            tenant_id=tenant_id,
+            interp_id=interp_id,
+            artifact_key=self.store.artifact_key(tenant_id),
+        )
         events: list[ComputationalEvent] = []
         diagnostics: list[Diagnostic] = []
         by_normalizer: dict[str, list[RawObservation]] = {n.name: [] for n in self.normalizers}
         for obs in observations:
             target = next((n for n in self.normalizers if n.accepts(obs)), None)
             if target is None:
-                diagnostics.append(Diagnostic(obs.obs_id, "warning", "no_normalizer", f"no normalizer accepts source_kind {obs.source_kind!r}"))
+                diagnostics.append(
+                    Diagnostic(
+                        obs.obs_id,
+                        "warning",
+                        "no_normalizer",
+                        f"no normalizer accepts source_kind {obs.source_kind!r}",
+                    )
+                )
                 continue
             by_normalizer[target.name].append(obs)
         for n in self.normalizers:
@@ -156,15 +185,27 @@ class Engine:
                 res = n.normalize(batch, ctx)
             except Exception as exc:  # a broken normalizer must not take down the pipeline
                 logger.exception("normalizer %s failed", n.name)
-                diagnostics.extend(Diagnostic(o.obs_id, "error", "normalizer_failed", f"{n.name}: {exc}") for o in batch)
+                diagnostics.extend(
+                    Diagnostic(o.obs_id, "error", "normalizer_failed", f"{n.name}: {exc}")
+                    for o in batch
+                )
                 continue
             events.extend(res.events)
             diagnostics.extend(res.diagnostics)
         # invariant: every observation is represented by an event or a diagnostic
-        covered = {o for e in events for o in e.derived_from} | {d.obs_id for d in diagnostics if d.obs_id}
+        covered = {o for e in events for o in e.derived_from} | {
+            d.obs_id for d in diagnostics if d.obs_id
+        }
         for obs in observations:
             if obs.obs_id not in covered:
-                diagnostics.append(Diagnostic(obs.obs_id, "error", "unaccounted_observation", "normalizer neither mapped nor reported this observation"))
+                diagnostics.append(
+                    Diagnostic(
+                        obs.obs_id,
+                        "error",
+                        "unaccounted_observation",
+                        "normalizer neither mapped nor reported this observation",
+                    )
+                )
         events = _unique(events, diagnostics)
         seg = segment(events, tenant_id)
         index = build_source_index(events)
@@ -173,15 +214,21 @@ class Engine:
         def register(value: Any, role: str) -> str:
             return ctx.artifact(value, role).artifact_id
 
-        relations = build_execution(events, seg.run_of, index) + build_information(events, seg.run_of, ctx.artifacts, register)
+        relations = build_execution(events, seg.run_of, index) + build_information(
+            events, seg.run_of, ctx.artifacts, register
+        )
         derived: list[dict[str, Any]] = []
-        data = AnalysisInput(tenant_id, interp_id, events, seg.run_of, seg.runs, relations, ctx.artifacts)
+        data = AnalysisInput(
+            tenant_id, interp_id, events, seg.run_of, seg.runs, relations, ctx.artifacts
+        )
         for analyzer in self.analyzers:
             try:
                 derived.extend(analyzer.analyze(data))
             except Exception as exc:
                 logger.exception("analyzer %s failed", analyzer.ref)
-                diagnostics.append(Diagnostic(None, "error", "analyzer_failed", f"{analyzer.ref}: {exc}"))
+                diagnostics.append(
+                    Diagnostic(None, "error", "analyzer_failed", f"{analyzer.ref}: {exc}")
+                )
         return {
             "events": events,
             "diagnostics": diagnostics,
@@ -195,11 +242,20 @@ class Engine:
         }
 
 
-def _unique(events: list[ComputationalEvent], diagnostics: list[Diagnostic]) -> list[ComputationalEvent]:
+def _unique(
+    events: list[ComputationalEvent], diagnostics: list[Diagnostic]
+) -> list[ComputationalEvent]:
     seen: dict[str, ComputationalEvent] = {}
     for ev in events:
         if ev.event_id in seen:
-            diagnostics.append(Diagnostic(ev.derived_from[0] if ev.derived_from else None, "error", "duplicate_event_id", f"event id {ev.event_id} produced twice"))
+            diagnostics.append(
+                Diagnostic(
+                    ev.derived_from[0] if ev.derived_from else None,
+                    "error",
+                    "duplicate_event_id",
+                    f"event id {ev.event_id} produced twice",
+                )
+            )
             continue
         seen[ev.event_id] = ev
     return list(seen.values())

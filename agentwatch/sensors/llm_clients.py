@@ -50,14 +50,29 @@ class _ClientSensor(Sensor):
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             call_id = uuid.uuid4().hex[:16]
             ids = {"call_id": call_id, **_context_ids(), **sensor.request_ids(kwargs)}
-            sensor.ctx.emit(f"{sensor.provider}.request", {"operation": operation, "request": _dump(kwargs)}, declared_ids=ids)
+            sensor.ctx.emit(
+                f"{sensor.provider}.request",
+                {"operation": operation, "request": _dump(kwargs)},
+                declared_ids=ids,
+            )
             try:
                 response = original(*args, **kwargs)
             except BaseException as exc:
-                sensor.ctx.emit(f"{sensor.provider}.error", {"operation": operation, "error": {"type": type(exc).__name__, "message": str(exc)}}, declared_ids={"call_id": call_id})
+                sensor.ctx.emit(
+                    f"{sensor.provider}.error",
+                    {
+                        "operation": operation,
+                        "error": {"type": type(exc).__name__, "message": str(exc)},
+                    },
+                    declared_ids={"call_id": call_id},
+                )
                 raise
             body = _dump(response)
-            sensor.ctx.emit(f"{sensor.provider}.response", {"operation": operation, "response": body}, declared_ids={"call_id": call_id, **sensor.response_ids(body)})
+            sensor.ctx.emit(
+                f"{sensor.provider}.response",
+                {"operation": operation, "response": body},
+                declared_ids={"call_id": call_id, **sensor.response_ids(body)},
+            )
             return response
 
         setattr(target, attr, wrapper)
@@ -75,7 +90,11 @@ class OpenAIClientSensor(_ClientSensor):
     provider = "openai"
 
     def request_ids(self, kwargs: dict[str, Any]) -> dict[str, str]:
-        answered = [str(m.get("tool_call_id")) for m in kwargs.get("messages") or [] if isinstance(m, dict) and m.get("tool_call_id")]
+        answered = [
+            str(m.get("tool_call_id"))
+            for m in kwargs.get("messages") or []
+            if isinstance(m, dict) and m.get("tool_call_id")
+        ]
         return {"answers_tool_calls": ",".join(answered)} if answered else {}
 
     def response_ids(self, body: Any) -> dict[str, str]:
@@ -83,7 +102,12 @@ class OpenAIClientSensor(_ClientSensor):
         if isinstance(body, dict):
             if body.get("id"):
                 ids["response_id"] = str(body["id"])
-            calls = [str(tc.get("id")) for ch in body.get("choices") or [] for tc in ((ch.get("message") or {}).get("tool_calls") or []) if tc.get("id")]
+            calls = [
+                str(tc.get("id"))
+                for ch in body.get("choices") or []
+                for tc in ((ch.get("message") or {}).get("tool_calls") or [])
+                if tc.get("id")
+            ]
             if calls:
                 ids["tool_call_ids"] = ",".join(calls)
         return ids
@@ -99,7 +123,11 @@ class AnthropicClientSensor(_ClientSensor):
         for m in kwargs.get("messages") or []:
             content = m.get("content") if isinstance(m, dict) else None
             if isinstance(content, list):
-                answered.extend(str(b.get("tool_use_id")) for b in content if isinstance(b, dict) and b.get("type") == "tool_result")
+                answered.extend(
+                    str(b.get("tool_use_id"))
+                    for b in content
+                    if isinstance(b, dict) and b.get("type") == "tool_result"
+                )
         return {"answers_tool_calls": ",".join(answered)} if answered else {}
 
     def response_ids(self, body: Any) -> dict[str, str]:
@@ -107,13 +135,19 @@ class AnthropicClientSensor(_ClientSensor):
         if isinstance(body, dict):
             if body.get("id"):
                 ids["response_id"] = str(body["id"])
-            uses = [str(b.get("id")) for b in body.get("content") or [] if isinstance(b, dict) and b.get("type") == "tool_use"]
+            uses = [
+                str(b.get("id"))
+                for b in body.get("content") or []
+                if isinstance(b, dict) and b.get("type") == "tool_use"
+            ]
             if uses:
                 ids["tool_call_ids"] = ",".join(uses)
         return ids
 
 
-def instrument_openai(client: Any, sink: ObservationSink, tenant_id: str = "default") -> OpenAIClientSensor:
+def instrument_openai(
+    client: Any, sink: ObservationSink, tenant_id: str = "default"
+) -> OpenAIClientSensor:
     sensor = OpenAIClientSensor(sink, tenant_id)
     chat = getattr(getattr(client, "chat", None), "completions", None)
     if chat is not None and hasattr(chat, "create"):
@@ -124,7 +158,9 @@ def instrument_openai(client: Any, sink: ObservationSink, tenant_id: str = "defa
     return sensor
 
 
-def instrument_anthropic(client: Any, sink: ObservationSink, tenant_id: str = "default") -> AnthropicClientSensor:
+def instrument_anthropic(
+    client: Any, sink: ObservationSink, tenant_id: str = "default"
+) -> AnthropicClientSensor:
     sensor = AnthropicClientSensor(sink, tenant_id)
     messages = getattr(client, "messages", None)
     if messages is not None and hasattr(messages, "create"):

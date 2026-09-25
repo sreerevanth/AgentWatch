@@ -60,7 +60,9 @@ class LegacyNormalizer(Normalizer):
     source_kinds = frozenset({"legacy.agent_event"})
     maturity = "VALIDATED"
 
-    def normalize(self, observations: Sequence[RawObservation], ctx: NormalizeContext) -> NormalizeResult:
+    def normalize(
+        self, observations: Sequence[RawObservation], ctx: NormalizeContext
+    ) -> NormalizeResult:
         result = NormalizeResult()
         ordered = source_order(observations)
         calls: dict[str, RawObservation] = {}
@@ -98,11 +100,17 @@ class LegacyNormalizer(Normalizer):
             b.attributes["framework"] = p["framework"]
         tu = p.get("token_usage") or {}
         if tu:
-            b.resources = {"tokens_in": tu.get("prompt_tokens"), "tokens_out": tu.get("completion_tokens"), "cost_usd": tu.get("estimated_cost_usd")}
+            b.resources = {
+                "tokens_in": tu.get("prompt_tokens"),
+                "tokens_out": tu.get("completion_tokens"),
+                "cost_usd": tu.get("estimated_cost_usd"),
+            }
         if p.get("duration_ms") is not None:
             b.resources["latency_ms"] = p["duration_ms"]
 
-    def _tool(self, call: RawObservation | None, res: RawObservation | None, ctx: NormalizeContext) -> Any:
+    def _tool(
+        self, call: RawObservation | None, res: RawObservation | None, ctx: NormalizeContext
+    ) -> Any:
         obs = [o for o in (call, res) if o]
         b = EventBuilder(self, ctx, obs)
         cp: dict[str, Any] = call.payload() if call else {}
@@ -143,8 +151,17 @@ class LegacyNormalizer(Normalizer):
             b.kind = EventKind.UNKNOWN
             b.operation = f"legacy_interpretation:{et}"
             b.facets.append("legacy_interpretation")
-            b.attributes["legacy_conclusion"] = {k: p.get(k) for k in ("safety", "confidence", "metadata") if p.get(k)}
-            result.diagnostics.append(Diagnostic(obs.obs_id, "info", "legacy_interpretation", f"{et} recorded as v0.2 conclusion, not behaviour"))
+            b.attributes["legacy_conclusion"] = {
+                k: p.get(k) for k in ("safety", "confidence", "metadata") if p.get(k)
+            }
+            result.diagnostics.append(
+                Diagnostic(
+                    obs.obs_id,
+                    "info",
+                    "legacy_interpretation",
+                    f"{et} recorded as v0.2 conclusion, not behaviour",
+                )
+            )
             return b.build()
         if et in ("session.start", "session.end"):
             b.kind = EventKind.LIFECYCLE
@@ -189,8 +206,14 @@ class LegacyNormalizer(Normalizer):
             b.attributes.update({"access": access, "key": mem.get("key")})
             b.facets.append(access)
             if mem.get("content") is not None:
-                (b.input if access == "write" else b.output)(mem["content"], role="value", label=mem.get("key"))
-            b.effects.append(Effect(EffectKind.WRITE if access != "read" else EffectKind.READ, b.object.canonical))
+                (b.input if access == "write" else b.output)(
+                    mem["content"], role="value", label=mem.get("key")
+                )
+            b.effects.append(
+                Effect(
+                    EffectKind.WRITE if access != "read" else EffectKind.READ, b.object.canonical
+                )
+            )
         msg = p.get("agent_message") or {}
         if kind in (EventKind.MESSAGE, EventKind.DELEGATION) and msg:
             b.actor = EntityRef("agent", str(msg.get("sender_agent_id")))

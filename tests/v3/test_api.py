@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 from fastapi.testclient import TestClient
+from otlp_fixture import OTLP
 
 from agentwatch import instrument as aw
 from agentwatch.api import v3 as v3api
 from agentwatch.runtime.engine import Engine
-from otlp_fixture import OTLP
 
 
 @pytest.fixture
@@ -35,7 +35,9 @@ def test_ingest_then_read_everything(client, sink):
     body = {"observations": _record(sink)}
     r = c.post("/api/v3/observations", json=body)
     assert r.status_code == 200 and r.json()["accepted"] == len(body["observations"])
-    assert c.post("/api/v3/observations", json=body).json()["duplicates"] == len(body["observations"])
+    assert c.post("/api/v3/observations", json=body).json()["duplicates"] == len(
+        body["observations"]
+    )
     runs = c.get("/api/v3/runs").json()["runs"]
     assert len(runs) == 1
     rid = runs[0]["run_id"]
@@ -86,7 +88,9 @@ def test_otlp_receiver(client):
     c, _ = client
     r = c.post("/v1/traces", json=OTLP)
     assert r.status_code == 200
-    events = c.get(f"/api/v3/runs/{c.get('/api/v3/runs').json()['runs'][0]['run_id']}/events").json()["events"]
+    events = c.get(
+        f"/api/v3/runs/{c.get('/api/v3/runs').json()['runs'][0]['run_id']}/events"
+    ).json()["events"]
     assert {e["kind"] for e in events} >= {"MODEL_INVOCATION", "RETRIEVAL"}
 
 
@@ -102,19 +106,45 @@ def test_reexecution_is_disabled_by_default(client, sink):
 def test_hypothesis_lifecycle_llm_cannot_self_verify(client, sink):
     c, _ = client
     c.post("/api/v3/observations", json={"observations": _record(sink)})
-    h = c.post("/api/v3/hypotheses", json={"cause": "event:a", "effect": "event:b", "statement": "a causes b", "proposer": "llm"}).json()
+    h = c.post(
+        "/api/v3/hypotheses",
+        json={
+            "cause": "event:a",
+            "effect": "event:b",
+            "statement": "a causes b",
+            "proposer": "llm",
+        },
+    ).json()
     assert h["status"] == "PROPOSED" and h["evidence_class"] is None
     # correlational evidence never settles a causal claim
-    h2 = c.post(f"/api/v3/hypotheses/{h['hypothesis_id']}/evidence", json={"kind": "CORRELATION", "direction": "supports", "summary": "co-occur"}).json()
+    h2 = c.post(
+        f"/api/v3/hypotheses/{h['hypothesis_id']}/evidence",
+        json={"kind": "CORRELATION", "direction": "supports", "summary": "co-occur"},
+    ).json()
     assert h2["status"] == "PROPOSED" and h2["evidence_class"] == "CORRELATIONAL"
     # interventional evidence must reference a recorded experiment
-    bad = c.post(f"/api/v3/hypotheses/{h['hypothesis_id']}/evidence", json={"kind": "INTERVENTION", "direction": "supports", "summary": "trust me"})
+    bad = c.post(
+        f"/api/v3/hypotheses/{h['hypothesis_id']}/evidence",
+        json={"kind": "INTERVENTION", "direction": "supports", "summary": "trust me"},
+    )
     assert bad.status_code == 400
 
 
 def test_legacy_v1_events_are_teed_into_v3(client):
     c, engine = client
-    r = c.post("/api/v1/events", json={"session_id": "s-tee", "agent_id": "a", "event_type": "goal.set", "goal": "write docs"})
+    r = c.post(
+        "/api/v1/events",
+        json={
+            "session_id": "s-tee",
+            "agent_id": "a",
+            "event_type": "goal.set",
+            "goal": "write docs",
+        },
+    )
     assert r.status_code == 200
     obs = engine.store.observations()
-    assert obs and obs[0].source_kind == "legacy.agent_event" and obs[0].declared("session_id") == "s-tee"
+    assert (
+        obs
+        and obs[0].source_kind == "legacy.agent_event"
+        and obs[0].declared("session_id") == "s-tee"
+    )

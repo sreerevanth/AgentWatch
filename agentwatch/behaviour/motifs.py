@@ -32,8 +32,15 @@ class MotifDefinition:
     parameters: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"motif_id": self.motif_id, "name": self.name, "version": self.version, "kind": self.kind,
-                "definition": self.definition, "maturity": self.maturity.value, "parameters": self.parameters}
+        return {
+            "motif_id": self.motif_id,
+            "name": self.name,
+            "version": self.version,
+            "kind": self.kind,
+            "definition": self.definition,
+            "maturity": self.maturity.value,
+            "parameters": self.parameters,
+        }
 
 
 @dataclass
@@ -44,13 +51,17 @@ class MotifInstance:
     artifacts: list[str] = field(default_factory=list)
     confidence: float = 1.0
     explanation: str = ""
-    evidence: list[str] = field(default_factory=list)  # relation ids / event ids justifying the match
+    evidence: list[str] = field(
+        default_factory=list
+    )  # relation ids / event ids justifying the match
     measures: dict[str, Any] = field(default_factory=dict)
     t_start: str | None = None
     t_end: str | None = None
 
 
-Detector = Callable[[str, list[ComputationalEvent], list[dict[str, Any]], AnalysisInput], list[MotifInstance]]
+Detector = Callable[
+    [str, list[ComputationalEvent], list[dict[str, Any]], AnalysisInput], list[MotifInstance]
+]
 
 
 class MotifRegistry:
@@ -66,7 +77,13 @@ class MotifRegistry:
 
         return deco
 
-    def detect(self, run_id: str, events: list[ComputationalEvent], relations: list[dict[str, Any]], data: AnalysisInput) -> list[MotifInstance]:
+    def detect(
+        self,
+        run_id: str,
+        events: list[ComputationalEvent],
+        relations: list[dict[str, Any]],
+        data: AnalysisInput,
+    ) -> list[MotifInstance]:
         out: list[MotifInstance] = []
         for mid, det in self.detectors.items():
             out.extend(det(run_id, events, relations, data))
@@ -74,7 +91,13 @@ class MotifRegistry:
 
 
 REGISTRY = MotifRegistry()
-LEAF = (EventKind.TOOL_INVOCATION, EventKind.MODEL_INVOCATION, EventKind.RETRIEVAL, EventKind.EXTERNAL_IO, EventKind.MEMORY_ACCESS)
+LEAF = (
+    EventKind.TOOL_INVOCATION,
+    EventKind.MODEL_INVOCATION,
+    EventKind.RETRIEVAL,
+    EventKind.EXTERNAL_IO,
+    EventKind.MEMORY_ACCESS,
+)
 
 
 def _span(events: Sequence[ComputationalEvent]) -> tuple[str | None, str | None]:
@@ -83,13 +106,23 @@ def _span(events: Sequence[ComputationalEvent]) -> tuple[str | None, str | None]
     return (min(starts).isoformat() if starts else None, max(ends).isoformat() if ends else None)  # type: ignore[type-var]
 
 
-@REGISTRY.register(MotifDefinition(
-    "M001", "retry_loop", "1", "GRAPH_QUERY",
-    "A chain of ≥1 RETRIES relations: a call fails (ERROR/TIMEOUT) and a call with the same kind, "
-    "operation and object is issued again under the same parent. Instance = the whole chain.",
-    parameters={"min_attempts": 2},
-))
-def detect_retry_loop(run_id: str, events: list[ComputationalEvent], relations: list[dict[str, Any]], data: AnalysisInput) -> list[MotifInstance]:
+@REGISTRY.register(
+    MotifDefinition(
+        "M001",
+        "retry_loop",
+        "1",
+        "GRAPH_QUERY",
+        "A chain of ≥1 RETRIES relations: a call fails (ERROR/TIMEOUT) and a call with the same kind, "
+        "operation and object is issued again under the same parent. Instance = the whole chain.",
+        parameters={"min_attempts": 2},
+    )
+)
+def detect_retry_loop(
+    run_id: str,
+    events: list[ComputationalEvent],
+    relations: list[dict[str, Any]],
+    data: AnalysisInput,
+) -> list[MotifInstance]:
     nxt: dict[str, tuple[str, dict[str, Any]]] = {}
     has_prev: set[str] = set()
     for r in relations:
@@ -111,44 +144,92 @@ def detect_retry_loop(run_id: str, events: list[ComputationalEvent], relations: 
         evs = [by_id[c] for c in chain if c in by_id]
         final = evs[-1].status if evs else EventStatus.UNKNOWN
         t0, t1 = _span(evs)
-        out.append(MotifInstance(
-            "M001", run_id, chain, confidence=min(r["confidence"] for r in rels), evidence=[r["rel_id"] for r in rels],
-            explanation=f"{evs[0].operation}: {len(chain)} attempts, final status {final.value}",
-            measures={"attempts": len(chain), "recovered": final == EventStatus.OK, "operation": evs[0].operation}, t_start=t0, t_end=t1,
-        ))
+        out.append(
+            MotifInstance(
+                "M001",
+                run_id,
+                chain,
+                confidence=min(r["confidence"] for r in rels),
+                evidence=[r["rel_id"] for r in rels],
+                explanation=f"{evs[0].operation}: {len(chain)} attempts, final status {final.value}",
+                measures={
+                    "attempts": len(chain),
+                    "recovered": final == EventStatus.OK,
+                    "operation": evs[0].operation,
+                },
+                t_start=t0,
+                t_end=t1,
+            )
+        )
     return out
 
 
-@REGISTRY.register(MotifDefinition(
-    "M002", "repeated_tool_invocation", "1", "RULE",
-    "The same tool (object) is invoked ≥3 times in one run with byte-identical arguments (same input artifact).",
-    parameters={"min_repeats": 3},
-))
-def detect_repeated_tool(run_id: str, events: list[ComputationalEvent], relations: list[dict[str, Any]], data: AnalysisInput) -> list[MotifInstance]:
+@REGISTRY.register(
+    MotifDefinition(
+        "M002",
+        "repeated_tool_invocation",
+        "1",
+        "RULE",
+        "The same tool (object) is invoked ≥3 times in one run with byte-identical arguments (same input artifact).",
+        parameters={"min_repeats": 3},
+    )
+)
+def detect_repeated_tool(
+    run_id: str,
+    events: list[ComputationalEvent],
+    relations: list[dict[str, Any]],
+    data: AnalysisInput,
+) -> list[MotifInstance]:
     groups: dict[tuple[str, str], list[ComputationalEvent]] = defaultdict(list)
     for e in events:
         if e.kind == EventKind.TOOL_INVOCATION and e.object and e.inputs:
-            groups[(e.object.canonical, ",".join(sorted(a.artifact_id for a in e.inputs)))].append(e)
+            groups[(e.object.canonical, ",".join(sorted(a.artifact_id for a in e.inputs)))].append(
+                e
+            )
     out = []
     for (tool, args), evs in groups.items():
         if len(evs) >= 3:
             evs = event_order(evs)
             t0, t1 = _span(evs)
             statuses = Counter(e.status.value for e in evs)
-            out.append(MotifInstance("M002", run_id, [e.event_id for e in evs], artifacts=args.split(","),
-                                     explanation=f"{tool} called {len(evs)}× with identical arguments", measures={"repeats": len(evs), "tool": tool, "statuses": dict(statuses)},
-                                     evidence=[e.event_id for e in evs], t_start=t0, t_end=t1))
+            out.append(
+                MotifInstance(
+                    "M002",
+                    run_id,
+                    [e.event_id for e in evs],
+                    artifacts=args.split(","),
+                    explanation=f"{tool} called {len(evs)}× with identical arguments",
+                    measures={"repeats": len(evs), "tool": tool, "statuses": dict(statuses)},
+                    evidence=[e.event_id for e in evs],
+                    t_start=t0,
+                    t_end=t1,
+                )
+            )
     return out
 
 
-@REGISTRY.register(MotifDefinition(
-    "M003", "delegation_ping_pong", "1", "RULE",
-    "In time order, DELEGATION/MESSAGE events form alternating hand-offs between the same two actors "
-    "(A→B, B→A, A→B …) at least 3 times in succession.",
-    parameters={"min_alternations": 3},
-))
-def detect_ping_pong(run_id: str, events: list[ComputationalEvent], relations: list[dict[str, Any]], data: AnalysisInput) -> list[MotifInstance]:
-    hand = [e for e in event_order(events) if e.kind in (EventKind.DELEGATION, EventKind.MESSAGE) and e.actor and e.object]
+@REGISTRY.register(
+    MotifDefinition(
+        "M003",
+        "delegation_ping_pong",
+        "1",
+        "RULE",
+        "In time order, DELEGATION/MESSAGE events form alternating hand-offs between the same two actors "
+        "(A→B, B→A, A→B …) at least 3 times in succession.",
+        parameters={"min_alternations": 3},
+    )
+)
+def detect_ping_pong(
+    run_id: str,
+    events: list[ComputationalEvent],
+    relations: list[dict[str, Any]],
+    data: AnalysisInput,
+) -> list[MotifInstance]:
+    hand = [
+        e
+        for e in event_order(events)
+        if e.kind in (EventKind.DELEGATION, EventKind.MESSAGE) and e.actor and e.object
+    ]
     out = []
     i = 0
     while i < len(hand) - 2:
@@ -162,26 +243,48 @@ def detect_ping_pong(run_id: str, events: list[ComputationalEvent], relations: l
             j += 1
         if len(chain) >= 3:
             t0, t1 = _span(chain)
-            out.append(MotifInstance("M003", run_id, [e.event_id for e in chain], explanation=f"{a} ⇄ {b}: {len(chain)} alternating hand-offs",
-                                     measures={"alternations": len(chain), "actors": [a, b]}, evidence=[e.event_id for e in chain], t_start=t0, t_end=t1))
+            out.append(
+                MotifInstance(
+                    "M003",
+                    run_id,
+                    [e.event_id for e in chain],
+                    explanation=f"{a} ⇄ {b}: {len(chain)} alternating hand-offs",
+                    measures={"alternations": len(chain), "actors": [a, b]},
+                    evidence=[e.event_id for e in chain],
+                    t_start=t0,
+                    t_end=t1,
+                )
+            )
             i = j
         else:
             i += 1
     return out
 
 
-@REGISTRY.register(MotifDefinition(
-    "M004", "retrieval_echo", "1", "GRAPH_QUERY",
-    "A RETRIEVAL returns content (an item, or the whole result) that was produced earlier in the same run by a "
-    "MODEL_INVOCATION or written to memory — identical artifact or DERIVES_FROM containment ≥ threshold. The "
-    "system is retrieving its own earlier output as if it were evidence.",
-))
-def detect_retrieval_echo(run_id: str, events: list[ComputationalEvent], relations: list[dict[str, Any]], data: AnalysisInput) -> list[MotifInstance]:
+@REGISTRY.register(
+    MotifDefinition(
+        "M004",
+        "retrieval_echo",
+        "1",
+        "GRAPH_QUERY",
+        "A RETRIEVAL returns content (an item, or the whole result) that was produced earlier in the same run by a "
+        "MODEL_INVOCATION or written to memory — identical artifact or DERIVES_FROM containment ≥ threshold. The "
+        "system is retrieving its own earlier output as if it were evidence.",
+    )
+)
+def detect_retrieval_echo(
+    run_id: str,
+    events: list[ComputationalEvent],
+    relations: list[dict[str, Any]],
+    data: AnalysisInput,
+) -> list[MotifInstance]:
     ordered = event_order(events)
     pos = {e.event_id: i for i, e in enumerate(ordered)}
     produced_by: dict[str, ComputationalEvent] = {}
     for e in ordered:
-        if e.kind == EventKind.MODEL_INVOCATION or (e.kind == EventKind.MEMORY_ACCESS and "write" in e.facets):
+        if e.kind == EventKind.MODEL_INVOCATION or (
+            e.kind == EventKind.MEMORY_ACCESS and "write" in e.facets
+        ):
             for a in [*e.outputs, *e.inputs] if e.kind == EventKind.MEMORY_ACCESS else e.outputs:
                 produced_by.setdefault(a.artifact_id, e)
     items: dict[str, set[str]] = defaultdict(set)
@@ -203,22 +306,48 @@ def detect_retrieval_echo(run_id: str, events: list[ComputationalEvent], relatio
                     for tail, rel in derives.get(aid, []):
                         cand = produced_by.get(tail)
                         if cand is not None:
-                            src, basis, conf, rel_ids = cand, "content_match", rel["confidence"], [rel["rel_id"]]
+                            src, basis, conf, rel_ids = (
+                                cand,
+                                "content_match",
+                                rel["confidence"],
+                                [rel["rel_id"]],
+                            )
                             break
                 if src is not None and pos[src.event_id] < pos[e.event_id]:
-                    out.append(MotifInstance("M004", run_id, [src.event_id, e.event_id], artifacts=[aid], confidence=conf, evidence=rel_ids or [aid],
-                                             explanation=f"retrieval {e.operation} returned content produced earlier by {src.kind.value} {src.operation} ({basis})",
-                                             measures={"basis": basis}, t_start=_span([src])[0], t_end=_span([e])[1]))
+                    out.append(
+                        MotifInstance(
+                            "M004",
+                            run_id,
+                            [src.event_id, e.event_id],
+                            artifacts=[aid],
+                            confidence=conf,
+                            evidence=rel_ids or [aid],
+                            explanation=f"retrieval {e.operation} returned content produced earlier by {src.kind.value} {src.operation} ({basis})",
+                            measures={"basis": basis},
+                            t_start=_span([src])[0],
+                            t_end=_span([e])[1],
+                        )
+                    )
     return out
 
 
-@REGISTRY.register(MotifDefinition(
-    "M005", "context_expansion", "1", "RULE",
-    "≥3 successive MODEL_INVOCATIONs of the same model in a run whose input size (tokens_in when declared, else "
-    "prompt artifact bytes) strictly increases each call, with last/first ≥ 1.5.",
-    parameters={"min_calls": 3, "min_growth": 1.5},
-))
-def detect_context_expansion(run_id: str, events: list[ComputationalEvent], relations: list[dict[str, Any]], data: AnalysisInput) -> list[MotifInstance]:
+@REGISTRY.register(
+    MotifDefinition(
+        "M005",
+        "context_expansion",
+        "1",
+        "RULE",
+        "≥3 successive MODEL_INVOCATIONs of the same model in a run whose input size (tokens_in when declared, else "
+        "prompt artifact bytes) strictly increases each call, with last/first ≥ 1.5.",
+        parameters={"min_calls": 3, "min_growth": 1.5},
+    )
+)
+def detect_context_expansion(
+    run_id: str,
+    events: list[ComputationalEvent],
+    relations: list[dict[str, Any]],
+    data: AnalysisInput,
+) -> list[MotifInstance]:
     by_model: dict[str, list[ComputationalEvent]] = defaultdict(list)
     for e in event_order(events):
         if e.kind == EventKind.MODEL_INVOCATION and e.object:
@@ -228,7 +357,11 @@ def detect_context_expansion(run_id: str, events: list[ComputationalEvent], rela
         t = e.resources.get("tokens_in")
         if t:
             return float(t), "tokens_in"
-        total = sum(data.artifacts[a.artifact_id].size_bytes for a in e.inputs if a.artifact_id in data.artifacts)
+        total = sum(
+            data.artifacts[a.artifact_id].size_bytes
+            for a in e.inputs
+            if a.artifact_id in data.artifacts
+        )
         return float(total), "input_bytes"
 
     out = []
@@ -243,21 +376,44 @@ def detect_context_expansion(run_id: str, events: list[ComputationalEvent], rela
             if len(run_) >= 3 and run_[0][1] > 0 and run_[-1][1] / run_[0][1] >= 1.5:
                 seq = [x[0] for x in run_]
                 t0, t1 = _span(seq)
-                out.append(MotifInstance("M005", run_id, [x.event_id for x in seq], explanation=f"{model}: input grew {run_[0][1]:.0f}→{run_[-1][1]:.0f} over {len(seq)} calls",
-                                         measures={"sizes": [x[1] for x in run_], "unit": size(seq[0])[1], "growth": round(run_[-1][1] / run_[0][1], 3)},
-                                         evidence=[x.event_id for x in seq], t_start=t0, t_end=t1))
+                out.append(
+                    MotifInstance(
+                        "M005",
+                        run_id,
+                        [x.event_id for x in seq],
+                        explanation=f"{model}: input grew {run_[0][1]:.0f}→{run_[-1][1]:.0f} over {len(seq)} calls",
+                        measures={
+                            "sizes": [x[1] for x in run_],
+                            "unit": size(seq[0])[1],
+                            "growth": round(run_[-1][1] / run_[0][1], 3),
+                        },
+                        evidence=[x.event_id for x in seq],
+                        t_start=t0,
+                        t_end=t1,
+                    )
+                )
             run_ = [(e, size(e)[0])] if e is not None else []
     return out
 
 
-@REGISTRY.register(MotifDefinition(
-    "M006", "information_bottleneck", "1", "GRAPH_QUERY",
-    "In the INFORMATION view, an intermediate artifact X lies on every lineage path from ≥2 distinct origin "
-    "artifacts (retrieved items / external inputs) to a final output artifact: removing X disconnects all origins "
-    "from the output. X is neither an origin nor the output.",
-    parameters={"min_origins": 2},
-))
-def detect_bottleneck(run_id: str, events: list[ComputationalEvent], relations: list[dict[str, Any]], data: AnalysisInput) -> list[MotifInstance]:
+@REGISTRY.register(
+    MotifDefinition(
+        "M006",
+        "information_bottleneck",
+        "1",
+        "GRAPH_QUERY",
+        "In the INFORMATION view, an intermediate artifact X lies on every lineage path from ≥2 distinct origin "
+        "artifacts (retrieved items / external inputs) to a final output artifact: removing X disconnects all origins "
+        "from the output. X is neither an origin nor the output.",
+        parameters={"min_origins": 2},
+    )
+)
+def detect_bottleneck(
+    run_id: str,
+    events: list[ComputationalEvent],
+    relations: list[dict[str, Any]],
+    data: AnalysisInput,
+) -> list[MotifInstance]:
     back = {"PRODUCES", "CONSUMES", "DERIVES_FROM", "CONTAINS_ITEM", "TRANSFERS"}
     inc: dict[str, list[str]] = defaultdict(list)
     for r in relations:
@@ -271,8 +427,15 @@ def detect_bottleneck(run_id: str, events: list[ComputationalEvent], relations: 
     for r in relations:
         if r["type"] == "CONTAINS_ITEM":
             item_of.update(r["head"])
-    origin_nodes = {f"artifact:{a.artifact_id}" for e in events if e.kind in origins_kinds for a in e.outputs} | item_of
-    finals = [f"artifact:{a.artifact_id}" for e in events if "artifact_creation" in e.facets for a in e.outputs]
+    origin_nodes = {
+        f"artifact:{a.artifact_id}" for e in events if e.kind in origins_kinds for a in e.outputs
+    } | item_of
+    finals = [
+        f"artifact:{a.artifact_id}"
+        for e in events
+        if "artifact_creation" in e.facets
+        for a in e.outputs
+    ]
 
     def ancestors(node: str, banned: str | None = None) -> set[str]:
         seen: set[str] = set()
@@ -291,24 +454,47 @@ def detect_bottleneck(run_id: str, events: list[ComputationalEvent], relations: 
         origins = anc & origin_nodes
         if len(origins) < 2:
             continue
-        for x in sorted(a for a in anc if a.startswith("artifact:") and a not in origin_nodes and a != final):
+        for x in sorted(
+            a for a in anc if a.startswith("artifact:") and a not in origin_nodes and a != final
+        ):
             if not (ancestors(final, banned=x) & origins):
-                out.append(MotifInstance("M006", run_id, [], artifacts=[x[9:], final[9:]], evidence=[x, final],
-                                         explanation=f"all {len(origins)} origins reach the output only through artifact {x[9:21]}",
-                                         measures={"origins": len(origins)}))
+                out.append(
+                    MotifInstance(
+                        "M006",
+                        run_id,
+                        [],
+                        artifacts=[x[9:], final[9:]],
+                        evidence=[x, final],
+                        explanation=f"all {len(origins)} origins reach the output only through artifact {x[9:21]}",
+                        measures={"origins": len(origins)},
+                    )
+                )
     return out
 
 
-@REGISTRY.register(MotifDefinition(
-    "M007", "silent_strategy_change", "1", "STATISTICAL",
-    "Split the run's leaf operations (tool/model/retrieval/external) at the time midpoint. If each half has ≥3 "
-    "operations, the Jaccard similarity of the operation sets is < 0.34, and no FAILURE/ERROR event occurs in the "
-    "run, the run switched strategy without an observed trigger. Heuristic; EXPERIMENTAL.",
-    parameters={"min_ops_per_half": 3, "max_jaccard": 0.34},
-))
-def detect_strategy_change(run_id: str, events: list[ComputationalEvent], relations: list[dict[str, Any]], data: AnalysisInput) -> list[MotifInstance]:
+@REGISTRY.register(
+    MotifDefinition(
+        "M007",
+        "silent_strategy_change",
+        "1",
+        "STATISTICAL",
+        "Split the run's leaf operations (tool/model/retrieval/external) at the time midpoint. If each half has ≥3 "
+        "operations, the Jaccard similarity of the operation sets is < 0.34, and no FAILURE/ERROR event occurs in the "
+        "run, the run switched strategy without an observed trigger. Heuristic; EXPERIMENTAL.",
+        parameters={"min_ops_per_half": 3, "max_jaccard": 0.34},
+    )
+)
+def detect_strategy_change(
+    run_id: str,
+    events: list[ComputationalEvent],
+    relations: list[dict[str, Any]],
+    data: AnalysisInput,
+) -> list[MotifInstance]:
     leaf = [e for e in event_order(events) if e.kind in LEAF and e.time.start]
-    if len(leaf) < 6 or any(e.status in (EventStatus.ERROR, EventStatus.TIMEOUT) or e.kind == EventKind.FAILURE for e in events):
+    if len(leaf) < 6 or any(
+        e.status in (EventStatus.ERROR, EventStatus.TIMEOUT) or e.kind == EventKind.FAILURE
+        for e in events
+    ):
         return []
     mid = leaf[0].time.start + (leaf[-1].time.start - leaf[0].time.start) / 2  # type: ignore[operator]
     first = [e for e in leaf if e.time.start <= mid]  # type: ignore[operator]
@@ -321,9 +507,18 @@ def detect_strategy_change(run_id: str, events: list[ComputationalEvent], relati
     if jac >= 0.34:
         return []
     t0, t1 = _span(leaf)
-    return [MotifInstance("M007", run_id, [e.event_id for e in leaf], confidence=round(1 - jac, 3),
-                          explanation=f"operation set changed (Jaccard {jac:.2f}) with no observed failure", measures={"jaccard": round(jac, 3), "before": sorted(s1), "after": sorted(s2)},
-                          t_start=t0, t_end=t1)]
+    return [
+        MotifInstance(
+            "M007",
+            run_id,
+            [e.event_id for e in leaf],
+            confidence=round(1 - jac, 3),
+            explanation=f"operation set changed (Jaccard {jac:.2f}) with no observed failure",
+            measures={"jaccard": round(jac, 3), "before": sorted(s1), "after": sorted(s2)},
+            t_start=t0,
+            t_end=t1,
+        )
+    ]
 
 
 class MotifAnalyzer(Analyzer):
@@ -340,16 +535,32 @@ class MotifAnalyzer(Analyzer):
             for inst in REGISTRY.detect(run_id, evs, rels, data):
                 d = REGISTRY.definitions[inst.motif_id]
                 key = f"{inst.motif_id}|{run_id}|{','.join(inst.events)}|{','.join(inst.artifacts)}"
-                out.append(self.record(str(uuid.uuid5(MOTIF_NS, key)), run_id, {
-                    "motif_id": inst.motif_id, "motif_name": d.name, "motif_version": d.version, "run_id": run_id,
-                    "events": inst.events, "artifacts": inst.artifacts, "confidence": inst.confidence,
-                    "explanation": inst.explanation, "evidence": inst.evidence, "measures": inst.measures,
-                    "t_start": inst.t_start, "t_end": inst.t_end,
-                }))
+                out.append(
+                    self.record(
+                        str(uuid.uuid5(MOTIF_NS, key)),
+                        run_id,
+                        {
+                            "motif_id": inst.motif_id,
+                            "motif_name": d.name,
+                            "motif_version": d.version,
+                            "run_id": run_id,
+                            "events": inst.events,
+                            "artifacts": inst.artifacts,
+                            "confidence": inst.confidence,
+                            "explanation": inst.explanation,
+                            "evidence": inst.evidence,
+                            "measures": inst.measures,
+                            "t_start": inst.t_start,
+                            "t_end": inst.t_end,
+                        },
+                    )
+                )
         return out
 
 
-def motif_stats(instances: list[dict[str, Any]], runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def motif_stats(
+    instances: list[dict[str, Any]], runs: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     """Support and outcome association per motif (descriptive counts, no significance claims)."""
     run_status = {r["run_id"]: r.get("status") for r in runs}
     total = len(runs)
@@ -364,14 +575,16 @@ def motif_stats(instances: list[dict[str, Any]], runs: list[dict[str, Any]]) -> 
         fail_with = sum(1 for r in with_runs if run_status.get(r) == "ERROR")
         without = [r for r in run_status if r not in with_runs]
         fail_without = sum(1 for r in without if run_status.get(r) == "ERROR")
-        out.append({
-            **d.to_dict(),
-            "instances": counts.get(mid, 0),
-            "runs_with": len(with_runs),
-            "support": round(len(with_runs) / total, 4) if total else 0.0,
-            "error_rate_with": round(fail_with / len(with_runs), 4) if with_runs else None,
-            "error_rate_without": round(fail_without / len(without), 4) if without else None,
-            "n_with": len(with_runs),
-            "n_without": len(without),
-        })
+        out.append(
+            {
+                **d.to_dict(),
+                "instances": counts.get(mid, 0),
+                "runs_with": len(with_runs),
+                "support": round(len(with_runs) / total, 4) if total else 0.0,
+                "error_rate_with": round(fail_with / len(with_runs), 4) if with_runs else None,
+                "error_rate_without": round(fail_without / len(without), 4) if without else None,
+                "n_with": len(with_runs),
+                "n_without": len(without),
+            }
+        )
     return out

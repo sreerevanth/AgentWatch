@@ -80,7 +80,13 @@ def default_store_url() -> str:
 
 
 class Store:
-    def __init__(self, url: str | None = None, *, blob_dir: str | Path | None = None, blob_store: BlobStore | None = None) -> None:
+    def __init__(
+        self,
+        url: str | None = None,
+        *,
+        blob_dir: str | Path | None = None,
+        blob_store: BlobStore | None = None,
+    ) -> None:
         self.url = url or default_store_url()
         self.is_sqlite = self.url.startswith("sqlite")
         kwargs: dict[str, Any] = {"future": True}
@@ -120,11 +126,17 @@ class Store:
         with self.engine.begin() as conn:
             for stmt in s.SQLITE_TRIGGERS if self.is_sqlite else s.POSTGRES_TRIGGERS:
                 conn.execute(text(stmt))
-            existing = conn.execute(select(s.meta_table.c.value).where(s.meta_table.c.key == "schema_version")).scalar()
+            existing = conn.execute(
+                select(s.meta_table.c.value).where(s.meta_table.c.key == "schema_version")
+            ).scalar()
             if existing is None:
-                conn.execute(insert(s.meta_table).values(key="schema_version", value=str(s.SCHEMA_VERSION)))
+                conn.execute(
+                    insert(s.meta_table).values(key="schema_version", value=str(s.SCHEMA_VERSION))
+                )
             elif int(existing) > s.SCHEMA_VERSION:
-                raise RuntimeError(f"store schema {existing} is newer than this AgentWatch ({s.SCHEMA_VERSION})")
+                raise RuntimeError(
+                    f"store schema {existing} is newer than this AgentWatch ({s.SCHEMA_VERSION})"
+                )
 
     def close(self) -> None:
         self.engine.dispose()
@@ -132,19 +144,35 @@ class Store:
     # ── tenant keys ────────────────────────────────────────────────────────
     def artifact_key(self, tenant_id: str) -> bytes:
         with self.engine.begin() as conn:
-            row = conn.execute(select(s.tenant_keys.c.artifact_key_hex).where(s.tenant_keys.c.tenant_id == tenant_id)).scalar()
+            row = conn.execute(
+                select(s.tenant_keys.c.artifact_key_hex).where(
+                    s.tenant_keys.c.tenant_id == tenant_id
+                )
+            ).scalar()
             if row:
                 return bytes.fromhex(row)
             key = secrets.token_hex(32)
             try:
-                conn.execute(insert(s.tenant_keys).values(tenant_id=tenant_id, artifact_key_hex=key, created_at=_now()))
+                conn.execute(
+                    insert(s.tenant_keys).values(
+                        tenant_id=tenant_id, artifact_key_hex=key, created_at=_now()
+                    )
+                )
             except IntegrityError:  # pragma: no cover - concurrent creation
                 pass
         with self.engine.connect() as conn:
-            return bytes.fromhex(conn.execute(select(s.tenant_keys.c.artifact_key_hex).where(s.tenant_keys.c.tenant_id == tenant_id)).scalar_one())
+            return bytes.fromhex(
+                conn.execute(
+                    select(s.tenant_keys.c.artifact_key_hex).where(
+                        s.tenant_keys.c.tenant_id == tenant_id
+                    )
+                ).scalar_one()
+            )
 
     # ── evidence: append ───────────────────────────────────────────────────
-    def append(self, drafts: Sequence[ObservationDraft], policy: PayloadPolicy = DEFAULT_POLICY) -> AppendResult:
+    def append(
+        self, drafts: Sequence[ObservationDraft], policy: PayloadPolicy = DEFAULT_POLICY
+    ) -> AppendResult:
         """Append observations. Idempotent on (tenant, idempotency_key)."""
         result = AppendResult()
         received = datetime.now(UTC)
@@ -158,7 +186,13 @@ class Store:
                 continue
             try:
                 payload, manifest = redact_payload(draft.payload, policy)
-                obs = RawObservation.build(draft, obs_id=new_ulid(), received_at=received, payload=payload, redaction=manifest)
+                obs = RawObservation.build(
+                    draft,
+                    obs_id=new_ulid(),
+                    received_at=received,
+                    payload=payload,
+                    redaction=manifest,
+                )
             except (TypeError, ValueError) as exc:
                 result.rejected.append((i, f"unserializable payload: {exc}"))
                 continue
@@ -170,7 +204,10 @@ class Store:
                 continue
             keys_seen[k] = obs.obs_id
             rows.append(self._obs_row(obs))
-            id_rows.extend({"obs_id": obs.obs_id, "key": key, "value": val[:256], "tenant_id": obs.tenant_id} for key, val in obs.declared_ids_items)
+            id_rows.extend(
+                {"obs_id": obs.obs_id, "key": key, "value": val[:256], "tenant_id": obs.tenant_id}
+                for key, val in obs.declared_ids_items
+            )
         if not rows:
             return result
         with self.engine.begin() as conn:
@@ -181,7 +218,8 @@ class Store:
             for tenant, idems in by_tenant.items():
                 for chunk in _chunks(idems, 500):
                     q = select(s.observations.c.idempotency_key, s.observations.c.obs_id).where(
-                        s.observations.c.tenant_id == tenant, s.observations.c.idempotency_key.in_(chunk)
+                        s.observations.c.tenant_id == tenant,
+                        s.observations.c.idempotency_key.in_(chunk),
                     )
                     for idem, oid in conn.execute(q):
                         existing[(tenant, idem)] = oid
@@ -239,7 +277,9 @@ class Store:
             idempotency_key=r.idempotency_key,
             observed_at=parse_ts(r.observed_at) if r.observed_at else None,
             received_at=parse_ts(r.received_at),
-            clock=ClockInfo(clock.get("source", "sensor"), clock.get("clock_id"), clock.get("precision_ms")),
+            clock=ClockInfo(
+                clock.get("source", "sensor"), clock.get("clock_id"), clock.get("precision_ms")
+            ),
             content_type=r.content_type,
             payload_json=payload_json or "null",
             payload_sha256=r.payload_sha256,
@@ -252,7 +292,9 @@ class Store:
     # ── evidence: read ─────────────────────────────────────────────────────
     def get_observation(self, obs_id: str) -> RawObservation | None:
         with self.engine.connect() as conn:
-            r = conn.execute(select(s.observations).where(s.observations.c.obs_id == obs_id)).first()
+            r = conn.execute(
+                select(s.observations).where(s.observations.c.obs_id == obs_id)
+            ).first()
         return self._row_to_obs(r) if r else None
 
     def observations(
@@ -282,15 +324,27 @@ class Store:
 
     def count_observations(self, tenant_id: str = "default") -> int:
         with self.engine.connect() as conn:
-            return int(conn.execute(select(func.count()).select_from(s.observations).where(s.observations.c.tenant_id == tenant_id)).scalar_one())
+            return int(
+                conn.execute(
+                    select(func.count())
+                    .select_from(s.observations)
+                    .where(s.observations.c.tenant_id == tenant_id)
+                ).scalar_one()
+            )
 
     def latest_obs_id(self, tenant_id: str = "default") -> str | None:
         with self.engine.connect() as conn:
-            return conn.execute(select(func.max(s.observations.c.obs_id)).where(s.observations.c.tenant_id == tenant_id)).scalar()
+            return conn.execute(
+                select(func.max(s.observations.c.obs_id)).where(
+                    s.observations.c.tenant_id == tenant_id
+                )
+            ).scalar()
 
     def find_by_declared_id(self, tenant_id: str, key: str, value: str) -> list[str]:
         q = select(s.declared_ids.c.obs_id).where(
-            s.declared_ids.c.tenant_id == tenant_id, s.declared_ids.c.key == key, s.declared_ids.c.value == value
+            s.declared_ids.c.tenant_id == tenant_id,
+            s.declared_ids.c.key == key,
+            s.declared_ids.c.value == value,
         )
         with self.engine.connect() as conn:
             return [r[0] for r in conn.execute(q)]
@@ -303,15 +357,24 @@ class Store:
     def seal(self, tenant_id: str = "default", max_obs: int = 10_000) -> Segment | None:
         with self.engine.begin() as conn:
             rows = conn.execute(
-                select(s.observations.c.obs_id, s.observations.c.payload_sha256, s.observations.c.idempotency_key)
-                .where(s.observations.c.tenant_id == tenant_id, s.observations.c.segment_id.is_(None))
+                select(
+                    s.observations.c.obs_id,
+                    s.observations.c.payload_sha256,
+                    s.observations.c.idempotency_key,
+                )
+                .where(
+                    s.observations.c.tenant_id == tenant_id, s.observations.c.segment_id.is_(None)
+                )
                 .order_by(s.observations.c.obs_id)
                 .limit(max_obs)
             ).all()
             if not rows:
                 return None
             last = conn.execute(
-                select(s.segments.c.seq, s.segments.c.segment_hash).where(s.segments.c.tenant_id == tenant_id).order_by(s.segments.c.seq.desc()).limit(1)
+                select(s.segments.c.seq, s.segments.c.segment_hash)
+                .where(s.segments.c.tenant_id == tenant_id)
+                .order_by(s.segments.c.seq.desc())
+                .limit(1)
             ).first()
             seq = (last.seq + 1) if last else 1
             prev = last.segment_hash if last else GENESIS
@@ -329,9 +392,17 @@ class Store:
                 segment_hash=segment_hash(tenant_id, seq, root, prev, len(rows)),
                 sealed_at=datetime.now(UTC),
             )
-            conn.execute(insert(s.segments).values(**{**seg.to_dict(), "sealed_at": seg.sealed_at.isoformat(), "purged_at": None}))
+            conn.execute(
+                insert(s.segments).values(
+                    **{**seg.to_dict(), "sealed_at": seg.sealed_at.isoformat(), "purged_at": None}
+                )
+            )
             for chunk in _chunks([r.obs_id for r in rows], 500):
-                conn.execute(update(s.observations).where(s.observations.c.obs_id.in_(chunk)).values(segment_id=seg.segment_id))
+                conn.execute(
+                    update(s.observations)
+                    .where(s.observations.c.obs_id.in_(chunk))
+                    .values(segment_id=seg.segment_id)
+                )
         return seg
 
     def seal_all(self, tenant_id: str = "default") -> list[Segment]:
@@ -342,7 +413,14 @@ class Store:
 
     def segments(self, tenant_id: str = "default") -> list[dict[str, Any]]:
         with self.engine.connect() as conn:
-            return [dict(r._mapping) for r in conn.execute(select(s.segments).where(s.segments.c.tenant_id == tenant_id).order_by(s.segments.c.seq))]
+            return [
+                dict(r._mapping)
+                for r in conn.execute(
+                    select(s.segments)
+                    .where(s.segments.c.tenant_id == tenant_id)
+                    .order_by(s.segments.c.seq)
+                )
+            ]
 
     def verify(self, tenant_id: str = "default") -> VerifyReport:
         errors: list[str] = []
@@ -351,7 +429,13 @@ class Store:
         segs = self.segments(tenant_id)
         with self.engine.connect() as conn:
             for seg in segs:
-                expect = segment_hash(tenant_id, seg["seq"], seg["merkle_root"], seg["prev_segment_hash"], seg["n_obs"])
+                expect = segment_hash(
+                    tenant_id,
+                    seg["seq"],
+                    seg["merkle_root"],
+                    seg["prev_segment_hash"],
+                    seg["n_obs"],
+                )
                 if seg["prev_segment_hash"] != prev:
                     errors.append(f"segment {seg['segment_id']}: chain broken (prev hash mismatch)")
                 if expect != seg["segment_hash"]:
@@ -360,25 +444,50 @@ class Store:
                 if seg["purged_at"]:
                     continue  # rows removed by authorized retention purge; chain still verifies
                 rows = conn.execute(
-                    select(s.observations.c.obs_id, s.observations.c.payload_sha256, s.observations.c.idempotency_key,
-                           s.observations.c.payload_json, s.observations.c.payload_blob)
-                    .where(s.observations.c.segment_id == seg["segment_id"]).order_by(s.observations.c.obs_id)
+                    select(
+                        s.observations.c.obs_id,
+                        s.observations.c.payload_sha256,
+                        s.observations.c.idempotency_key,
+                        s.observations.c.payload_json,
+                        s.observations.c.payload_blob,
+                    )
+                    .where(s.observations.c.segment_id == seg["segment_id"])
+                    .order_by(s.observations.c.obs_id)
                 ).all()
                 n_obs += len(rows)
                 if len(rows) != seg["n_obs"]:
-                    errors.append(f"segment {seg['segment_id']}: expected {seg['n_obs']} observations, found {len(rows)}")
+                    errors.append(
+                        f"segment {seg['segment_id']}: expected {seg['n_obs']} observations, found {len(rows)}"
+                    )
                 for r in rows:
-                    body = r.payload_json if r.payload_json is not None else self.blobs.get(r.payload_blob).decode("utf-8")
+                    body = (
+                        r.payload_json
+                        if r.payload_json is not None
+                        else self.blobs.get(r.payload_blob).decode("utf-8")
+                    )
                     from agentwatch.evidence.canonical import sha256_hex
 
                     if sha256_hex(body) != r.payload_sha256:
                         errors.append(f"observation {r.obs_id}: payload hash mismatch")
                 if merkle_root([_leaf(tenant_id, r) for r in rows]) != seg["merkle_root"]:
                     errors.append(f"segment {seg['segment_id']}: merkle root mismatch")
-            unsealed = int(conn.execute(
-                select(func.count()).select_from(s.observations).where(s.observations.c.tenant_id == tenant_id, s.observations.c.segment_id.is_(None))
-            ).scalar_one())
-        return VerifyReport(ok=not errors, segments_checked=len(segs), observations_checked=n_obs, unsealed_observations=unsealed, errors=errors)
+            unsealed = int(
+                conn.execute(
+                    select(func.count())
+                    .select_from(s.observations)
+                    .where(
+                        s.observations.c.tenant_id == tenant_id,
+                        s.observations.c.segment_id.is_(None),
+                    )
+                ).scalar_one()
+            )
+        return VerifyReport(
+            ok=not errors,
+            segments_checked=len(segs),
+            observations_checked=n_obs,
+            unsealed_observations=unsealed,
+            errors=errors,
+        )
 
     def inclusion_proof(self, obs_id: str) -> dict[str, Any] | None:
         obs = self.get_observation(obs_id)
@@ -386,10 +495,17 @@ class Store:
             return None
         with self.engine.connect() as conn:
             rows = conn.execute(
-                select(s.observations.c.obs_id, s.observations.c.payload_sha256, s.observations.c.idempotency_key)
-                .where(s.observations.c.segment_id == obs.segment_id).order_by(s.observations.c.obs_id)
+                select(
+                    s.observations.c.obs_id,
+                    s.observations.c.payload_sha256,
+                    s.observations.c.idempotency_key,
+                )
+                .where(s.observations.c.segment_id == obs.segment_id)
+                .order_by(s.observations.c.obs_id)
             ).all()
-            seg = conn.execute(select(s.segments).where(s.segments.c.segment_id == obs.segment_id)).first()
+            seg = conn.execute(
+                select(s.segments).where(s.segments.c.segment_id == obs.segment_id)
+            ).first()
         leaves = [_leaf(obs.tenant_id, r) for r in rows]
         idx = [r.obs_id for r in rows].index(obs_id)
         return {
@@ -409,52 +525,114 @@ class Store:
         the chain still verifies and the purge is visible.
         """
         with self.engine.begin() as conn:
-            seg = conn.execute(select(s.segments).where(s.segments.c.segment_id == segment_id)).first()
+            seg = conn.execute(
+                select(s.segments).where(s.segments.c.segment_id == segment_id)
+            ).first()
             if seg is None:
                 raise KeyError(segment_id)
-            conn.execute(insert(s.purge_authorizations).values(segment_id=segment_id, tenant_id=seg.tenant_id, reason=reason, authorized_at=_now(), actor=actor))
-            ids = [r[0] for r in conn.execute(select(s.observations.c.obs_id).where(s.observations.c.segment_id == segment_id))]
+            conn.execute(
+                insert(s.purge_authorizations).values(
+                    segment_id=segment_id,
+                    tenant_id=seg.tenant_id,
+                    reason=reason,
+                    authorized_at=_now(),
+                    actor=actor,
+                )
+            )
+            ids = [
+                r[0]
+                for r in conn.execute(
+                    select(s.observations.c.obs_id).where(s.observations.c.segment_id == segment_id)
+                )
+            ]
             for chunk in _chunks(ids, 500):
                 conn.execute(delete(s.declared_ids).where(s.declared_ids.c.obs_id.in_(chunk)))
-            n = conn.execute(delete(s.observations).where(s.observations.c.segment_id == segment_id)).rowcount
-            conn.execute(update(s.segments).where(s.segments.c.segment_id == segment_id).values(purged_at=_now()))
+            n = conn.execute(
+                delete(s.observations).where(s.observations.c.segment_id == segment_id)
+            ).rowcount
+            conn.execute(
+                update(s.segments)
+                .where(s.segments.c.segment_id == segment_id)
+                .values(purged_at=_now())
+            )
         return int(n or 0)
 
     def segments_sealed_before(self, tenant_id: str, cutoff: datetime) -> list[str]:
-        return [seg["segment_id"] for seg in self.segments(tenant_id) if not seg["purged_at"] and parse_ts(seg["sealed_at"]) < cutoff]
+        return [
+            seg["segment_id"]
+            for seg in self.segments(tenant_id)
+            if not seg["purged_at"] and parse_ts(seg["sealed_at"]) < cutoff
+        ]
 
     # ── interpretations ────────────────────────────────────────────────────
     def active_interpretation(self, tenant_id: str = "default") -> dict[str, Any] | None:
         with self.engine.connect() as conn:
             r = conn.execute(
-                select(s.interpretations).where(s.interpretations.c.tenant_id == tenant_id, s.interpretations.c.status == "active")
-                .order_by(s.interpretations.c.created_at.desc()).limit(1)
+                select(s.interpretations)
+                .where(
+                    s.interpretations.c.tenant_id == tenant_id,
+                    s.interpretations.c.status == "active",
+                )
+                .order_by(s.interpretations.c.created_at.desc())
+                .limit(1)
             ).first()
         return _interp(r) if r else None
 
     def interpretations(self, tenant_id: str = "default") -> list[dict[str, Any]]:
         with self.engine.connect() as conn:
-            return [_interp(r) for r in conn.execute(select(s.interpretations).where(s.interpretations.c.tenant_id == tenant_id).order_by(s.interpretations.c.created_at))]
+            return [
+                _interp(r)
+                for r in conn.execute(
+                    select(s.interpretations)
+                    .where(s.interpretations.c.tenant_id == tenant_id)
+                    .order_by(s.interpretations.c.created_at)
+                )
+            ]
 
     def get_interpretation(self, interp_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as conn:
-            r = conn.execute(select(s.interpretations).where(s.interpretations.c.interp_id == interp_id)).first()
+            r = conn.execute(
+                select(s.interpretations).where(s.interpretations.c.interp_id == interp_id)
+            ).first()
         return _interp(r) if r else None
 
-    def activate_interpretation(self, tenant_id: str, interp_id: str, pipeline: dict[str, Any], config_hash: str) -> None:
+    def activate_interpretation(
+        self, tenant_id: str, interp_id: str, pipeline: dict[str, Any], config_hash: str
+    ) -> None:
         with self.engine.begin() as conn:
             conn.execute(
-                update(s.interpretations).where(s.interpretations.c.tenant_id == tenant_id, s.interpretations.c.interp_id != interp_id, s.interpretations.c.status == "active")
+                update(s.interpretations)
+                .where(
+                    s.interpretations.c.tenant_id == tenant_id,
+                    s.interpretations.c.interp_id != interp_id,
+                    s.interpretations.c.status == "active",
+                )
                 .values(status="superseded")
             )
-            exists = conn.execute(select(s.interpretations.c.interp_id).where(s.interpretations.c.interp_id == interp_id)).first()
+            exists = conn.execute(
+                select(s.interpretations.c.interp_id).where(
+                    s.interpretations.c.interp_id == interp_id
+                )
+            ).first()
             if exists:
-                conn.execute(update(s.interpretations).where(s.interpretations.c.interp_id == interp_id).values(status="active"))
+                conn.execute(
+                    update(s.interpretations)
+                    .where(s.interpretations.c.interp_id == interp_id)
+                    .values(status="active")
+                )
             else:
-                conn.execute(insert(s.interpretations).values(
-                    interp_id=interp_id, tenant_id=tenant_id, pipeline=canonical_json(pipeline), config_hash=config_hash,
-                    created_at=_now(), status="active", processed_through=None, stats=None,
-                ))
+                conn.execute(
+                    insert(s.interpretations).values(
+                        interp_id=interp_id,
+                        tenant_id=tenant_id,
+                        pipeline=canonical_json(pipeline),
+                        config_hash=config_hash,
+                        created_at=_now(),
+                        status="active",
+                        processed_through=None,
+                        stats=None,
+                    )
+                )
 
     def write_interpretation(
         self,
@@ -473,53 +651,129 @@ class Store:
         """Replace all derived rows of ``interp_id`` atomically. Evidence is untouched."""
         with self.engine.begin() as conn:
             if not self.is_sqlite:  # serialize concurrent rebuilds of one interpretation
-                conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": int(sha256_hex(interp_id)[:15], 16)})
-            for table in (s.events, s.event_sources, s.diagnostics, s.entities, s.runs, s.relations, s.relation_members):
+                conn.execute(
+                    text("SELECT pg_advisory_xact_lock(:k)"),
+                    {"k": int(sha256_hex(interp_id)[:15], 16)},
+                )
+            for table in (
+                s.events,
+                s.event_sources,
+                s.diagnostics,
+                s.entities,
+                s.runs,
+                s.relations,
+                s.relation_members,
+            ):
                 conn.execute(delete(table).where(table.c.interp_id == interp_id))
             conn.execute(delete(s.derived).where(s.derived.c.interp_id == interp_id))
             if events:
-                conn.execute(insert(s.events), [
-                    {
-                        "event_id": e["event_id"], "interp_id": interp_id, "tenant_id": tenant_id, "run_id": e.get("run_id"),
-                        "kind": e["kind"], "operation": e["operation"][:256], "actor": e.get("actor"), "object": e.get("object"),
-                        "status": e["status"], "t_start": e["time"]["start"], "t_end": e["time"]["end"],
-                        "ordering_key": e["time"].get("ordering_key", "")[:160], "doc": canonical_json(e),
-                    }
-                    for e in events
-                ])
-                conn.execute(insert(s.event_sources), [
-                    {"event_id": e["event_id"], "interp_id": interp_id, "obs_id": o} for e in events for o in sorted(set(e["derived_from"]))
-                ])
+                conn.execute(
+                    insert(s.events),
+                    [
+                        {
+                            "event_id": e["event_id"],
+                            "interp_id": interp_id,
+                            "tenant_id": tenant_id,
+                            "run_id": e.get("run_id"),
+                            "kind": e["kind"],
+                            "operation": e["operation"][:256],
+                            "actor": e.get("actor"),
+                            "object": e.get("object"),
+                            "status": e["status"],
+                            "t_start": e["time"]["start"],
+                            "t_end": e["time"]["end"],
+                            "ordering_key": e["time"].get("ordering_key", "")[:160],
+                            "doc": canonical_json(e),
+                        }
+                        for e in events
+                    ],
+                )
+                conn.execute(
+                    insert(s.event_sources),
+                    [
+                        {"event_id": e["event_id"], "interp_id": interp_id, "obs_id": o}
+                        for e in events
+                        for o in sorted(set(e["derived_from"]))
+                    ],
+                )
             if diagnostics:
-                conn.execute(insert(s.diagnostics), [{"interp_id": interp_id, "tenant_id": tenant_id, **d} for d in diagnostics])
+                conn.execute(
+                    insert(s.diagnostics),
+                    [{"interp_id": interp_id, "tenant_id": tenant_id, **d} for d in diagnostics],
+                )
             if artifacts:
                 self._put_artifacts(conn, artifacts)
             if entities:
-                conn.execute(insert(s.entities), [
-                    {"entity_id": en["entity_id"], "tenant_id": tenant_id, "interp_id": interp_id, "kind": en["kind"], "canonical_key": en["canonical_key"][:512], "doc": canonical_json(en)}
-                    for en in entities
-                ])
+                conn.execute(
+                    insert(s.entities),
+                    [
+                        {
+                            "entity_id": en["entity_id"],
+                            "tenant_id": tenant_id,
+                            "interp_id": interp_id,
+                            "kind": en["kind"],
+                            "canonical_key": en["canonical_key"][:512],
+                            "doc": canonical_json(en),
+                        }
+                        for en in entities
+                    ],
+                )
             if runs:
-                conn.execute(insert(s.runs), [
-                    {"run_id": r["run_id"], "interp_id": interp_id, "tenant_id": tenant_id, "name": (r.get("name") or "")[:256],
-                     "started_at": r.get("started_at"), "ended_at": r.get("ended_at"), "status": r.get("status"),
-                     "system_version": r.get("system_version"), "doc": canonical_json(r)}
-                    for r in runs
-                ])
+                conn.execute(
+                    insert(s.runs),
+                    [
+                        {
+                            "run_id": r["run_id"],
+                            "interp_id": interp_id,
+                            "tenant_id": tenant_id,
+                            "name": (r.get("name") or "")[:256],
+                            "started_at": r.get("started_at"),
+                            "ended_at": r.get("ended_at"),
+                            "status": r.get("status"),
+                            "system_version": r.get("system_version"),
+                            "doc": canonical_json(r),
+                        }
+                        for r in runs
+                    ],
+                )
             if relations:
-                conn.execute(insert(s.relations), [
-                    {"rel_id": rel["rel_id"], "interp_id": interp_id, "tenant_id": tenant_id, "run_id": rel.get("run_id"),
-                     "view": rel["view"], "type": rel["type"], "basis": rel["basis"], "evidence_class": rel.get("evidence_class"),
-                     "confidence": rel["confidence"], "doc": canonical_json(rel)}
-                    for rel in relations
-                ])
+                conn.execute(
+                    insert(s.relations),
+                    [
+                        {
+                            "rel_id": rel["rel_id"],
+                            "interp_id": interp_id,
+                            "tenant_id": tenant_id,
+                            "run_id": rel.get("run_id"),
+                            "view": rel["view"],
+                            "type": rel["type"],
+                            "basis": rel["basis"],
+                            "evidence_class": rel.get("evidence_class"),
+                            "confidence": rel["confidence"],
+                            "doc": canonical_json(rel),
+                        }
+                        for rel in relations
+                    ],
+                )
                 members = []
                 for rel in relations:
                     for role in ("tail", "head"):
                         for i, node in enumerate(rel[role]):
-                            members.append({"rel_id": rel["rel_id"], "interp_id": interp_id, "role": role, "ordinal": i, "node": node[:600]})
+                            members.append(
+                                {
+                                    "rel_id": rel["rel_id"],
+                                    "interp_id": interp_id,
+                                    "role": role,
+                                    "ordinal": i,
+                                    "node": node[:600],
+                                }
+                            )
                 conn.execute(insert(s.relation_members), members)
-            conn.execute(update(s.interpretations).where(s.interpretations.c.interp_id == interp_id).values(processed_through=processed_through, stats=canonical_json(stats)))
+            conn.execute(
+                update(s.interpretations)
+                .where(s.interpretations.c.interp_id == interp_id)
+                .values(processed_through=processed_through, stats=canonical_json(stats))
+            )
 
     def _put_artifacts(self, conn: Any, artifacts: Sequence[dict[str, Any]]) -> None:
         by_tenant: dict[str, list[dict[str, Any]]] = {}
@@ -528,7 +782,14 @@ class Store:
         for tenant, items in by_tenant.items():
             have: set[str] = set()
             for chunk in _chunks([a["artifact_id"] for a in items], 500):
-                have.update(r[0] for r in conn.execute(select(s.artifacts.c.artifact_id).where(s.artifacts.c.tenant_id == tenant, s.artifacts.c.artifact_id.in_(chunk))))
+                have.update(
+                    r[0]
+                    for r in conn.execute(
+                        select(s.artifacts.c.artifact_id).where(
+                            s.artifacts.c.tenant_id == tenant, s.artifacts.c.artifact_id.in_(chunk)
+                        )
+                    )
+                )
             rows = []
             for a in items:
                 if a["artifact_id"] in have:
@@ -539,27 +800,65 @@ class Store:
                 if len(content.encode("utf-8")) > INLINE_PAYLOAD_LIMIT:
                     blob = self.blobs.put(content.encode("utf-8"))
                     content = None
-                rows.append({"tenant_id": tenant, "artifact_id": a["artifact_id"], "media_type": a["media_type"], "size_bytes": a["size_bytes"],
-                             "preview": a["preview"], "content_json": content, "content_blob": blob})
+                rows.append(
+                    {
+                        "tenant_id": tenant,
+                        "artifact_id": a["artifact_id"],
+                        "media_type": a["media_type"],
+                        "size_bytes": a["size_bytes"],
+                        "preview": a["preview"],
+                        "content_json": content,
+                        "content_blob": blob,
+                    }
+                )
             if rows:
                 conn.execute(insert(s.artifacts), rows)
 
-    def put_derived(self, interp_id: str, tenant_id: str, records: Sequence[dict[str, Any]], *, replace_types: Iterable[str] = (), scope: str | None = None) -> None:
+    def put_derived(
+        self,
+        interp_id: str,
+        tenant_id: str,
+        records: Sequence[dict[str, Any]],
+        *,
+        replace_types: Iterable[str] = (),
+        scope: str | None = None,
+    ) -> None:
         with self.engine.begin() as conn:
             for rt in replace_types:
-                q = delete(s.derived).where(s.derived.c.interp_id == interp_id, s.derived.c.record_type == rt)
+                q = delete(s.derived).where(
+                    s.derived.c.interp_id == interp_id, s.derived.c.record_type == rt
+                )
                 if scope is not None:
                     q = q.where(s.derived.c.scope == scope)
                 conn.execute(q)
             if records:
-                conn.execute(insert(s.derived), [
-                    {"record_id": r["record_id"], "interp_id": interp_id, "tenant_id": tenant_id, "record_type": r["record_type"],
-                     "scope": r["scope"][:256], "analyzer": r["analyzer"], "maturity": r["maturity"], "doc": canonical_json(r)}
-                    for r in records
-                ])
+                conn.execute(
+                    insert(s.derived),
+                    [
+                        {
+                            "record_id": r["record_id"],
+                            "interp_id": interp_id,
+                            "tenant_id": tenant_id,
+                            "record_type": r["record_type"],
+                            "scope": r["scope"][:256],
+                            "analyzer": r["analyzer"],
+                            "maturity": r["maturity"],
+                            "doc": canonical_json(r),
+                        }
+                        for r in records
+                    ],
+                )
 
     # ── interpretation reads ───────────────────────────────────────────────
-    def events(self, interp_id: str, *, run_id: str | None = None, kind: str | None = None, event_ids: Iterable[str] | None = None, limit: int | None = None) -> list[dict[str, Any]]:
+    def events(
+        self,
+        interp_id: str,
+        *,
+        run_id: str | None = None,
+        kind: str | None = None,
+        event_ids: Iterable[str] | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
         q = select(s.events.c.doc).where(s.events.c.interp_id == interp_id)
         if run_id is not None:
             q = q.where(s.events.c.run_id == run_id)
@@ -575,38 +874,90 @@ class Store:
 
     def event(self, interp_id: str, event_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as conn:
-            r = conn.execute(select(s.events.c.doc).where(s.events.c.interp_id == interp_id, s.events.c.event_id == event_id)).first()
+            r = conn.execute(
+                select(s.events.c.doc).where(
+                    s.events.c.interp_id == interp_id, s.events.c.event_id == event_id
+                )
+            ).first()
         return json.loads(r[0]) if r else None
 
     def events_for_observation(self, obs_id: str) -> list[tuple[str, str]]:
         with self.engine.connect() as conn:
-            return [(r.event_id, r.interp_id) for r in conn.execute(select(s.event_sources).where(s.event_sources.c.obs_id == obs_id))]
+            return [
+                (r.event_id, r.interp_id)
+                for r in conn.execute(
+                    select(s.event_sources).where(s.event_sources.c.obs_id == obs_id)
+                )
+            ]
 
     def diagnostics(self, interp_id: str) -> list[dict[str, Any]]:
         with self.engine.connect() as conn:
-            return [dict(r._mapping) for r in conn.execute(select(s.diagnostics).where(s.diagnostics.c.interp_id == interp_id).order_by(s.diagnostics.c.id))]
+            return [
+                dict(r._mapping)
+                for r in conn.execute(
+                    select(s.diagnostics)
+                    .where(s.diagnostics.c.interp_id == interp_id)
+                    .order_by(s.diagnostics.c.id)
+                )
+            ]
 
-    def artifact(self, tenant_id: str, artifact_id: str, *, with_content: bool = True) -> dict[str, Any] | None:
+    def artifact(
+        self, tenant_id: str, artifact_id: str, *, with_content: bool = True
+    ) -> dict[str, Any] | None:
         with self.engine.connect() as conn:
-            r = conn.execute(select(s.artifacts).where(s.artifacts.c.tenant_id == tenant_id, s.artifacts.c.artifact_id == artifact_id)).first()
+            r = conn.execute(
+                select(s.artifacts).where(
+                    s.artifacts.c.tenant_id == tenant_id, s.artifacts.c.artifact_id == artifact_id
+                )
+            ).first()
         if r is None:
             return None
-        d = {"artifact_id": r.artifact_id, "media_type": r.media_type, "size_bytes": r.size_bytes, "preview": r.preview}
+        d = {
+            "artifact_id": r.artifact_id,
+            "media_type": r.media_type,
+            "size_bytes": r.size_bytes,
+            "preview": r.preview,
+        }
         if with_content:
-            content = r.content_json if r.content_json is not None else self.blobs.get(r.content_blob).decode("utf-8")
+            content = (
+                r.content_json
+                if r.content_json is not None
+                else self.blobs.get(r.content_blob).decode("utf-8")
+            )
             d["content"] = json.loads(content)
         return d
 
     def artifacts_by_prefix(self, tenant_id: str, prefix: str) -> list[str]:
         with self.engine.connect() as conn:
-            return [r[0] for r in conn.execute(select(s.artifacts.c.artifact_id).where(s.artifacts.c.tenant_id == tenant_id, s.artifacts.c.artifact_id.like(f"{prefix}%")).limit(20))]
+            return [
+                r[0]
+                for r in conn.execute(
+                    select(s.artifacts.c.artifact_id)
+                    .where(
+                        s.artifacts.c.tenant_id == tenant_id,
+                        s.artifacts.c.artifact_id.like(f"{prefix}%"),
+                    )
+                    .limit(20)
+                )
+            ]
 
     def entities(self, interp_id: str) -> list[dict[str, Any]]:
         with self.engine.connect() as conn:
-            return [json.loads(r[0]) for r in conn.execute(select(s.entities.c.doc).where(s.entities.c.interp_id == interp_id).order_by(s.entities.c.canonical_key))]
+            return [
+                json.loads(r[0])
+                for r in conn.execute(
+                    select(s.entities.c.doc)
+                    .where(s.entities.c.interp_id == interp_id)
+                    .order_by(s.entities.c.canonical_key)
+                )
+            ]
 
     def runs(self, interp_id: str, *, limit: int | None = None) -> list[dict[str, Any]]:
-        q = select(s.runs.c.doc).where(s.runs.c.interp_id == interp_id).order_by(s.runs.c.started_at.desc())
+        q = (
+            select(s.runs.c.doc)
+            .where(s.runs.c.interp_id == interp_id)
+            .order_by(s.runs.c.started_at.desc())
+        )
         if limit:
             q = q.limit(limit)
         with self.engine.connect() as conn:
@@ -614,10 +965,21 @@ class Store:
 
     def run(self, interp_id: str, run_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as conn:
-            r = conn.execute(select(s.runs.c.doc).where(s.runs.c.interp_id == interp_id, s.runs.c.run_id == run_id)).first()
+            r = conn.execute(
+                select(s.runs.c.doc).where(
+                    s.runs.c.interp_id == interp_id, s.runs.c.run_id == run_id
+                )
+            ).first()
         return json.loads(r[0]) if r else None
 
-    def relations(self, interp_id: str, *, run_id: str | None = None, view: str | None = None, all_runs: bool = False) -> list[dict[str, Any]]:
+    def relations(
+        self,
+        interp_id: str,
+        *,
+        run_id: str | None = None,
+        view: str | None = None,
+        all_runs: bool = False,
+    ) -> list[dict[str, Any]]:
         q = select(s.relations.c.doc).where(s.relations.c.interp_id == interp_id)
         if not all_runs:
             q = q.where(s.relations.c.run_id == run_id) if run_id is not None else q
@@ -628,28 +990,69 @@ class Store:
 
     def relations_touching(self, interp_id: str, node: str) -> list[dict[str, Any]]:
         with self.engine.connect() as conn:
-            ids = [r[0] for r in conn.execute(select(s.relation_members.c.rel_id).where(s.relation_members.c.interp_id == interp_id, s.relation_members.c.node == node).distinct())]
+            ids = [
+                r[0]
+                for r in conn.execute(
+                    select(s.relation_members.c.rel_id)
+                    .where(
+                        s.relation_members.c.interp_id == interp_id,
+                        s.relation_members.c.node == node,
+                    )
+                    .distinct()
+                )
+            ]
             if not ids:
                 return []
-            return [json.loads(r[0]) for r in conn.execute(select(s.relations.c.doc).where(s.relations.c.interp_id == interp_id, s.relations.c.rel_id.in_(ids)))]
+            return [
+                json.loads(r[0])
+                for r in conn.execute(
+                    select(s.relations.c.doc).where(
+                        s.relations.c.interp_id == interp_id, s.relations.c.rel_id.in_(ids)
+                    )
+                )
+            ]
 
-    def derived(self, interp_id: str, record_type: str, scope: str | None = None) -> list[dict[str, Any]]:
-        q = select(s.derived.c.doc).where(s.derived.c.interp_id == interp_id, s.derived.c.record_type == record_type)
+    def derived(
+        self, interp_id: str, record_type: str, scope: str | None = None
+    ) -> list[dict[str, Any]]:
+        q = select(s.derived.c.doc).where(
+            s.derived.c.interp_id == interp_id, s.derived.c.record_type == record_type
+        )
         if scope is not None:
             q = q.where(s.derived.c.scope == scope)
         with self.engine.connect() as conn:
             return [json.loads(r[0]) for r in conn.execute(q)]
 
     # ── experiments (append-only) ──────────────────────────────────────────
-    def put_experiment(self, tenant_id: str, record_type: str, doc: dict[str, Any], subject: str | None = None, record_id: str | None = None) -> str:
+    def put_experiment(
+        self,
+        tenant_id: str,
+        record_type: str,
+        doc: dict[str, Any],
+        subject: str | None = None,
+        record_id: str | None = None,
+    ) -> str:
         rid = record_id or new_ulid()
         doc = {**doc, "record_id": rid, "record_type": record_type}
         with self.engine.begin() as conn:
-            conn.execute(insert(s.experiments).values(record_id=rid, tenant_id=tenant_id, record_type=record_type, subject=subject, created_at=_now(), doc=canonical_json(doc)))
+            conn.execute(
+                insert(s.experiments).values(
+                    record_id=rid,
+                    tenant_id=tenant_id,
+                    record_type=record_type,
+                    subject=subject,
+                    created_at=_now(),
+                    doc=canonical_json(doc),
+                )
+            )
         return rid
 
-    def experiments(self, tenant_id: str, record_type: str, subject: str | None = None) -> list[dict[str, Any]]:
-        q = select(s.experiments.c.doc).where(s.experiments.c.tenant_id == tenant_id, s.experiments.c.record_type == record_type)
+    def experiments(
+        self, tenant_id: str, record_type: str, subject: str | None = None
+    ) -> list[dict[str, Any]]:
+        q = select(s.experiments.c.doc).where(
+            s.experiments.c.tenant_id == tenant_id, s.experiments.c.record_type == record_type
+        )
         if subject is not None:
             q = q.where(s.experiments.c.subject == subject)
         with self.engine.connect() as conn:
@@ -657,17 +1060,25 @@ class Store:
 
     def experiment(self, record_id: str) -> dict[str, Any] | None:
         with self.engine.connect() as conn:
-            r = conn.execute(select(s.experiments.c.doc).where(s.experiments.c.record_id == record_id)).first()
+            r = conn.execute(
+                select(s.experiments.c.doc).where(s.experiments.c.record_id == record_id)
+            ).first()
         return json.loads(r[0]) if r else None
 
     # ── guarded mutation entry points (always refuse) ──────────────────────
     def update_observation(self, *_: Any, **__: Any) -> None:
-        raise ImmutableEvidenceError("raw observations are immutable; create a new interpretation instead")
+        raise ImmutableEvidenceError(
+            "raw observations are immutable; create a new interpretation instead"
+        )
 
     def delete_observation(self, *_: Any, **__: Any) -> None:
-        raise ImmutableEvidenceError("raw observations cannot be deleted individually; use retention purge of sealed segments")
+        raise ImmutableEvidenceError(
+            "raw observations cannot be deleted individually; use retention purge of sealed segments"
+        )
 
-    def iter_all_observations(self, tenant_id: str = "default", batch: int = 5000) -> Iterator[RawObservation]:
+    def iter_all_observations(
+        self, tenant_id: str = "default", batch: int = 5000
+    ) -> Iterator[RawObservation]:
         after = None
         while True:
             chunk = self.observations(tenant_id, after=after, limit=batch)

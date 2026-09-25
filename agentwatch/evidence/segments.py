@@ -19,7 +19,9 @@ GENESIS = "0" * 64
 
 
 def leaf_hash(obs: RawObservation) -> str:
-    return sha256_hex(f"leaf|{obs.obs_id}|{obs.payload_sha256}|{obs.idempotency_key}|{obs.tenant_id}")
+    return sha256_hex(
+        f"leaf|{obs.obs_id}|{obs.payload_sha256}|{obs.idempotency_key}|{obs.tenant_id}"
+    )
 
 
 def merkle_root(leaves: Sequence[str]) -> str:
@@ -51,7 +53,11 @@ def merkle_proof(leaves: Sequence[str], index: int) -> list[tuple[str, str]]:
 def verify_proof(leaf: str, proof: Sequence[tuple[str, str]], root: str) -> bool:
     acc = leaf
     for sibling, side in proof:
-        acc = sha256_hex(f"node|{sibling}|{acc}") if side == "L" else sha256_hex(f"node|{acc}|{sibling}")
+        acc = (
+            sha256_hex(f"node|{sibling}|{acc}")
+            if side == "L"
+            else sha256_hex(f"node|{acc}|{sibling}")
+        )
     return acc == root
 
 

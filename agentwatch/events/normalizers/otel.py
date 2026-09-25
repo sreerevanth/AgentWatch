@@ -55,7 +55,9 @@ class OTelNormalizer(Normalizer):
     source_kinds = frozenset({"otel.span"})
     maturity = "EXPERIMENTAL"
 
-    def normalize(self, observations: Sequence[RawObservation], ctx: NormalizeContext) -> NormalizeResult:
+    def normalize(
+        self, observations: Sequence[RawObservation], ctx: NormalizeContext
+    ) -> NormalizeResult:
         result = NormalizeResult()
         for obs in source_order(observations):
             result.events.append(self._span(obs, ctx))
@@ -98,16 +100,30 @@ class OTelNormalizer(Normalizer):
             dbop = str(a.get("db.operation") or a.get("db.operation.name") or "").lower()
             b.kind = EventKind.RETRIEVAL if dbop in READ_DB_OPS else EventKind.STATE_MUTATION
             b.operation = f"{system}:{dbop or name}"
-            b.object = EntityRef("db", f"{system}/{a.get('db.name') or a.get('db.namespace') or 'default'}")
-            b.effects.append(Effect(EffectKind.READ if b.kind == EventKind.RETRIEVAL else EffectKind.WRITE, b.object.canonical))
+            b.object = EntityRef(
+                "db", f"{system}/{a.get('db.name') or a.get('db.namespace') or 'default'}"
+            )
+            b.effects.append(
+                Effect(
+                    EffectKind.READ if b.kind == EventKind.RETRIEVAL else EffectKind.WRITE,
+                    b.object.canonical,
+                )
+            )
             if a.get("db.statement") or a.get("db.query.text"):
                 b.input(a.get("db.statement") or a.get("db.query.text"), role="query")
         elif a.get("messaging.system"):
             b.kind = EventKind.MESSAGE
-            dest = a.get("messaging.destination.name") or a.get("messaging.destination") or "unknown"
+            dest = (
+                a.get("messaging.destination.name") or a.get("messaging.destination") or "unknown"
+            )
             b.operation = f"{a.get('messaging.operation') or 'message'}:{dest}"
             b.object = EntityRef("queue", f"{a['messaging.system']}/{dest}")
-        elif a.get("http.method") or a.get("http.request.method") or a.get("url.full") or a.get("http.url"):
+        elif (
+            a.get("http.method")
+            or a.get("http.request.method")
+            or a.get("url.full")
+            or a.get("http.url")
+        ):
             kind = str(sp.get("kind", "")).upper()
             if "SERVER" in kind or kind == "2":
                 b.kind = EventKind.OPERATION
@@ -116,7 +132,11 @@ class OTelNormalizer(Normalizer):
             else:
                 b.kind = EventKind.EXTERNAL_IO
                 url = str(a.get("url.full") or a.get("http.url") or "")
-                host = a.get("server.address") or a.get("net.peer.name") or (url.split("/")[2] if "://" in url else "unknown")
+                host = (
+                    a.get("server.address")
+                    or a.get("net.peer.name")
+                    or (url.split("/")[2] if "://" in url else "unknown")
+                )
                 b.operation = f"{a.get('http.request.method') or a.get('http.method')} {host}"
                 b.object = EntityRef("http", str(host))
         else:
@@ -139,17 +159,28 @@ class OTelNormalizer(Normalizer):
         for ev in sp.get("events") or []:
             ea = ev.get("attributes") or {}
             en = str(ev.get("name") or "")
-            body = ea.get("gen_ai.prompt") or ea.get("gen_ai.completion") or ea.get("content") or ea.get("body")
+            body = (
+                ea.get("gen_ai.prompt")
+                or ea.get("gen_ai.completion")
+                or ea.get("content")
+                or ea.get("body")
+            )
             if body is None:
                 continue
-            if en in ("gen_ai.content.prompt", "gen_ai.user.message", "gen_ai.system.message", "gen_ai.tool.message"):
+            if en in (
+                "gen_ai.content.prompt",
+                "gen_ai.user.message",
+                "gen_ai.system.message",
+                "gen_ai.tool.message",
+            ):
                 b.input(body, role="prompt")
             elif en in ("gen_ai.content.completion", "gen_ai.choice", "gen_ai.assistant.message"):
                 b.output(body, role="completion")
 
         usage = {
             "tokens_in": a.get("gen_ai.usage.input_tokens") or a.get("gen_ai.usage.prompt_tokens"),
-            "tokens_out": a.get("gen_ai.usage.output_tokens") or a.get("gen_ai.usage.completion_tokens"),
+            "tokens_out": a.get("gen_ai.usage.output_tokens")
+            or a.get("gen_ai.usage.completion_tokens"),
         }
         start, end = _ns(sp.get("start_time_unix_nano")), _ns(sp.get("end_time_unix_nano"))
         b.resources = {k: v for k, v in usage.items() if v is not None}
@@ -168,7 +199,14 @@ class OTelNormalizer(Normalizer):
             if ev.get("name") == "exception":
                 ea = ev.get("attributes") or {}
                 b.error = {"type": ea.get("exception.type"), "message": ea.get("exception.message")}
-        b.attributes.update({"otel.name": name, "otel.kind": sp.get("kind"), "otel.attributes": a, "otel.scope": sp.get("scope")})
+        b.attributes.update(
+            {
+                "otel.name": name,
+                "otel.kind": sp.get("kind"),
+                "otel.attributes": a,
+                "otel.scope": sp.get("scope"),
+            }
+        )
         if service:
             b.attributes["service.name"] = service
         if res.get("service.version"):
@@ -178,13 +216,26 @@ class OTelNormalizer(Normalizer):
             b.parents.append(DeclaredLink("parent", "otel.span", f"{trace}/{sp['parent_span_id']}"))
         for lk in sp.get("links") or []:
             if lk.get("span_id"):
-                b.parents.append(DeclaredLink("depends_on", "otel.span", f"{lk.get('trace_id') or trace}/{lk['span_id']}"))
+                b.parents.append(
+                    DeclaredLink(
+                        "depends_on", "otel.span", f"{lk.get('trace_id') or trace}/{lk['span_id']}"
+                    )
+                )
         if trace:
             b.run_key = ("otel.trace", trace)
-        b.time = TemporalInfo(start=start, end=end, basis="source" if start else "missing", ordering_key=f"{trace}:{sp.get('span_id')}")
+        b.time = TemporalInfo(
+            start=start,
+            end=end,
+            basis="source" if start else "missing",
+            ordering_key=f"{trace}:{sp.get('span_id')}",
+        )
         ev_out = b.build()
         if not sp.get("parent_span_id"):
             from dataclasses import replace
 
-            ev_out = replace(ev_out, missing=tuple(m for m in ev_out.missing if m != "parent"), facets=tuple(sorted({*ev_out.facets, "trace_root"})))
+            ev_out = replace(
+                ev_out,
+                missing=tuple(m for m in ev_out.missing if m != "parent"),
+                facets=tuple(sorted({*ev_out.facets, "trace_root"})),
+            )
         return ev_out

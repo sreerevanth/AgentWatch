@@ -21,7 +21,13 @@ class MCPTap(Sensor):
     sensor_type = "mcp"
     version = "1"
 
-    def __init__(self, sink: ObservationSink, server: str, session_id: str | None = None, tenant_id: str = "default") -> None:
+    def __init__(
+        self,
+        sink: ObservationSink,
+        server: str,
+        session_id: str | None = None,
+        tenant_id: str = "default",
+    ) -> None:
         super().__init__(sink, tenant_id)
         self.server = server
         self.session_id = session_id or self.ctx.ref.instance_id

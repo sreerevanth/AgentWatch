@@ -20,7 +20,14 @@ REF = SensorRef("test", "1", "test-1")
 
 
 def draft(i: int, payload=None, **kw) -> ObservationDraft:
-    return ObservationDraft(sensor=REF, source_kind="test.kind", payload=payload if payload is not None else {"i": i}, source_seq=i, observed_at=datetime.now(UTC), **kw)
+    return ObservationDraft(
+        sensor=REF,
+        source_kind="test.kind",
+        payload=payload if payload is not None else {"i": i},
+        source_seq=i,
+        observed_at=datetime.now(UTC),
+        **kw,
+    )
 
 
 def test_append_is_idempotent(store):
@@ -77,7 +84,10 @@ def test_seal_and_verify_detects_tampering(store):
     # simulate out-of-band tampering by bypassing the trigger
     with store.engine.begin() as conn:
         conn.execute(text("DROP TRIGGER aw3_obs_no_update"))
-        conn.execute(text("UPDATE aw3_observations SET payload_json = :p WHERE source_seq = 3"), {"p": '{"i":999}'})
+        conn.execute(
+            text("UPDATE aw3_observations SET payload_json = :p WHERE source_seq = 3"),
+            {"p": '{"i":999}'},
+        )
     bad = store.verify()
     assert not bad.ok
     assert any("payload hash mismatch" in e for e in bad.errors)
@@ -121,7 +131,10 @@ def test_purge_requires_authorization_and_keeps_chain(store):
 
 
 def test_redaction_never_mutates_input():
-    payload = {"headers": {"Authorization": "Bearer abcdefghijklmnopqrstuvwxyz123456"}, "text": "key sk-ant-abcdefghijklmnopqrstuvwxyz0123"}
+    payload = {
+        "headers": {"Authorization": "Bearer abcdefghijklmnopqrstuvwxyz123456"},
+        "text": "key sk-ant-abcdefghijklmnopqrstuvwxyz0123",
+    }
     original = copy.deepcopy(payload)
     red, manifest = redact_payload(payload)
     assert payload == original
@@ -153,6 +166,8 @@ def test_large_payload_goes_to_blob_store(store):
 
 def test_rejects_invalid_drafts(store):
     bad = ObservationDraft(sensor=REF, source_kind="", payload={})
-    naive = ObservationDraft(sensor=REF, source_kind="k", payload={}, observed_at=datetime(2024, 1, 1))
+    naive = ObservationDraft(
+        sensor=REF, source_kind="k", payload={}, observed_at=datetime(2024, 1, 1)
+    )
     res = store.append([bad, naive])
     assert len(res.rejected) == 2 and not res.accepted

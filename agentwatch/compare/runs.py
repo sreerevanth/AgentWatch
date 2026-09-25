@@ -27,7 +27,14 @@ def signature(e: dict[str, Any]) -> str:
 
 
 def _ordered(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    return sorted(events, key=lambda e: (e["time"]["start"] or "~", e["time"].get("ordering_key") or "", e["event_id"]))
+    return sorted(
+        events,
+        key=lambda e: (
+            e["time"]["start"] or "~",
+            e["time"].get("ordering_key") or "",
+            e["event_id"],
+        ),
+    )
 
 
 def _latency(e: dict[str, Any]) -> float:
@@ -40,8 +47,12 @@ def summarize(ws: Workspace, run_ref: str) -> dict[str, Any]:
     g = ws.graph(run["run_id"])
     stats = g.stats({f"event:{e['event_id']}" for e in events})
     actors = Counter(e["actor"] for e in events if e.get("actor"))
-    tools = Counter(e["object"] for e in events if e["kind"] == "TOOL_INVOCATION" and e.get("object"))
-    models = Counter(e["object"] for e in events if e["kind"] == "MODEL_INVOCATION" and e.get("object"))
+    tools = Counter(
+        e["object"] for e in events if e["kind"] == "TOOL_INVOCATION" and e.get("object")
+    )
+    models = Counter(
+        e["object"] for e in events if e["kind"] == "MODEL_INVOCATION" and e.get("object")
+    )
     failures = [e for e in events if e["status"] in ("ERROR", "TIMEOUT")]
     retries = sum(1 for r in g.relations.values() if r["type"] == "RETRIES")
     missing = Counter(m for e in events for m in e["missing"])
@@ -53,19 +64,30 @@ def summarize(ws: Workspace, run_ref: str) -> dict[str, Any]:
         "actors": dict(actors),
         "tools": dict(tools),
         "models": dict(models),
-        "failures": [{"event_id": e["event_id"], "label": f"{e['kind']} {e['operation']}", "error": e.get("error")} for e in failures],
+        "failures": [
+            {
+                "event_id": e["event_id"],
+                "label": f"{e['kind']} {e['operation']}",
+                "error": e.get("error"),
+            }
+            for e in failures
+        ],
         "retries": retries,
         "missing_facts": dict(missing),
         "information": {
             "artifacts": len({a["artifact_id"] for e in events for a in e["outputs"]}),
-            "content_derivations": sum(1 for r in g.relations.values() if r["type"] == "DERIVES_FROM"),
+            "content_derivations": sum(
+                1 for r in g.relations.values() if r["type"] == "DERIVES_FROM"
+            ),
             "memory_transfers": sum(1 for r in g.relations.values() if r["type"] == "TRANSFERS"),
         },
         "motifs": Counter(m["motif_id"] for m in motifs),
     }
 
 
-def tree(ws: Workspace, run_id: str, events: list[dict[str, Any]] | None = None) -> list[tuple[int, dict[str, Any]]]:
+def tree(
+    ws: Workspace, run_id: str, events: list[dict[str, Any]] | None = None
+) -> list[tuple[int, dict[str, Any]]]:
     """Depth-first CONTAINS tree (multi-parent events appear under each declared parent)."""
     events = events if events is not None else _ordered(ws.events(run_id))
     g = ws.graph(run_id, views=["EXECUTION"])
@@ -120,16 +142,34 @@ def compare(ws: Workspace, ref_a: str, ref_b: str) -> dict[str, Any]:
     candidates = []
     if first_struct:
         i, j, tag = first_struct
-        candidates.append((j, {
-            "type": "structural",
-            "operation": tag,
-            "a_event": _brief(ea[i]) if i < len(ea) else None,
-            "b_event": _brief(eb[j]) if j < len(eb) else None,
-            "reasons": [f"{tag}: run A has {_brief(ea[i])['label'] if i < len(ea) else 'nothing'} where run B has {_brief(eb[j])['label'] if j < len(eb) else 'nothing'}"],
-        }))
+        candidates.append(
+            (
+                j,
+                {
+                    "type": "structural",
+                    "operation": tag,
+                    "a_event": _brief(ea[i]) if i < len(ea) else None,
+                    "b_event": _brief(eb[j]) if j < len(eb) else None,
+                    "reasons": [
+                        f"{tag}: run A has {_brief(ea[i])['label'] if i < len(ea) else 'nothing'} where run B has {_brief(eb[j])['label'] if j < len(eb) else 'nothing'}"
+                    ],
+                },
+            )
+        )
     if first_content:
         i, j, reasons = first_content
-        candidates.append((j, {"type": "content", "operation": "equal-signature", "a_event": _brief(ea[i]), "b_event": _brief(eb[j]), "reasons": reasons}))
+        candidates.append(
+            (
+                j,
+                {
+                    "type": "content",
+                    "operation": "equal-signature",
+                    "a_event": _brief(ea[i]),
+                    "b_event": _brief(eb[j]),
+                    "reasons": reasons,
+                },
+            )
+        )
     if candidates:
         divergence = min(candidates, key=lambda c: c[0])[1]
         divergence["cone"] = _cone_share(ws, b["run"]["run_id"], divergence.get("b_event"), eb, ea)
@@ -145,8 +185,18 @@ def compare(ws: Workspace, ref_a: str, ref_b: str) -> dict[str, Any]:
         "graph_b": b["graph"],
     }
     resources = _resources(a, b)
-    information = {k: {"a": a["information"][k], "b": b["information"][k], "delta": b["information"][k] - a["information"][k]} for k in a["information"]}
-    motifs = {m: {"a": a["motifs"].get(m, 0), "b": b["motifs"].get(m, 0)} for m in sorted(set(a["motifs"]) | set(b["motifs"]))}
+    information = {
+        k: {
+            "a": a["information"][k],
+            "b": b["information"][k],
+            "delta": b["information"][k] - a["information"][k],
+        }
+        for k in a["information"]
+    }
+    motifs = {
+        m: {"a": a["motifs"].get(m, 0), "b": b["motifs"].get(m, 0)}
+        for m in sorted(set(a["motifs"]) | set(b["motifs"]))
+    }
     return {
         "run_a": _run_brief(a),
         "run_b": _run_brief(b),
@@ -156,18 +206,42 @@ def compare(ws: Workspace, ref_a: str, ref_b: str) -> dict[str, Any]:
         "resources": resources,
         "information": information,
         "motifs": motifs,
-        "fingerprint": {"a": a["run"]["fingerprint"], "b": b["run"]["fingerprint"], "same_system_version": a["run"]["system_version"] == b["run"]["system_version"]},
+        "fingerprint": {
+            "a": a["run"]["fingerprint"],
+            "b": b["run"]["fingerprint"],
+            "same_system_version": a["run"]["system_version"] == b["run"]["system_version"],
+        },
         "method": "signature alignment (difflib) over time-ordered events; cone share uses EXECUTION+INFORMATION descendants",
     }
 
 
 def _brief(e: dict[str, Any]) -> dict[str, Any]:
-    return {"event_id": e["event_id"], "label": f"{e['kind']} {e['operation']}", "actor": e.get("actor"), "status": e["status"], "start": e["time"]["start"]}
+    return {
+        "event_id": e["event_id"],
+        "label": f"{e['kind']} {e['operation']}",
+        "actor": e.get("actor"),
+        "status": e["status"],
+        "start": e["time"]["start"],
+    }
 
 
 def _run_brief(s: dict[str, Any]) -> dict[str, Any]:
     r = s["run"]
-    return {k: r.get(k) for k in ("run_id", "name", "status", "started_at", "duration_ms", "event_count", "tokens_in", "tokens_out", "cost_usd", "system_version")}
+    return {
+        k: r.get(k)
+        for k in (
+            "run_id",
+            "name",
+            "status",
+            "started_at",
+            "duration_ms",
+            "event_count",
+            "tokens_in",
+            "tokens_out",
+            "cost_usd",
+            "system_version",
+        )
+    }
 
 
 def _counter_diff(x: Counter[str], y: Counter[str]) -> list[dict[str, Any]]:
@@ -208,22 +282,58 @@ def _resources(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
         }
 
     ra, rb = agg(a), agg(b)
-    return {k: {"a": ra[k], "b": rb[k], "delta": rb[k] - ra[k], "ratio": (rb[k] / ra[k]) if ra[k] else None} for k in ra}
+    return {
+        k: {
+            "a": ra[k],
+            "b": rb[k],
+            "delta": rb[k] - ra[k],
+            "ratio": (rb[k] / ra[k]) if ra[k] else None,
+        }
+        for k in ra
+    }
 
 
-def _cone_share(ws: Workspace, run_b: str, b_event: dict[str, Any] | None, eb: list[dict[str, Any]], ea: list[dict[str, Any]]) -> dict[str, Any] | None:
+def _cone_share(
+    ws: Workspace,
+    run_b: str,
+    b_event: dict[str, Any] | None,
+    eb: list[dict[str, Any]],
+    ea: list[dict[str, Any]],
+) -> dict[str, Any] | None:
     if not b_event:
         return None
     g: Graph = ws.graph(run_b, views=["EXECUTION", "INFORMATION"])
     start = f"event:{b_event['event_id']}"
-    desc = {s.node for s in g.descendants(start, types=["CONTAINS", "DEPENDS_ON", "RESPONDS_TO", "RETRIES", "PRODUCES", "CONSUMES", "DERIVES_FROM", "CONTAINS_ITEM", "TRANSFERS"])}
+    desc = {
+        s.node
+        for s in g.descendants(
+            start,
+            types=[
+                "CONTAINS",
+                "DEPENDS_ON",
+                "RESPONDS_TO",
+                "RETRIES",
+                "PRODUCES",
+                "CONSUMES",
+                "DERIVES_FROM",
+                "CONTAINS_ITEM",
+                "TRANSFERS",
+            ],
+        )
+    }
     desc.add(start)
     in_cone = [e for e in eb if f"event:{e['event_id']}" in desc]
     leaf = lambda e: e["kind"] not in ("OPERATION", "LIFECYCLE")  # noqa: E731
     lat_b = sum(_latency(e) for e in eb if leaf(e))
     lat_cone = sum(_latency(e) for e in in_cone if leaf(e))
-    tok_b = sum(float(e["resources"].get("tokens_in") or 0) + float(e["resources"].get("tokens_out") or 0) for e in eb)
-    tok_cone = sum(float(e["resources"].get("tokens_in") or 0) + float(e["resources"].get("tokens_out") or 0) for e in in_cone)
+    tok_b = sum(
+        float(e["resources"].get("tokens_in") or 0) + float(e["resources"].get("tokens_out") or 0)
+        for e in eb
+    )
+    tok_cone = sum(
+        float(e["resources"].get("tokens_in") or 0) + float(e["resources"].get("tokens_out") or 0)
+        for e in in_cone
+    )
     return {
         "events_in_cone": len(in_cone),
         "events_total": len(eb),

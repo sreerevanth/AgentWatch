@@ -17,17 +17,50 @@ from agentwatch.evidence.model import ClockInfo, ObservationDraft, SensorRef, pa
 TRANSLATOR_VERSION = "1"
 
 # v0.2 event types that carry AgentWatch v0.2 *conclusions*, not observations.
-INTERPRETATION_TYPES = frozenset({
-    "safety.check", "safety.block", "safety.approve", "safety.escalate",
-    "confidence.score", "anomaly.detected", "goal.drift", "memory.contradiction",
-    "reasoning.style_fingerprint", "reasoning.style_swap",
-})
-KNOWN_TYPES = frozenset({
-    "session.start", "session.end", "agent.start", "agent.end", "agent.error",
-    "planner.input", "planner.output", "goal.set", "tool.call", "tool.result", "tool.error", "tool.retry",
-    "memory.read", "memory.write", "memory.evict", "agent.message", "task.delegate", "task.complete",
-    "task.fail", "checkpoint.create", "rollback.trigger", "rollback.complete", "custom",
-}) | INTERPRETATION_TYPES
+INTERPRETATION_TYPES = frozenset(
+    {
+        "safety.check",
+        "safety.block",
+        "safety.approve",
+        "safety.escalate",
+        "confidence.score",
+        "anomaly.detected",
+        "goal.drift",
+        "memory.contradiction",
+        "reasoning.style_fingerprint",
+        "reasoning.style_swap",
+    }
+)
+KNOWN_TYPES = (
+    frozenset(
+        {
+            "session.start",
+            "session.end",
+            "agent.start",
+            "agent.end",
+            "agent.error",
+            "planner.input",
+            "planner.output",
+            "goal.set",
+            "tool.call",
+            "tool.result",
+            "tool.error",
+            "tool.retry",
+            "memory.read",
+            "memory.write",
+            "memory.evict",
+            "agent.message",
+            "task.delegate",
+            "task.complete",
+            "task.fail",
+            "checkpoint.create",
+            "rollback.trigger",
+            "rollback.complete",
+            "custom",
+        }
+    )
+    | INTERPRETATION_TYPES
+)
 
 
 class TranslationStatus(StrEnum):
@@ -64,9 +97,13 @@ class LegacyTranslator:
 
     def translate(self, event: Any, *, tenant_id: str | None = None) -> TranslationResult:
         try:
-            data: dict[str, Any] = event.model_dump(mode="json") if hasattr(event, "model_dump") else dict(event)
+            data: dict[str, Any] = (
+                event.model_dump(mode="json") if hasattr(event, "model_dump") else dict(event)
+            )
         except Exception as exc:  # noqa: BLE001 - any failure to read the input is a rejection
-            return TranslationResult(TranslationStatus.REJECTED, errors=[f"unreadable legacy event: {exc}"])
+            return TranslationResult(
+                TranslationStatus.REJECTED, errors=[f"unreadable legacy event: {exc}"]
+            )
 
         errors = []
         etype = data.get("event_type")
@@ -91,7 +128,9 @@ class LegacyTranslator:
             "task_id": data.get("task_id"),
             "trace_id": data.get("trace_id"),
         }
-        tool_id = (data.get("tool_call") or {}).get("tool_id") or (data.get("tool_result") or {}).get("tool_id")
+        tool_id = (data.get("tool_call") or {}).get("tool_id") or (
+            data.get("tool_result") or {}
+        ).get("tool_id")
         if tool_id:
             ids["tool_id"] = tool_id
         if not data.get("parent_event_id"):
@@ -100,17 +139,27 @@ class LegacyTranslator:
             lost.append("call_result_pairing")
         if etype in ("planner.input", "planner.output"):
             lost.append("call_result_pairing")
-        if data.get("duration_ms") is None and etype not in ("session.start", "session.end", "agent.message"):
+        if data.get("duration_ms") is None and etype not in (
+            "session.start",
+            "session.end",
+            "agent.message",
+        ):
             lost.append("duration")
         lost.append("timestamp_provenance")  # v0.2 timestamps default to event construction time
         if not data.get("session_id"):
             lost.append("run")
         if etype in INTERPRETATION_TYPES:
-            warnings.append(f"{etype} is a v0.2 interpretation, not an observation; it is kept as evidence of what v0.2 concluded")
+            warnings.append(
+                f"{etype} is a v0.2 interpretation, not an observation; it is kept as evidence of what v0.2 concluded"
+            )
         if data.get("safety") and etype not in INTERPRETATION_TYPES:
-            warnings.append("embedded v0.2 safety verdict retained in payload but not treated as an observation")
+            warnings.append(
+                "embedded v0.2 safety verdict retained in payload but not treated as an observation"
+            )
         if data.get("confidence") and etype != "confidence.score":
-            warnings.append("embedded v0.2 confidence score retained in payload but not treated as an observation")
+            warnings.append(
+                "embedded v0.2 confidence score retained in payload but not treated as an observation"
+            )
 
         observed = data.get("timestamp")
         draft = ObservationDraft(
@@ -124,4 +173,6 @@ class LegacyTranslator:
             tenant_id=tenant_id or self.tenant_id,
         )
         status = TranslationStatus.ACCEPTED_WITH_LOSS if lost else TranslationStatus.ACCEPTED
-        return TranslationResult(status, draft=draft, lost_fields=sorted(set(lost)), warnings=warnings)
+        return TranslationResult(
+            status, draft=draft, lost_fields=sorted(set(lost)), warnings=warnings
+        )

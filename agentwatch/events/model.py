@@ -148,7 +148,12 @@ class Diagnostic:
     message: str
 
     def to_dict(self) -> dict[str, Any]:
-        return {"obs_id": self.obs_id, "level": self.level, "code": self.code, "message": self.message}
+        return {
+            "obs_id": self.obs_id,
+            "level": self.level,
+            "code": self.code,
+            "message": self.message,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -207,9 +212,18 @@ class ComputationalEvent:
             "actor": self.actor.canonical if self.actor else None,
             "object": self.object.canonical if self.object else None,
             "facets": list(self.facets),
-            "inputs": [{"artifact_id": a.artifact_id, "role": a.role, "label": a.label} for a in self.inputs],
-            "outputs": [{"artifact_id": a.artifact_id, "role": a.role, "label": a.label} for a in self.outputs],
-            "effects": [{"kind": e.kind.value, "target": e.target, "target_type": e.target_type} for e in self.effects],
+            "inputs": [
+                {"artifact_id": a.artifact_id, "role": a.role, "label": a.label}
+                for a in self.inputs
+            ],
+            "outputs": [
+                {"artifact_id": a.artifact_id, "role": a.role, "label": a.label}
+                for a in self.outputs
+            ],
+            "effects": [
+                {"kind": e.kind.value, "target": e.target, "target_type": e.target_type}
+                for e in self.effects
+            ],
             "time": {
                 "start": self.time.start.isoformat() if self.time.start else None,
                 "end": self.time.end.isoformat() if self.time.end else None,
@@ -219,7 +233,10 @@ class ComputationalEvent:
                 "ordering_key": self.time.ordering_key,
             },
             "source_ids": [list(s) for s in self.source_ids],
-            "parents": [{"relation": p.relation, "key_space": p.key_space, "value": p.value} for p in self.parents],
+            "parents": [
+                {"relation": p.relation, "key_space": p.key_space, "value": p.value}
+                for p in self.parents
+            ],
             "run_key": list(self.run_key) if self.run_key else None,
             "error": self.error,
             "resources": self.resources,
@@ -232,7 +249,9 @@ class ComputationalEvent:
         }
 
 
-def make_event_id(normalizer: str, obs_ids: list[str] | tuple[str, ...], local_index: int = 0) -> str:
+def make_event_id(
+    normalizer: str, obs_ids: list[str] | tuple[str, ...], local_index: int = 0
+) -> str:
     """Deterministic event id, stable across normalizer *versions* for the same derivation."""
     basis = f"{normalizer}|{','.join(sorted(obs_ids))}|{local_index}"
     return str(uuid.uuid5(EVENT_NAMESPACE, basis))

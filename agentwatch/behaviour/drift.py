@@ -41,7 +41,9 @@ def distances(a: list[dict[str, Any]], b: list[dict[str, Any]]) -> dict[str, Any
     l1 = 0.0
     for f in feats:
         pooled = va[f] + vb[f]
-        scale = pstdev(pooled) if len(pooled) > 1 and pstdev(pooled) > 0 else (abs(mean(pooled)) or 1.0)
+        scale = (
+            pstdev(pooled) if len(pooled) > 1 and pstdev(pooled) > 0 else (abs(mean(pooled)) or 1.0)
+        )
         l1 += abs(mean(va[f]) - mean(vb[f])) / scale
     kinds_a: dict[str, float] = {}
     kinds_b: dict[str, float] = {}
@@ -114,7 +116,9 @@ def benjamini_hochberg(pvals: dict[str, float]) -> dict[str, float]:
     return q
 
 
-def drift(baseline: list[dict[str, Any]], candidate: list[dict[str, Any]], *, alpha: float = 0.05) -> dict[str, Any]:
+def drift(
+    baseline: list[dict[str, Any]], candidate: list[dict[str, Any]], *, alpha: float = 0.05
+) -> dict[str, Any]:
     result: dict[str, Any] = {
         "n_baseline": len(baseline),
         "n_candidate": len(candidate),
@@ -125,7 +129,9 @@ def drift(baseline: list[dict[str, Any]], candidate: list[dict[str, Any]], *, al
     }
     if len(baseline) < MIN_RUNS or len(candidate) < MIN_RUNS:
         result["status"] = "insufficient_data"
-        result["message"] = f"drift testing needs ≥{MIN_RUNS} runs per side; descriptive deltas only"
+        result["message"] = (
+            f"drift testing needs ≥{MIN_RUNS} runs per side; descriptive deltas only"
+        )
         result["features"] = _deltas(baseline, candidate, None)
         return result
     pvals = {}
@@ -137,23 +143,31 @@ def drift(baseline: list[dict[str, Any]], candidate: list[dict[str, Any]], *, al
     feats = _deltas(baseline, candidate, (pvals, q))
     result["status"] = "tested"
     result["features"] = feats
-    result["drifted_features"] = [f["feature"] for f in feats if f["q_value"] is not None and f["q_value"] < alpha]
+    result["drifted_features"] = [
+        f["feature"] for f in feats if f["q_value"] is not None and f["q_value"] < alpha
+    ]
     result["behaviour_changed"] = bool(result["drifted_features"])
     return result
 
 
-def _deltas(a: list[dict[str, Any]], b: list[dict[str, Any]], tests: tuple[dict[str, float], dict[str, float]] | None) -> list[dict[str, Any]]:
+def _deltas(
+    a: list[dict[str, Any]],
+    b: list[dict[str, Any]],
+    tests: tuple[dict[str, float], dict[str, float]] | None,
+) -> list[dict[str, Any]]:
     out = []
     for f in FEATURES:
         x = [float(p["features"][f]) for p in a] or [0.0]
         y = [float(p["features"][f]) for p in b] or [0.0]
         ma, mb = mean(x), mean(y)
-        out.append({
-            "feature": f,
-            "baseline_mean": round(ma, 6),
-            "candidate_mean": round(mb, 6),
-            "relative_change": round((mb - ma) / abs(ma), 4) if ma else None,
-            "p_value": round(tests[0][f], 6) if tests else None,
-            "q_value": tests[1][f] if tests else None,
-        })
+        out.append(
+            {
+                "feature": f,
+                "baseline_mean": round(ma, 6),
+                "candidate_mean": round(mb, 6),
+                "relative_change": round((mb - ma) / abs(ma), 4) if ma else None,
+                "p_value": round(tests[0][f], 6) if tests else None,
+                "q_value": tests[1][f] if tests else None,
+            }
+        )
     return out

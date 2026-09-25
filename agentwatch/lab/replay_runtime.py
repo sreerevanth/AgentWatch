@@ -93,7 +93,9 @@ class ReplayController:
             span.set(replay="live_capture_miss")
             return False, None
         span.set(replay="divergence")
-        raise ReplayDivergenceError(f"no captured result for {key}; the replayed program diverged from the original run")
+        raise ReplayDivergenceError(
+            f"no captured result for {key}; the replayed program diverged from the original run"
+        )
 
     def report(self) -> dict[str, Any]:
         return {

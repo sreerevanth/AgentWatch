@@ -55,12 +55,18 @@ class LangChainNormalizer(Normalizer):
     name = "langchain"
     version = "1"
     source_kinds = frozenset(
-        {f"langchain.{f}_{p}" for f in ("llm", "chain", "tool", "retriever") for p in ("start", "end", "error")}
+        {
+            f"langchain.{f}_{p}"
+            for f in ("llm", "chain", "tool", "retriever")
+            for p in ("start", "end", "error")
+        }
         | {"langchain.chat_model_start", "langchain.agent_action", "langchain.agent_finish"}
     )
     maturity = "EXPERIMENTAL"
 
-    def normalize(self, observations: Sequence[RawObservation], ctx: NormalizeContext) -> NormalizeResult:
+    def normalize(
+        self, observations: Sequence[RawObservation], ctx: NormalizeContext
+    ) -> NormalizeResult:
         result = NormalizeResult()
         groups: dict[str, dict[str, RawObservation]] = {}
         points: list[RawObservation] = []
@@ -68,7 +74,9 @@ class LangChainNormalizer(Normalizer):
             cb = obs.source_kind.removeprefix("langchain.")
             rid = obs.declared("run_id")
             if not rid:
-                result.diagnostics.append(Diagnostic(obs.obs_id, "error", "missing_run_id", f"{cb} without run_id"))
+                result.diagnostics.append(
+                    Diagnostic(obs.obs_id, "error", "missing_run_id", f"{cb} without run_id")
+                )
                 continue
             if cb in ("agent_action", "agent_finish"):
                 points.append(obs)
@@ -81,7 +89,9 @@ class LangChainNormalizer(Normalizer):
             result.events.append(self._point(obs, ctx, i))
         return result
 
-    def _pair(self, rid: str, g: dict[str, RawObservation], ctx: NormalizeContext, result: NormalizeResult) -> Any:
+    def _pair(
+        self, rid: str, g: dict[str, RawObservation], ctx: NormalizeContext, result: NormalizeResult
+    ) -> Any:
         start = g.get("start")
         end = g.get("end") or g.get("error")
         obs = [o for o in (start, end) if o]
@@ -97,17 +107,33 @@ class LangChainNormalizer(Normalizer):
         if b.kind == EventKind.MODEL_INVOCATION:
             b.object = EntityRef("model", name)
             if "prompts" in sp:
-                b.input(sp["prompts"] if len(sp["prompts"]) != 1 else sp["prompts"][0], role="prompt")
+                b.input(
+                    sp["prompts"] if len(sp["prompts"]) != 1 else sp["prompts"][0], role="prompt"
+                )
             if "messages" in sp:
                 b.input(sp["messages"], role="prompt")
             gens = ep.get("generations")
             if gens:
                 b.output(gens[0] if len(gens) == 1 else gens, role="completion")
-            usage = ((ep.get("llm_output") or {}).get("token_usage") or (ep.get("llm_output") or {}).get("usage") or {})
-            b.resources = {k: v for k, v in {"tokens_in": usage.get("prompt_tokens") or usage.get("input_tokens"), "tokens_out": usage.get("completion_tokens") or usage.get("output_tokens")}.items() if v is not None}
+            usage = (
+                (ep.get("llm_output") or {}).get("token_usage")
+                or (ep.get("llm_output") or {}).get("usage")
+                or {}
+            )
+            b.resources = {
+                k: v
+                for k, v in {
+                    "tokens_in": usage.get("prompt_tokens") or usage.get("input_tokens"),
+                    "tokens_out": usage.get("completion_tokens") or usage.get("output_tokens"),
+                }.items()
+                if v is not None
+            }
         elif b.kind == EventKind.TOOL_INVOCATION:
             b.object = EntityRef("tool", name)
-            b.input(sp.get("inputs") if sp.get("inputs") is not None else sp.get("input_str"), role="arguments")
+            b.input(
+                sp.get("inputs") if sp.get("inputs") is not None else sp.get("input_str"),
+                role="arguments",
+            )
             if "output" in ep:
                 b.output(ep["output"], role="result")
             if anchor.declared("tool_call_id"):
@@ -137,14 +163,28 @@ class LangChainNormalizer(Normalizer):
             b.run_key = ("langchain.run", rid)
         if end is None:
             b.status = EventStatus.UNKNOWN
-            result.diagnostics.append(Diagnostic(anchor.obs_id, "warning", "unpaired_start", f"langchain run {rid} has no end/error callback"))
+            result.diagnostics.append(
+                Diagnostic(
+                    anchor.obs_id,
+                    "warning",
+                    "unpaired_start",
+                    f"langchain run {rid} has no end/error callback",
+                )
+            )
         elif end.source_kind.endswith("_error"):
             b.status = EventStatus.ERROR
             b.error = ep.get("error")
         else:
             b.status = EventStatus.OK
         if start is None:
-            result.diagnostics.append(Diagnostic(anchor.obs_id, "warning", "unpaired_end", f"langchain run {rid} has no start callback"))
+            result.diagnostics.append(
+                Diagnostic(
+                    anchor.obs_id,
+                    "warning",
+                    "unpaired_end",
+                    f"langchain run {rid} has no start callback",
+                )
+            )
         b.time = temporal(start, end) if start else temporal(end, None)
         ev = b.build()
         if not parent:

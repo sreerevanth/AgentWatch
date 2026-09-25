@@ -50,16 +50,21 @@ class NormalizeContext:
     artifact_key: bytes  # per-tenant HMAC key for artifact ids
     artifacts: dict[str, ArtifactContent] = field(default_factory=dict)
 
-    def artifact(self, value: Any, role: str, label: str | None = None, media_type: str | None = None) -> ArtifactRef:
+    def artifact(
+        self, value: Any, role: str, label: str | None = None, media_type: str | None = None
+    ) -> ArtifactRef:
         """Register an artifact value and return a reference to it."""
         content_json = canonical_json(value)
-        digest = hmac.new(self.artifact_key, content_json.encode("utf-8"), hashlib.sha256).hexdigest()
+        digest = hmac.new(
+            self.artifact_key, content_json.encode("utf-8"), hashlib.sha256
+        ).hexdigest()
         if digest not in self.artifacts:
             text = value if isinstance(value, str) else content_json
             self.artifacts[digest] = ArtifactContent(
                 artifact_id=digest,
                 tenant_id=self.tenant_id,
-                media_type=media_type or ("text/plain" if isinstance(value, str) else "application/json"),
+                media_type=media_type
+                or ("text/plain" if isinstance(value, str) else "application/json"),
                 content_json=content_json,
                 size_bytes=len(content_json.encode("utf-8")),
                 preview=text[:240],
@@ -88,7 +93,9 @@ class Normalizer:
     def accepts(self, obs: RawObservation) -> bool:
         return obs.source_kind in self.source_kinds
 
-    def normalize(self, observations: Sequence[RawObservation], ctx: NormalizeContext) -> NormalizeResult:
+    def normalize(
+        self, observations: Sequence[RawObservation], ctx: NormalizeContext
+    ) -> NormalizeResult:
         raise NotImplementedError  # abstract
 
 
@@ -97,7 +104,12 @@ def source_order(observations: Iterable[RawObservation]) -> list[RawObservation]
 
     def key(o: RawObservation) -> tuple[Any, ...]:
         ts = o.observed_at.timestamp() if o.observed_at else o.received_at.timestamp()
-        return (ts, o.sensor.instance_id, o.source_seq if o.source_seq is not None else -1, o.obs_id)
+        return (
+            ts,
+            o.sensor.instance_id,
+            o.source_seq if o.source_seq is not None else -1,
+            o.obs_id,
+        )
 
     return sorted(observations, key=key)
 
@@ -122,7 +134,13 @@ def temporal(start: RawObservation | None, end: RawObservation | None = None) ->
 class EventBuilder:
     """Helper that assembles a frozen event and computes ``missing``."""
 
-    def __init__(self, normalizer: Normalizer, ctx: NormalizeContext, derived_from: Sequence[RawObservation], index: int = 0) -> None:
+    def __init__(
+        self,
+        normalizer: Normalizer,
+        ctx: NormalizeContext,
+        derived_from: Sequence[RawObservation],
+        index: int = 0,
+    ) -> None:
         self.normalizer = normalizer
         self.ctx = ctx
         self.obs = list(derived_from)
@@ -164,7 +182,11 @@ class EventBuilder:
             missing.append("actor")
         if time.start is None:
             missing.append("start_time")
-        if time.end is None and self.kind not in (EventKind.EXTERNAL_INPUT, EventKind.FAILURE, EventKind.MESSAGE):
+        if time.end is None and self.kind not in (
+            EventKind.EXTERNAL_INPUT,
+            EventKind.FAILURE,
+            EventKind.MESSAGE,
+        ):
             missing.append("end_time")
         if not self.parents:
             missing.append("parent")

@@ -31,7 +31,9 @@ class MCPNormalizer(Normalizer):
     source_kinds = frozenset({"mcp.message"})
     maturity = "EXPERIMENTAL"
 
-    def normalize(self, observations: Sequence[RawObservation], ctx: NormalizeContext) -> NormalizeResult:
+    def normalize(
+        self, observations: Sequence[RawObservation], ctx: NormalizeContext
+    ) -> NormalizeResult:
         result = NormalizeResult()
         pairs: dict[tuple[str, str], dict[str, RawObservation]] = {}
         notes: list[RawObservation] = []
@@ -59,7 +61,14 @@ class MCPNormalizer(Normalizer):
             result.events.append(b.build())
         return result
 
-    def _call(self, session: str, jid: str, parts: dict[str, RawObservation], ctx: NormalizeContext, result: NormalizeResult) -> Any:
+    def _call(
+        self,
+        session: str,
+        jid: str,
+        parts: dict[str, RawObservation],
+        ctx: NormalizeContext,
+        result: NormalizeResult,
+    ) -> Any:
         req, res = parts.get("request"), parts.get("response")
         obs = [o for o in (req, res) if o]
         b = EventBuilder(self, ctx, obs)
@@ -87,18 +96,29 @@ class MCPNormalizer(Normalizer):
                 b.input(params, role="params")
         if "result" in rs:
             b.output(rs["result"], role="result")
-            b.status = EventStatus.ERROR if (rs.get("result") or {}).get("isError") else EventStatus.OK
+            b.status = (
+                EventStatus.ERROR if (rs.get("result") or {}).get("isError") else EventStatus.OK
+            )
         elif "error" in rs:
             b.status = EventStatus.ERROR
             b.error = rs["error"]
         else:
             b.status = EventStatus.UNKNOWN
-            result.diagnostics.append(Diagnostic((req or res).obs_id, "warning", "no_response", f"MCP request {jid} without response"))  # type: ignore[union-attr]
+            result.diagnostics.append(
+                Diagnostic(
+                    (req or res).obs_id,
+                    "warning",
+                    "no_response",
+                    f"MCP request {jid} without response",
+                )
+            )  # type: ignore[union-attr]
         anchor = req or res
         assert anchor is not None
         b.source_ids = [("mcp.call", f"{session}/{jid}")]
         if anchor.declared("parent_span_id"):
-            b.parents.append(DeclaredLink("parent", "native.span", anchor.declared("parent_span_id") or ""))
+            b.parents.append(
+                DeclaredLink("parent", "native.span", anchor.declared("parent_span_id") or "")
+            )
         if anchor.declared("run_id"):
             b.run_key = ("native.run", anchor.declared("run_id") or "")
         b.time = temporal(req, res) if req else temporal(res, None)

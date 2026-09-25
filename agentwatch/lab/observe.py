@@ -58,8 +58,14 @@ def observe(
     native_run_id = native_run_id or uuid.uuid4().hex
     with tempfile.TemporaryDirectory(prefix="agentwatch-observe-") as tmp:
         out = Path(tmp) / "observations.ndjson"
-        full_env = {**os.environ, **(env or {}), "AGENTWATCH_OBSERVE_FILE": str(out), "AGENTWATCH_RUN_ID": native_run_id,
-                    "AGENTWATCH_COMMAND": json.dumps(command), "PYTHONUNBUFFERED": "1"}
+        full_env = {
+            **os.environ,
+            **(env or {}),
+            "AGENTWATCH_OBSERVE_FILE": str(out),
+            "AGENTWATCH_RUN_ID": native_run_id,
+            "AGENTWATCH_COMMAND": json.dumps(command),
+            "PYTHONUNBUFFERED": "1",
+        }
         try:
             proc = run(build_command(command), env=full_env, timeout=timeout)
             code, stdout, stderr = proc.returncode, proc.stdout, proc.stderr
@@ -73,4 +79,6 @@ def observe(
         engine.ingest(drafts)
     report = engine.process(tenant_id)
     run_id = run_id_for(tenant_id, ("native.run", native_run_id)) if drafts else None
-    return ObserveResult(code, run_id, native_run_id, len(drafts), stdout or "", stderr or "", report)
+    return ObserveResult(
+        code, run_id, native_run_id, len(drafts), stdout or "", stderr or "", report
+    )

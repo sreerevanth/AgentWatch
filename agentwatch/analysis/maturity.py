@@ -27,10 +27,18 @@ class Capability:
     version: str
     maturity: Maturity
     description: str
-    evidence: tuple[str, ...] = ()  # repo-relative paths to tests/benchmark results backing the label
+    evidence: tuple[
+        str, ...
+    ] = ()  # repo-relative paths to tests/benchmark results backing the label
 
     def to_dict(self) -> dict[str, object]:
-        return {"name": self.name, "version": self.version, "maturity": self.maturity.value, "description": self.description, "evidence": list(self.evidence)}
+        return {
+            "name": self.name,
+            "version": self.version,
+            "maturity": self.maturity.value,
+            "description": self.description,
+            "evidence": list(self.evidence),
+        }
 
 
 _REGISTRY: dict[str, Capability] = {}

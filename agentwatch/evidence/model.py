@@ -148,7 +148,9 @@ class ObservationDraft:
             ),
             declared_ids={str(k): str(v) for k, v in (data.get("declared_ids") or {}).items()},
             content_type=data.get("content_type", JSON),
-            sampling=SamplingInfo(sampling["policy"], float(sampling["rate"])) if sampling else None,
+            sampling=SamplingInfo(sampling["policy"], float(sampling["rate"]))
+            if sampling
+            else None,
             tenant_id=data.get("tenant_id", "default"),
         )
 
@@ -252,7 +254,9 @@ class RawObservation:
             content_type=draft.content_type,
             payload_json=payload_json,
             payload_sha256=digest,
-            declared_ids_items=tuple(sorted((str(k), str(v)) for k, v in draft.declared_ids.items())),
+            declared_ids_items=tuple(
+                sorted((str(k), str(v)) for k, v in draft.declared_ids.items())
+            ),
             redaction=redaction,
             sampling=draft.sampling,
         )

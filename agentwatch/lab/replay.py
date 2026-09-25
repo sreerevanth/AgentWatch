@@ -34,7 +34,14 @@ def captures_for(ws: Workspace, run_id: str) -> dict[str, dict[str, Any]]:
         key = e["attributes"].get("call_key")
         if not key:
             continue
-        out = next((o for o in e["outputs"] if o["role"] in ("result", "completion", "documents", "output")), None)
+        out = next(
+            (
+                o
+                for o in e["outputs"]
+                if o["role"] in ("result", "completion", "documents", "output")
+            ),
+            None,
+        )
         value = None
         if out is not None:
             art = ws.store.artifact(ws.tenant_id, out["artifact_id"])
@@ -46,7 +53,8 @@ def captures_for(ws: Workspace, run_id: str) -> dict[str, dict[str, Any]]:
             "value": value,
             "status": e["status"],
             "error": e.get("error"),
-            "faithful": e["status"] != "OK" or (out is not None and "non_json_values" not in e["attributes"]),
+            "faithful": e["status"] != "OK"
+            or (out is not None and "non_json_values" not in e["attributes"]),
             "event_id": e["event_id"],
         }
     return caps
@@ -55,7 +63,9 @@ def captures_for(ws: Workspace, run_id: str) -> dict[str, dict[str, Any]]:
 def _command(run: dict[str, Any]) -> list[str]:
     cmd = (run.get("attributes") or {}).get("command")
     if not cmd:
-        raise ReplayUnavailableError("run has no recorded command; L2/L3 replay needs a run captured with `agentwatch observe`")
+        raise ReplayUnavailableError(
+            "run has no recorded command; L2/L3 replay needs a run captured with `agentwatch observe`"
+        )
     return [str(c) for c in cmd]
 
 
@@ -90,8 +100,21 @@ def _l0(ws: Workspace, run: dict[str, Any]) -> dict[str, Any]:
     return {
         "replay_level": "L0",
         "description": "timeline reconstructed from stored evidence; nothing was executed",
-        "timeline": [{"event_id": e["event_id"], "t": e["time"]["start"], "kind": e["kind"], "operation": e["operation"], "status": e["status"]} for e in events],
-        "reproduction_confidence": {"value": 1.0, "basis": "recorded events are displayed as observed", "calibrated": False},
+        "timeline": [
+            {
+                "event_id": e["event_id"],
+                "t": e["time"]["start"],
+                "kind": e["kind"],
+                "operation": e["operation"],
+                "status": e["status"],
+            }
+            for e in events
+        ],
+        "reproduction_confidence": {
+            "value": 1.0,
+            "basis": "recorded events are displayed as observed",
+            "calibrated": False,
+        },
         "missing_dependencies": run.get("unresolved_links", []),
         "mocked_components": [],
         "live_components": [],
@@ -103,26 +126,49 @@ def _l1(ws: Workspace, run: dict[str, Any]) -> dict[str, Any]:
     obs_ids = sorted({o for e in stored for o in e["derived_from"]})
     observations = ws.store.observations(ws.tenant_id, obs_ids=obs_ids)
     built = ws.engine.build(ws.tenant_id, ws.interp_id, observations)
-    rebuilt_ids = {e.event_id for e in built["events"] if built["run_of"].get(e.event_id) == run["run_id"]}
+    rebuilt_ids = {
+        e.event_id for e in built["events"] if built["run_of"].get(e.event_id) == run["run_id"]
+    }
     stored_ids = {e["event_id"] for e in stored}
     stored_rel = {r["rel_id"] for r in ws.relations(run["run_id"]) if r["view"] == "EXECUTION"}
-    rebuilt_rel = {r["rel_id"] for r in built["relations"] if r["view"] == "EXECUTION" and r.get("run_id") == run["run_id"]}
+    rebuilt_rel = {
+        r["rel_id"]
+        for r in built["relations"]
+        if r["view"] == "EXECUTION" and r.get("run_id") == run["run_id"]
+    }
     consistent = rebuilt_ids == stored_ids and rebuilt_rel == stored_rel
     completeness = float(run.get("completeness") or 0.0)
     return {
         "replay_level": "L1",
         "description": "run structure re-derived from this run's raw observations only",
         "consistent_with_stored_interpretation": consistent,
-        "events": {"stored": len(stored_ids), "rebuilt": len(rebuilt_ids), "missing": sorted(stored_ids - rebuilt_ids), "extra": sorted(rebuilt_ids - stored_ids)},
+        "events": {
+            "stored": len(stored_ids),
+            "rebuilt": len(rebuilt_ids),
+            "missing": sorted(stored_ids - rebuilt_ids),
+            "extra": sorted(rebuilt_ids - stored_ids),
+        },
         "execution_relations": {"stored": len(stored_rel), "rebuilt": len(rebuilt_rel)},
-        "reproduction_confidence": {"value": round(completeness if consistent else completeness * 0.5, 4), "basis": "declared-link completeness of the run" + ("" if consistent else ", halved: rebuild differs from stored interpretation"), "calibrated": False},
+        "reproduction_confidence": {
+            "value": round(completeness if consistent else completeness * 0.5, 4),
+            "basis": "declared-link completeness of the run"
+            + ("" if consistent else ", halved: rebuild differs from stored interpretation"),
+            "calibrated": False,
+        },
         "missing_dependencies": run.get("unresolved_links", []),
         "mocked_components": [],
         "live_components": [],
     }
 
 
-def _execute(ws: Workspace, run: dict[str, Any], level: str, live: list[str], substitutions: dict[str, Any], branch_id: str | None) -> dict[str, Any]:
+def _execute(
+    ws: Workspace,
+    run: dict[str, Any],
+    level: str,
+    live: list[str],
+    substitutions: dict[str, Any],
+    branch_id: str | None,
+) -> dict[str, Any]:
     command = _command(run)
     caps = captures_for(ws, run["run_id"])
     if not caps:
@@ -130,8 +176,15 @@ def _execute(ws: Workspace, run: dict[str, Any], level: str, live: list[str], su
     with tempfile.TemporaryDirectory(prefix="agentwatch-replay-") as tmp:
         spec_path = Path(tmp) / "spec.json"
         report_path = Path(tmp) / "report.json"
-        spec = {"level": level, "captures": {k: {kk: vv for kk, vv in v.items() if kk != "event_id"} for k, v in caps.items()},
-                "substitutions": substitutions, "live": live, "report_file": str(report_path)}
+        spec = {
+            "level": level,
+            "captures": {
+                k: {kk: vv for kk, vv in v.items() if kk != "event_id"} for k, v in caps.items()
+            },
+            "substitutions": substitutions,
+            "live": live,
+            "report_file": str(report_path),
+        }
         spec_path.write_text(json.dumps(spec), encoding="utf-8")
         env = {"AGENTWATCH_REPLAY_SPEC": str(spec_path), "AGENTWATCH_REPLAY_OF": run["run_id"]}
         if branch_id:
@@ -145,7 +198,8 @@ def _execute(ws: Workspace, run: dict[str, Any], level: str, live: list[str], su
     uninstrumented = "program logic outside instrumented calls (re-executed live)"
     return {
         "replay_level": level,
-        "description": "recorded command re-executed with instrumented calls served from captures" + (" and selected components live" if level == "L3" else ""),
+        "description": "recorded command re-executed with instrumented calls served from captures"
+        + (" and selected components live" if level == "L3" else ""),
         "replay_run": res.run_id,
         "exit_code": res.exit_code,
         "stderr_tail": res.stderr[-2000:],
@@ -169,7 +223,12 @@ def _reproduction(comparison: dict[str, Any] | None) -> dict[str, Any]:
     div = comparison["earliest_divergence"]
     return {
         "value": round(sim if div else 1.0, 4),
-        "basis": "signature alignment similarity between original and replay" + ("; first divergence: " + "; ".join(div["reasons"]) if div else "; no divergence observed"),
+        "basis": "signature alignment similarity between original and replay"
+        + (
+            "; first divergence: " + "; ".join(div["reasons"])
+            if div
+            else "; no divergence observed"
+        ),
         "calibrated": False,
     }
 

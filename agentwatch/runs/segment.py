@@ -27,7 +27,9 @@ def run_id_for(tenant_id: str, key: tuple[str, str]) -> str:
 @dataclass
 class Segmentation:
     run_of: dict[str, str | None] = field(default_factory=dict)  # event_id -> run_id
-    basis: dict[str, str] = field(default_factory=dict)  # event_id -> declared | parent_chain | none
+    basis: dict[str, str] = field(
+        default_factory=dict
+    )  # event_id -> declared | parent_chain | none
     runs: dict[str, dict[str, Any]] = field(default_factory=dict)
 
 
@@ -108,7 +110,9 @@ def summarize_run(
         if (p.key_space, p.value) not in index
     ]
     kinds = Counter(e.kind.value for e in evs)
-    models = sorted({e.object.key for e in evs if e.kind == EventKind.MODEL_INVOCATION and e.object})
+    models = sorted(
+        {e.object.key for e in evs if e.kind == EventKind.MODEL_INVOCATION and e.object}
+    )
     tools = sorted({e.object.key for e in evs if e.kind == EventKind.TOOL_INVOCATION and e.object})
     tokens_in = sum(int(e.resources.get("tokens_in") or 0) for e in evs)
     tokens_out = sum(int(e.resources.get("tokens_out") or 0) for e in evs)
@@ -130,7 +134,9 @@ def summarize_run(
         "status_basis": "run_lifecycle_event" if lifecycle else "not_declared",
         "started_at": min(starts).isoformat() if starts else None,
         "ended_at": max(ends).isoformat() if ends else None,
-        "duration_ms": (max(ends) - min(starts)).total_seconds() * 1000.0 if starts and ends else None,
+        "duration_ms": (max(ends) - min(starts)).total_seconds() * 1000.0
+        if starts and ends
+        else None,
         "event_count": len(evs),
         "error_events": errors,
         "kinds": dict(kinds),

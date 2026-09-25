@@ -20,14 +20,20 @@ DETECTOR_VERSION = "1"
 
 # Secret patterns: high-precision formats only. Each maps to a category label.
 SECRET_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
-    ("secret.private_key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----")),
+    (
+        "secret.private_key",
+        re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----"),
+    ),
     ("secret.aws_access_key", re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b")),
     ("secret.anthropic_key", re.compile(r"\bsk-ant-[A-Za-z0-9_\-]{20,}\b")),
     ("secret.openai_key", re.compile(r"\bsk-(?:proj-)?[A-Za-z0-9_\-]{20,}\b")),
     ("secret.github_token", re.compile(r"\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9]{30,}\b")),
     ("secret.slack_token", re.compile(r"\bxox[abprs]-[A-Za-z0-9\-]{10,}\b")),
     ("secret.bearer", re.compile(r"(?i)\bbearer\s+[A-Za-z0-9\-._~+/]{20,}=*")),
-    ("secret.jwt", re.compile(r"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b")),
+    (
+        "secret.jwt",
+        re.compile(r"\beyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\b"),
+    ),
 )
 
 PII_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
@@ -37,7 +43,9 @@ PII_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
 )
 
 # Keys whose values are always treated as secrets regardless of content.
-SENSITIVE_KEYS = re.compile(r"(?i)^(api[_-]?key|authorization|password|passwd|secret|token|access[_-]?token|x-api-key|cookie)$")
+SENSITIVE_KEYS = re.compile(
+    r"(?i)^(api[_-]?key|authorization|password|passwd|secret|token|access[_-]?token|x-api-key|cookie)$"
+)
 
 
 @dataclass(frozen=True)
@@ -86,7 +94,9 @@ def _scrub_string(value: str, path: str, policy: PayloadPolicy, counter: _Counte
         return {"$sha256": sha256_hex(value), "$len": len(value)}
     if policy.capture == "preview" and len(value) > policy.max_string_chars:
         counter.add(path, "policy.truncated")
-        return value[: policy.max_string_chars] + f"…[+{len(value) - policy.max_string_chars} chars]"
+        return (
+            value[: policy.max_string_chars] + f"…[+{len(value) - policy.max_string_chars} chars]"
+        )
     return value
 
 
@@ -113,7 +123,9 @@ def _walk(node: Any, path: str, policy: PayloadPolicy, counter: _Counter) -> Any
     return node
 
 
-def redact_payload(payload: Any, policy: PayloadPolicy = DEFAULT_POLICY) -> tuple[Any, RedactionManifest | None]:
+def redact_payload(
+    payload: Any, policy: PayloadPolicy = DEFAULT_POLICY
+) -> tuple[Any, RedactionManifest | None]:
     """Return ``(new_payload, manifest)``. ``payload`` itself is never modified."""
     copy = to_jsonable(payload)  # deep, independent copy in plain JSON types
     counter = _Counter()

@@ -107,9 +107,18 @@ def make_relation(
 ) -> dict[str, Any]:
     if view == View.CAUSAL and evidence_class is None:
         raise ValueError("CAUSAL relations require an evidence class")
-    if view != View.CAUSAL and rtype in (RelType.CAUSES, RelType.INFLUENCES, RelType.ENABLES, RelType.PREVENTS):
+    if view != View.CAUSAL and rtype in (
+        RelType.CAUSES,
+        RelType.INFLUENCES,
+        RelType.ENABLES,
+        RelType.PREVENTS,
+    ):
         raise ValueError(f"{rtype} is a causal relation type and belongs to the CAUSAL view")
-    rel_id = str(uuid.uuid5(REL_NAMESPACE, f"{view}|{rtype}|{','.join(tail)}|{','.join(head)}|{derived_by}|{run_id}"))
+    rel_id = str(
+        uuid.uuid5(
+            REL_NAMESPACE, f"{view}|{rtype}|{','.join(tail)}|{','.join(head)}|{derived_by}|{run_id}"
+        )
+    )
     return {
         "rel_id": rel_id,
         "view": view.value,

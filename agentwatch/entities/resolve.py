@@ -23,7 +23,9 @@ def entity_id_for(tenant_id: str, canonical: str) -> str:
     return str(uuid.uuid5(ENTITY_NAMESPACE, f"{tenant_id}|{canonical}"))
 
 
-def resolve_entities(events: Sequence[ComputationalEvent], tenant_id: str, run_of: dict[str, str | None]) -> list[dict[str, Any]]:
+def resolve_entities(
+    events: Sequence[ComputationalEvent], tenant_id: str, run_of: dict[str, str | None]
+) -> list[dict[str, Any]]:
     found: dict[str, dict[str, Any]] = {}
 
     def touch(ref: EntityRef, role: str, ev: ComputationalEvent) -> None:
@@ -40,7 +42,11 @@ def resolve_entities(events: Sequence[ComputationalEvent], tenant_id: str, run_o
                 "runs": set(),
                 "first_seen": None,
                 "last_seen": None,
-                "resolution": {"basis": "EXACT_KEY", "confidence": 1.0, "resolver": f"{RESOLVER}@{RESOLVER_VERSION}"},
+                "resolution": {
+                    "basis": "EXACT_KEY",
+                    "confidence": 1.0,
+                    "resolver": f"{RESOLVER}@{RESOLVER_VERSION}",
+                },
             }
         rec["roles"][role] = rec["roles"].get(role, 0) + 1
         rec["event_count"] += 1

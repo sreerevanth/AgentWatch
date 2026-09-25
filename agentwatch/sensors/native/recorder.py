@@ -28,7 +28,9 @@ from agentwatch.sensors.base import ListSink, ObservationSink, Sensor
 F = TypeVar("F", bound=Callable[..., Any])
 
 _current_span: contextvars.ContextVar[Span | None] = contextvars.ContextVar("aw_span", default=None)
-_current_run: contextvars.ContextVar[RunHandle | None] = contextvars.ContextVar("aw_run", default=None)
+_current_run: contextvars.ContextVar[RunHandle | None] = contextvars.ContextVar(
+    "aw_run", default=None
+)
 
 
 def _jsonable(value: Any) -> tuple[Any, bool]:
@@ -42,7 +44,9 @@ def _jsonable(value: Any) -> tuple[Any, bool]:
 
 
 class RunHandle:
-    def __init__(self, recorder: Recorder, name: str, run_id: str, attributes: dict[str, Any]) -> None:
+    def __init__(
+        self, recorder: Recorder, name: str, run_id: str, attributes: dict[str, Any]
+    ) -> None:
         self.recorder = recorder
         self.name = name
         self.run_id = run_id
@@ -137,14 +141,24 @@ class Recorder(Sensor):
     sensor_type = "native"
     version = "1"
 
-    def __init__(self, sink: ObservationSink | None = None, tenant_id: str = "default", system: str | None = None) -> None:
+    def __init__(
+        self,
+        sink: ObservationSink | None = None,
+        tenant_id: str = "default",
+        system: str | None = None,
+    ) -> None:
         super().__init__(sink or ListSink(), tenant_id)
         self.system = system
 
     # -- runs -----------------------------------------------------------------
     @contextmanager
     def run(self, name: str, run_id: str | None = None, **attributes: Any) -> Iterator[RunHandle]:
-        handle = RunHandle(self, name, run_id or uuid.uuid4().hex, {k: _jsonable(v)[0] for k, v in attributes.items()})
+        handle = RunHandle(
+            self,
+            name,
+            run_id or uuid.uuid4().hex,
+            {k: _jsonable(v)[0] for k, v in attributes.items()},
+        )
         token = _current_run.set(handle)
         span_token = _current_span.set(None)
         self.ctx.emit(
@@ -250,14 +264,28 @@ class Recorder(Sensor):
             declared_ids=self._ids(span),
         )
 
-    def event(self, kind: str, operation: str, *, actor: str | None = None, object: str | None = None, **payload: Any) -> None:
+    def event(
+        self,
+        kind: str,
+        operation: str,
+        *,
+        actor: str | None = None,
+        object: str | None = None,
+        **payload: Any,
+    ) -> None:
         """A point event (message, external input, failure) with no duration."""
         parent = _current_span.get()
         run = _current_run.get()
         body = {k: _jsonable(v)[0] for k, v in payload.items()}
         self.ctx.emit(
             "native.point",
-            {"kind": kind, "operation": operation, "actor": actor or (parent.actor if parent else None), "object": object, "data": body},
+            {
+                "kind": kind,
+                "operation": operation,
+                "actor": actor or (parent.actor if parent else None),
+                "object": object,
+                "data": body,
+            },
             declared_ids={
                 "event_id": uuid.uuid4().hex[:16],
                 "parent_span_id": parent.span_id if parent else None,
@@ -338,7 +366,9 @@ def instrumented_call(
     return wrapper
 
 
-def _call_args(fn: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any]) -> dict[str, Any]:
+def _call_args(
+    fn: Callable[..., Any], args: tuple[Any, ...], kwargs: dict[str, Any]
+) -> dict[str, Any]:
     try:
         bound = inspect.signature(fn).bind_partial(*args, **kwargs)
         return dict(bound.arguments)

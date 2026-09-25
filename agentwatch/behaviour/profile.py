@@ -23,7 +23,13 @@ from agentwatch.graph.traverse import Graph
 
 FEATURES_VERSION = "1"
 PROFILE_NS = uuid.UUID("7a2b3c4d-5e6f-5071-8293-a4b5c6d7e8f9")
-LEAF = {EventKind.TOOL_INVOCATION, EventKind.MODEL_INVOCATION, EventKind.RETRIEVAL, EventKind.EXTERNAL_IO, EventKind.MEMORY_ACCESS}
+LEAF = {
+    EventKind.TOOL_INVOCATION,
+    EventKind.MODEL_INVOCATION,
+    EventKind.RETRIEVAL,
+    EventKind.EXTERNAL_IO,
+    EventKind.MEMORY_ACCESS,
+}
 
 FEATURES: dict[str, str] = {
     "events": "number of events in the run",
@@ -59,30 +65,60 @@ def _entropy(counter: Counter[str]) -> float:
     return -sum((c / n) * math.log2(c / n) for c in counter.values() if c)
 
 
-def profile_features(run: dict[str, Any], events: list[Any], relations: list[dict[str, Any]], motif_ids: list[str]) -> dict[str, Any]:
+def profile_features(
+    run: dict[str, Any], events: list[Any], relations: list[dict[str, Any]], motif_ids: list[str]
+) -> dict[str, Any]:
     g = Graph(relations)
     stats = g.stats({f"event:{e.event_id}" for e in events})
     leaf = [e for e in events if e.kind in LEAF]
-    tools = Counter(e.object.canonical for e in events if e.kind == EventKind.TOOL_INVOCATION and e.object)
-    hand = Counter(f"{e.actor.canonical}->{e.object.canonical}" for e in events if e.kind in (EventKind.DELEGATION, EventKind.MESSAGE) and e.actor and e.object)
+    tools = Counter(
+        e.object.canonical for e in events if e.kind == EventKind.TOOL_INVOCATION and e.object
+    )
+    hand = Counter(
+        f"{e.actor.canonical}->{e.object.canonical}"
+        for e in events
+        if e.kind in (EventKind.DELEGATION, EventKind.MESSAGE) and e.actor and e.object
+    )
     lat = [e.time.duration_ms for e in leaf if e.time.duration_ms is not None]
     retries = sum(1 for r in relations if r["type"] == "RETRIES")
     model_events = [e for e in events if e.kind == EventKind.MODEL_INVOCATION]
-    mem_reads = {f"event:{e.event_id}" for e in events if e.kind == EventKind.MEMORY_ACCESS and ("read" in e.facets or e.attributes.get("access") == "read")}
+    mem_reads = {
+        f"event:{e.event_id}"
+        for e in events
+        if e.kind == EventKind.MEMORY_ACCESS
+        and ("read" in e.facets or e.attributes.get("access") == "read")
+    }
     mem_dep = 0
     if model_events and mem_reads:
         for e in model_events:
-            anc = {s.node for s in g.ancestors(f"event:{e.event_id}", views=["INFORMATION"], skip_kinds=["entity"], max_depth=20)}
+            anc = {
+                s.node
+                for s in g.ancestors(
+                    f"event:{e.event_id}",
+                    views=["INFORMATION"],
+                    skip_kinds=["entity"],
+                    max_depth=20,
+                )
+            }
             if anc & mem_reads:
                 mem_dep += 1
-    tok = sum(float(e.resources.get("tokens_in") or 0) + float(e.resources.get("tokens_out") or 0) for e in events)
+    tok = sum(
+        float(e.resources.get("tokens_in") or 0) + float(e.resources.get("tokens_out") or 0)
+        for e in events
+    )
     feats: dict[str, Any] = {
         "events": len(events),
         "leaf_ops": len(leaf),
         "graph_depth": stats["max_depth"],
         "mean_branching": stats["mean_branching"],
         "multi_parent_events": stats["multi_parent_events"],
-        "error_rate": round(sum(1 for e in leaf if e.status in (EventStatus.ERROR, EventStatus.TIMEOUT)) / len(leaf), 4) if leaf else 0.0,
+        "error_rate": round(
+            sum(1 for e in leaf if e.status in (EventStatus.ERROR, EventStatus.TIMEOUT))
+            / len(leaf),
+            4,
+        )
+        if leaf
+        else 0.0,
         "retry_rate": round(retries / len(leaf), 4) if leaf else 0.0,
         "tool_calls": sum(tools.values()),
         "tool_diversity": round(len(tools) / sum(tools.values()), 4) if tools else 0.0,
@@ -105,7 +141,9 @@ def profile_features(run: dict[str, Any], events: list[Any], relations: list[dic
     motifs = Counter(motif_ids)
     return {
         "features": feats,
-        "kind_distribution": {k: round(v / len(events), 4) for k, v in sorted(kinds.items())} if events else {},
+        "kind_distribution": {k: round(v / len(events), 4) for k, v in sorted(kinds.items())}
+        if events
+        else {},
         "motif_counts": {mid: motifs.get(mid, 0) for mid in sorted(REGISTRY.definitions)},
     }
 
@@ -123,20 +161,30 @@ class ProfileAnalyzer(Analyzer):
             by_run.setdefault(m["run_id"], []).append(m["motif_id"])
         out = []
         for run_id, run in data.runs.items():
-            prof = profile_features(run, data.run_events(run_id), data.run_relations(run_id), by_run.get(run_id, []))
-            out.append(self.record(str(uuid.uuid5(PROFILE_NS, f"{run_id}|{FEATURES_VERSION}")), run_id, {
-                "run_id": run_id,
-                "run_name": run.get("name"),
-                "run_status": run.get("status"),
-                "system_version": run.get("system_version"),
-                "started_at": run.get("started_at"),
-                "features_version": FEATURES_VERSION,
-                **prof,
-            }))
+            prof = profile_features(
+                run, data.run_events(run_id), data.run_relations(run_id), by_run.get(run_id, [])
+            )
+            out.append(
+                self.record(
+                    str(uuid.uuid5(PROFILE_NS, f"{run_id}|{FEATURES_VERSION}")),
+                    run_id,
+                    {
+                        "run_id": run_id,
+                        "run_name": run.get("name"),
+                        "run_status": run.get("status"),
+                        "system_version": run.get("system_version"),
+                        "started_at": run.get("started_at"),
+                        "features_version": FEATURES_VERSION,
+                        **prof,
+                    },
+                )
+            )
         return out
 
 
-def bootstrap_ci(values: list[float], *, n: int = 1000, alpha: float = 0.05, seed: int = 7) -> tuple[float, float] | None:
+def bootstrap_ci(
+    values: list[float], *, n: int = 1000, alpha: float = 0.05, seed: int = 7
+) -> tuple[float, float] | None:
     if len(values) < 2:
         return None
     rng = random.Random(seed)  # noqa: S311 - seeded statistics, not security
@@ -152,8 +200,16 @@ def genome(profiles: list[dict[str, Any]], scope: str) -> dict[str, Any]:
         vals = [float(p["features"][f]) for p in profiles if f in p["features"]]
         if not vals:
             continue
-        feats[f] = {"mean": round(mean(vals), 6), "min": min(vals), "max": max(vals), "ci95": bootstrap_ci(vals)}
-    motif_freq = {mid: round(sum(1 for p in profiles if p["motif_counts"].get(mid)) / n, 4) if n else 0.0 for mid in sorted(REGISTRY.definitions)}
+        feats[f] = {
+            "mean": round(mean(vals), 6),
+            "min": min(vals),
+            "max": max(vals),
+            "ci95": bootstrap_ci(vals),
+        }
+    motif_freq = {
+        mid: round(sum(1 for p in profiles if p["motif_counts"].get(mid)) / n, 4) if n else 0.0
+        for mid in sorted(REGISTRY.definitions)
+    }
     kinds: Counter[str] = Counter()
     for p in profiles:
         kinds.update({k: v / n for k, v in p["kind_distribution"].items()})

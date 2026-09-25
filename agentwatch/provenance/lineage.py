@@ -76,12 +76,16 @@ def _context(ws: Workspace, g: Graph, event_node: str, limit: int = 6) -> list[d
     return chain
 
 
-def lineage(ws: Workspace, ref: str, *, max_depth: int = 12, run_id: str | None = None) -> dict[str, Any]:
+def lineage(
+    ws: Workspace, ref: str, *, max_depth: int = 12, run_id: str | None = None
+) -> dict[str, Any]:
     root_node = ws.resolve_node(ref)
     g = ws.graph(run_id)
     seen: set[str] = set()
 
-    def build(node: str, depth: int, relation: str | None, basis: str | None, conf: float) -> LineageNode:
+    def build(
+        node: str, depth: int, relation: str | None, basis: str | None, conf: float
+    ) -> LineageNode:
         desc = ws.describe_node(node)
         ln = LineageNode(node, desc, relation, basis, conf)
         if node.startswith("event:"):
@@ -95,7 +99,11 @@ def lineage(ws: Workspace, ref: str, *, max_depth: int = 12, run_id: str | None 
             return ln
         for rel_id, nb in g.inc.get(node, []):
             rel = g.relations[rel_id]
-            if rel["view"] != "INFORMATION" or rel["type"] not in INFO_BACK or nb.startswith("entity:"):
+            if (
+                rel["view"] != "INFORMATION"
+                or rel["type"] not in INFO_BACK
+                or nb.startswith("entity:")
+            ):
                 continue
             ln.parents.append(build(nb, depth + 1, rel["type"], rel["basis"], rel["confidence"]))
         return ln
@@ -104,17 +112,34 @@ def lineage(ws: Workspace, ref: str, *, max_depth: int = 12, run_id: str | None 
     return {"root": tree.to_dict(), "metrics": metrics(tree), "node": root_node}
 
 
-def dependents(ws: Workspace, ref: str, *, max_depth: int = 12, run_id: str | None = None) -> dict[str, Any]:
+def dependents(
+    ws: Workspace, ref: str, *, max_depth: int = 12, run_id: str | None = None
+) -> dict[str, Any]:
     """Forward lineage: later events and artifacts that depend on ``ref``."""
     node = ws.resolve_node(ref)
     g = ws.graph(run_id)
-    steps = g.descendants(node, views=["INFORMATION"], types=INFO_BACK, max_depth=max_depth, skip_kinds=["entity"])
+    steps = g.descendants(
+        node, views=["INFORMATION"], types=INFO_BACK, max_depth=max_depth, skip_kinds=["entity"]
+    )
     out = []
     for s in steps:
         rel = g.relations[s.via] if s.via else {}
-        out.append({**s.to_dict(), "description": ws.describe_node(s.node), "basis": rel.get("basis"), "confidence": rel.get("confidence")})
-    return {"node": node, "dependents": out, "count": len(out),
-            "affected_outputs": [d for d in out if d["node"].startswith("artifact:") and not g.out.get(d["node"])]}
+        out.append(
+            {
+                **s.to_dict(),
+                "description": ws.describe_node(s.node),
+                "basis": rel.get("basis"),
+                "confidence": rel.get("confidence"),
+            }
+        )
+    return {
+        "node": node,
+        "dependents": out,
+        "count": len(out),
+        "affected_outputs": [
+            d for d in out if d["node"].startswith("artifact:") and not g.out.get(d["node"])
+        ],
+    }
 
 
 def metrics(tree: LineageNode) -> dict[str, Any]:
@@ -140,7 +165,9 @@ def metrics(tree: LineageNode) -> dict[str, Any]:
         if not n.parents and not n.repeat:
             origins.append(n.node)
             min_conf = min(min_conf, conf)
-            if n.description.get("type") == "event" and not n.description.get("label", "").startswith(("EXTERNAL_INPUT", "RETRIEVAL")):
+            if n.description.get("type") == "event" and not n.description.get(
+                "label", ""
+            ).startswith(("EXTERNAL_INPUT", "RETRIEVAL")):
                 unsupported_candidates.append(n.node)
         for p in n.parents:
             walk(p, depth + 1, conf)
@@ -164,14 +191,23 @@ def render(result: dict[str, Any]) -> list[str]:
 
     def label(d: dict[str, Any]) -> str:
         if d["type"] == "artifact":
-            return f"artifact {d['node'][9:21]} {d['label']!r}" if d.get("label") else f"artifact {d['node'][9:21]}"
+            return (
+                f"artifact {d['node'][9:21]} {d['label']!r}"
+                if d.get("label")
+                else f"artifact {d['node'][9:21]}"
+            )
         if d["type"] == "event":
             actor = f" by {d['actor']}" if d.get("actor") else ""
             return f"{d['label']}{actor} [{d['node'][6:14]}] {d['status']}"
         return d["label"]
 
-    verbs = {"PRODUCES": "produced by", "CONSUMES": "input", "DERIVES_FROM": "derived from", "CONTAINS_ITEM": "item of",
-             "TRANSFERS": "via memory from"}
+    verbs = {
+        "PRODUCES": "produced by",
+        "CONSUMES": "input",
+        "DERIVES_FROM": "derived from",
+        "CONTAINS_ITEM": "item of",
+        "TRANSFERS": "via memory from",
+    }
 
     def walk(n: dict[str, Any], indent: int) -> None:
         pad = "  " * indent
@@ -179,8 +215,14 @@ def render(result: dict[str, Any]) -> list[str]:
         if n["relation"] is None:
             lines.append(label(d))
         else:
-            q = "" if n["basis"] == "DECLARED" else f"  ({n['basis'].lower()}, confidence {n['confidence']})"
-            lines.append(f"{pad}↑ {verbs.get(n['relation'], n['relation'])} {label(d)}{q}{'  (see above)' if n['repeat'] else ''}")
+            q = (
+                ""
+                if n["basis"] == "DECLARED"
+                else f"  ({n['basis'].lower()}, confidence {n['confidence']})"
+            )
+            lines.append(
+                f"{pad}↑ {verbs.get(n['relation'], n['relation'])} {label(d)}{q}{'  (see above)' if n['repeat'] else ''}"
+            )
         if d.get("type") == "event" and n["context"] and not n["repeat"]:
             ctx = " ← ".join(c["label"] for c in n["context"])
             lines.append(f"{pad}    within: {ctx}")

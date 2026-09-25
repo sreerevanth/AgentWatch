@@ -20,7 +20,16 @@ from typing import Any
 from agentwatch.query.workspace import Workspace
 
 LEAF = {"TOOL_INVOCATION", "MODEL_INVOCATION", "RETRIEVAL", "EXTERNAL_IO", "MEMORY_ACCESS"}
-FEATURES = ["error_share", "repeat_share", "novelty", "input_growth", "model_share", "tool_share", "retrieval_share", "memory_share"]
+FEATURES = [
+    "error_share",
+    "repeat_share",
+    "novelty",
+    "input_growth",
+    "model_share",
+    "tool_share",
+    "retrieval_share",
+    "memory_share",
+]
 FEATURE_WORDS = {
     "error_share": ("failing", "clean"),
     "repeat_share": ("repeating", "varied"),
@@ -49,31 +58,37 @@ def _windows(events: list[dict[str, Any]], window: int) -> list[dict[str, Any]]:
         growth = 0.0 if not prev_size else (size - prev_size) / prev_size
         prev_size = size or prev_size
         n = len(chunk)
-        out.append({
-            "events": [e["event_id"] for e in chunk],
-            "t_start": chunk[0]["time"]["start"],
-            "features": {
-                "error_share": sum(1 for e in chunk if e["status"] in ("ERROR", "TIMEOUT")) / n,
-                "repeat_share": 1 - len(set(ops)) / n,
-                "novelty": novel / n,
-                "input_growth": max(-1.0, min(1.0, growth)),
-                "model_share": sum(1 for e in chunk if e["kind"] == "MODEL_INVOCATION") / n,
-                "tool_share": sum(1 for e in chunk if e["kind"] == "TOOL_INVOCATION") / n,
-                "retrieval_share": sum(1 for e in chunk if e["kind"] == "RETRIEVAL") / n,
-                "memory_share": sum(1 for e in chunk if e["kind"] == "MEMORY_ACCESS") / n,
-            },
-        })
+        out.append(
+            {
+                "events": [e["event_id"] for e in chunk],
+                "t_start": chunk[0]["time"]["start"],
+                "features": {
+                    "error_share": sum(1 for e in chunk if e["status"] in ("ERROR", "TIMEOUT")) / n,
+                    "repeat_share": 1 - len(set(ops)) / n,
+                    "novelty": novel / n,
+                    "input_growth": max(-1.0, min(1.0, growth)),
+                    "model_share": sum(1 for e in chunk if e["kind"] == "MODEL_INVOCATION") / n,
+                    "tool_share": sum(1 for e in chunk if e["kind"] == "TOOL_INVOCATION") / n,
+                    "retrieval_share": sum(1 for e in chunk if e["kind"] == "RETRIEVAL") / n,
+                    "memory_share": sum(1 for e in chunk if e["kind"] == "MEMORY_ACCESS") / n,
+                },
+            }
+        )
     return out
 
 
-def _kmeans(points: list[list[float]], k: int, seed: int = 3, iters: int = 50) -> tuple[list[int], list[list[float]]]:
+def _kmeans(
+    points: list[list[float]], k: int, seed: int = 3, iters: int = 50
+) -> tuple[list[int], list[list[float]]]:
     rng = random.Random(seed)  # noqa: S311 - seeded statistics, not security
     cents = [list(p) for p in rng.sample(points, k)]
     assign = [0] * len(points)
     for _ in range(iters):
         changed = False
         for i, p in enumerate(points):
-            best = min(range(k), key=lambda c: sum((a - b) ** 2 for a, b in zip(p, cents[c], strict=True)))
+            best = min(
+                range(k), key=lambda c: sum((a - b) ** 2 for a, b in zip(p, cents[c], strict=True))
+            )
             if best != assign[i]:
                 assign[i] = best
                 changed = True
@@ -97,16 +112,29 @@ def _silhouette(points: list[list[float]], assign: list[int]) -> float:
     for i, p in enumerate(points):
         own = [d(p, q) for j, q in enumerate(points) if assign[j] == assign[i] and j != i]
         a = mean(own) if own else 0.0
-        b = min(mean(d(p, q) for j, q in enumerate(points) if assign[j] == c) for c in labels if c != assign[i])
+        b = min(
+            mean(d(p, q) for j, q in enumerate(points) if assign[j] == c)
+            for c in labels
+            if c != assign[i]
+        )
         scores.append((b - a) / max(a, b) if max(a, b) > 0 else 0.0)
     return mean(scores)
 
 
-def infer_states(ws: Workspace, run_refs: list[str] | None = None, *, window: int = 4, max_k: int = 5) -> dict[str, Any]:
+def infer_states(
+    ws: Workspace, run_refs: list[str] | None = None, *, window: int = 4, max_k: int = 5
+) -> dict[str, Any]:
     runs = [ws.resolve_run(r) for r in run_refs] if run_refs else ws.runs()
-    per_run: dict[str, list[dict[str, Any]]] = {r["run_id"]: _windows(ws.events(r["run_id"]), window) for r in runs}
+    per_run: dict[str, list[dict[str, Any]]] = {
+        r["run_id"]: _windows(ws.events(r["run_id"]), window) for r in runs
+    }
     allw = [(rid, w) for rid, ws_ in per_run.items() for w in ws_]
-    result: dict[str, Any] = {"method": __doc__.strip().splitlines()[0] if __doc__ else "", "window": window, "features": FEATURES, "maturity": "EXPERIMENTAL"}
+    result: dict[str, Any] = {
+        "method": __doc__.strip().splitlines()[0] if __doc__ else "",
+        "window": window,
+        "features": FEATURES,
+        "maturity": "EXPERIMENTAL",
+    }
     if len(allw) < 6:
         result.update({"status": "insufficient_data", "windows": len(allw), "needed": 6})
         return result
@@ -124,9 +152,22 @@ def infer_states(ws: Workspace, run_refs: list[str] | None = None, *, window: in
     states = []
     for c, cent in enumerate(cents):
         ranked = sorted(range(len(FEATURES)), key=lambda i: -abs(cent[i]))[:2]
-        name = "/".join(FEATURE_WORDS[FEATURES[i]][0 if cent[i] > 0 else 1] for i in ranked if abs(cent[i]) > 0.3) or "baseline"
-        states.append({"state": f"S{c}", "name": name, "centroid_z": {FEATURES[i]: round(cent[i], 3) for i in range(len(FEATURES))},
-                       "windows": sum(1 for a in assign if a == c)})
+        name = (
+            "/".join(
+                FEATURE_WORDS[FEATURES[i]][0 if cent[i] > 0 else 1]
+                for i in ranked
+                if abs(cent[i]) > 0.3
+            )
+            or "baseline"
+        )
+        states.append(
+            {
+                "state": f"S{c}",
+                "name": name,
+                "centroid_z": {FEATURES[i]: round(cent[i], 3) for i in range(len(FEATURES))},
+                "windows": sum(1 for a in assign if a == c),
+            }
+        )
     trajectories: dict[str, Any] = {}
     idx = 0
     dists: list[float] = []
@@ -137,7 +178,14 @@ def infer_states(ws: Workspace, run_refs: list[str] | None = None, *, window: in
             p = pts[idx]
             if prev is not None:
                 dists.append(math.sqrt(sum((a - b) ** 2 for a, b in zip(p, prev, strict=True))))
-            seq.append({"t_start": w["t_start"], "state": f"S{assign[idx]}", "events": w["events"], "features": {f: round(v, 3) for f, v in w["features"].items()}})
+            seq.append(
+                {
+                    "t_start": w["t_start"],
+                    "state": f"S{assign[idx]}",
+                    "events": w["events"],
+                    "features": {f: round(v, 3) for f, v in w["features"].items()},
+                }
+            )
             prev = p
             idx += 1
         trajectories[rid] = seq
@@ -147,10 +195,21 @@ def infer_states(ws: Workspace, run_refs: list[str] | None = None, *, window: in
         prev = None
         for i, _item in enumerate(seq):
             p = pts[idx]
-            if prev is not None and math.sqrt(sum((a - b) ** 2 for a, b in zip(p, prev, strict=True))) > thr:
+            if (
+                prev is not None
+                and math.sqrt(sum((a - b) ** 2 for a, b in zip(p, prev, strict=True))) > thr
+            ):
                 seq[i]["change_point"] = True
             prev = p
             idx += 1
-    result.update({"status": "estimated", "k": k, "silhouette": round(sil, 4), "states": states, "change_point_threshold": round(thr, 4) if math.isfinite(thr) else None,
-                   "trajectories": trajectories})
+    result.update(
+        {
+            "status": "estimated",
+            "k": k,
+            "silhouette": round(sil, 4),
+            "states": states,
+            "change_point_threshold": round(thr, 4) if math.isfinite(thr) else None,
+            "trajectories": trajectories,
+        }
+    )
     return result

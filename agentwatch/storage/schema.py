@@ -224,7 +224,9 @@ derived = Table(
     Column("record_id", String(64), primary_key=True),
     Column("interp_id", String(128), primary_key=True),
     Column("tenant_id", String(64), nullable=False),
-    Column("record_type", String(48), nullable=False),  # motif_instance | profile | state_estimate | ...
+    Column(
+        "record_type", String(48), nullable=False
+    ),  # motif_instance | profile | state_estimate | ...
     Column("scope", String(256), nullable=False),  # run id, system version, ...
     Column("analyzer", String(128), nullable=False),
     Column("maturity", String(16), nullable=False),
@@ -238,7 +240,9 @@ experiments = Table(
     metadata,
     Column("record_id", String(64), primary_key=True),
     Column("tenant_id", String(64), nullable=False),
-    Column("record_type", String(48), nullable=False),  # hypothesis | hypothesis_evidence | branch | replay | counterfactual
+    Column(
+        "record_type", String(48), nullable=False
+    ),  # hypothesis | hypothesis_evidence | branch | replay | counterfactual
     Column("subject", String(256)),
     Column("created_at", String(40), nullable=False),
     Column("doc", Text, nullable=False),
