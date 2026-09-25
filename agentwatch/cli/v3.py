@@ -580,7 +580,8 @@ def states(runs_: list[str] = typer.Argument(None, metavar="RUNS", help="runs (d
 @_guard
 def forecast(run: str = typer.Argument("latest"), evaluate_only: bool = typer.Option(False, "--evaluate"), store: str | None = STORE_OPTION) -> None:
     """EXPERIMENTAL outcome forecast for a (partial) run, with calibration evidence."""
-    from agentwatch.forecasting.trajectory import evaluate, forecast as fc
+    from agentwatch.forecasting.trajectory import evaluate
+    from agentwatch.forecasting.trajectory import forecast as fc
 
     ws = _ws(store)
     _out(evaluate(ws) if evaluate_only else fc(ws, run))
