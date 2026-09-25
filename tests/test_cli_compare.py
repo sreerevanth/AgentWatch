@@ -88,7 +88,7 @@ def mock_httpx_client():
 
 
 def test_compare_success(mock_httpx_client):
-    result = runner.invoke(app, ["compare", "session-1", "session-2"])
+    result = runner.invoke(app, ["legacy", "compare", "session-1", "session-2"])
     assert result.exit_code == 0
     assert "Overall Confidence" in result.stdout
     assert "0.74" in result.stdout
@@ -109,6 +109,6 @@ def test_compare_success(mock_httpx_client):
 
 
 def test_compare_not_found(mock_httpx_client):
-    result = runner.invoke(app, ["compare", "invalid-1", "session-2"])
+    result = runner.invoke(app, ["legacy", "compare", "invalid-1", "session-2"])
     assert result.exit_code == 1
     assert "not found or has no confidence data" in result.stdout

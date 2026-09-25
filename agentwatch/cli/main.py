@@ -23,6 +23,7 @@ from rich.panel import Panel
 from rich.table import Table
 
 from agentwatch.cli.mcp import app as mcp_app
+from agentwatch.cli.v3 import register as _register_v3
 
 if TYPE_CHECKING:
     # httpx is imported lazily inside commands (optional dependency); this
@@ -85,6 +86,11 @@ app.add_typer(server_app)
 app.add_typer(safety_app)
 app.add_typer(cost_app)
 app.add_typer(eval_app)
+
+legacy_app = typer.Typer(
+    name="legacy", help="v0.2 commands kept for compatibility (superseded by v3 commands).", no_args_is_help=True
+)
+app.add_typer(legacy_app)
 
 
 _IN_REPL = False
@@ -1578,7 +1584,7 @@ def status(
 # ─────────────────────────────────────────────
 
 
-@app.command()
+@legacy_app.command(name="compare")
 def compare(
     session_id_1: str = typer.Argument(..., help="ID of the first session to compare"),
     session_id_2: str = typer.Argument(..., help="ID of the second session to compare"),
@@ -2508,6 +2514,9 @@ def version() -> None:
 
 
 def main() -> None:
+    for stream in (sys.stdout, sys.stderr):  # box-drawing and arrows must not crash legacy Windows consoles
+        if hasattr(stream, "reconfigure") and (stream.encoding or "").lower() not in ("utf-8", "utf8"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     app()
 
 
@@ -2614,3 +2623,8 @@ def export_csv(
             raise typer.Exit(1)
 
     asyncio.run(_run())
+
+
+# v3 commands (observe, inspect, provenance, compare, …) — registered last so they are the
+# canonical names; the v0.2 'compare' lives under 'agentwatch legacy compare'.
+_register_v3(app)
