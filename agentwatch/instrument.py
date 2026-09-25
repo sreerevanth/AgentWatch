@@ -140,7 +140,6 @@ def delegate(sender: str, receiver: str, task: Any) -> None:
 def artifact(name: str, content: Any, *, actor: str | None = None) -> None:
     """Record that the program produced a named artifact (file, report, patch)."""
     with recorder().span("STATE_MUTATION", f"write_artifact:{name}", actor=actor, object=f"file:{name}", facets=["artifact_creation"]) as s:
-        s.input(content, role="content", label=name)
         s.output(content, role="artifact", label=name)
 
 

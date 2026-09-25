@@ -25,7 +25,7 @@ from agentwatch.graph.model import (
 )
 
 EXEC_BUILDER = "graph.execution@1"
-INFO_BUILDER = "graph.information@1"
+INFO_BUILDER = "graph.information@2"
 
 SHINGLE = 5
 MIN_SHINGLES = 3
@@ -174,32 +174,33 @@ def build_information(
                 rels.append(make_relation(View.INFORMATION, RelType.READS_FROM, [node_entity(eff.target)], [node_event(ev.event_id)],
                                           basis=Basis.DECLARED, run_id=rid, evidence=list(ev.derived_from), derived_by=INFO_BUILDER))
 
-    # 2. list artifacts decompose into item artifacts (retrieval result sets etc.)
-    first_seen: dict[str, int] = {}
-    appears_in_run: dict[str, str | None] = {}
+    # 2. list artifacts decompose into item artifacts (retrieval result sets etc.), per run:
+    #    artifacts are content-addressed and may appear in several runs.
+    first_seen: dict[tuple[str | None, str], int] = {}
     for ev in ordered:
+        rid = run_of.get(ev.event_id)
         for ref in [*ev.inputs, *ev.outputs]:
-            first_seen.setdefault(ref.artifact_id, position[ev.event_id])
-            appears_in_run.setdefault(ref.artifact_id, run_of.get(ev.event_id))
-    item_parent: dict[str, str] = {}
-    for aid in list(first_seen):
-        content = artifacts.get(aid)
-        if content is None:
-            continue
-        value = json.loads(content.content_json)
-        if isinstance(value, list) and 1 < len(value) <= MAX_LIST_ITEMS:
-            for i, item in enumerate(value):
-                iid = register(item, "item")
-                if iid == aid:
-                    continue
-                item_parent.setdefault(iid, aid)
-                first_seen.setdefault(iid, first_seen[aid])
-                appears_in_run.setdefault(iid, appears_in_run[aid])
-                rels.append(make_relation(
-                    View.INFORMATION, RelType.CONTAINS_ITEM, [node_artifact(aid)], [node_artifact(iid)],
-                    basis=Basis.CONTENT_MATCH, run_id=appears_in_run[aid], evidence=[node_artifact(aid)], derived_by=INFO_BUILDER,
-                    attributes={"index": i},
-                ))
+            first_seen.setdefault((rid, ref.artifact_id), position[ev.event_id])
+    item_parent: dict[tuple[str | None, str], str] = {}
+    item_cache: dict[str, list[str]] = {}
+    for (rid, aid), pos in list(first_seen.items()):
+        if aid not in item_cache:
+            item_cache[aid] = []
+            content = artifacts.get(aid)
+            if content is not None:
+                value = json.loads(content.content_json)
+                if isinstance(value, list) and 1 < len(value) <= MAX_LIST_ITEMS:
+                    item_cache[aid] = [register(item, "item") for item in value]
+        for i, iid in enumerate(item_cache[aid]):
+            if iid == aid:
+                continue
+            item_parent.setdefault((rid, iid), aid)
+            first_seen.setdefault((rid, iid), pos)
+            rels.append(make_relation(
+                View.INFORMATION, RelType.CONTAINS_ITEM, [node_artifact(aid)], [node_artifact(iid)],
+                basis=Basis.CONTENT_MATCH, run_id=rid, evidence=[node_artifact(aid)], derived_by=INFO_BUILDER,
+                attributes={"index": i},
+            ))
 
     # 3. memory transfer by declared store + key
     writes: dict[tuple[Any, ...], ComputationalEvent] = {}
@@ -219,25 +220,27 @@ def build_information(
             ))
 
     # 4. content containment: an artifact whose text contains an earlier artifact's text
-    sh: dict[str, frozenset[str]] = {}
-    for aid in first_seen:
-        content = artifacts.get(aid)
-        if content is None:
-            continue
-        s = shingles(text_of(json.loads(content.content_json)))
-        if len(s) >= MIN_SHINGLES:
-            sh[aid] = s
+    sh_cache: dict[str, frozenset[str]] = {}
+
+    def shingles_of(aid: str) -> frozenset[str]:
+        if aid not in sh_cache:
+            content = artifacts.get(aid)
+            sh_cache[aid] = shingles(text_of(json.loads(content.content_json))) if content else frozenset()
+        return sh_cache[aid]
+
     by_run: dict[str | None, list[str]] = defaultdict(list)
-    for aid in sh:
-        by_run[appears_in_run.get(aid)].append(aid)
+    for (rid, aid) in first_seen:
+        if len(shingles_of(aid)) >= MIN_SHINGLES:
+            by_run[rid].append(aid)
     for run_id, aids in by_run.items():
-        aids.sort(key=lambda a: first_seen[a])
+        aids.sort(key=lambda a: first_seen[(run_id, a)])
         for i, x in enumerate(aids):
-            sx = sh[x]
+            sx = shingles_of(x)
+            fx = first_seen[(run_id, x)]
             for y in aids[:i]:
-                if first_seen[y] >= first_seen[x] or item_parent.get(y) == x or item_parent.get(x) == y:
+                if first_seen[(run_id, y)] >= fx or item_parent.get((run_id, y)) == x or item_parent.get((run_id, x)) == y:
                     continue
-                sy = sh[y]
+                sy = shingles_of(y)
                 inter = len(sx & sy)
                 if not inter:
                     continue
