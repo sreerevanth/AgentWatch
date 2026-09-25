@@ -1,6 +1,6 @@
 # AgentWatch v3 — Research Hypotheses, AWBench, and Roadmap
 
-Status: Phase 0 deliverable · PROPOSED · **No results exist yet. Every number below is a pre-registered threshold, not an observed value.**
+Status: AWBench v1 implemented. **Thresholds below are pre-registered targets. Measured values live only in `benchmarks/awbench/results/` (see section 6).**
 
 ---
 
@@ -264,3 +264,39 @@ Work is split into three tracks. An item moves from Experimental to Research whe
 - **Sampling bias.** Tail sampling over-represents failures. Mitigation: sampling decisions are recorded as evidence and statistics are reweighted.
 - **Ground-truth leakage.** The harness knows the injection point. The AgentWatch pipeline must not read ground-truth files. This is enforced by process isolation in the runner.
 - **Construct validity of "behaviour".** Genome features are chosen by us. Mitigation: report feature-ablation results and never interpret a genome as more than "repeatable measured structure".
+
+
+---
+
+## 6. First AWBench results (2026-09-25)
+
+These are machine-generated values from `benchmarks/awbench/results/latest.json` (deterministic stub systems, 3 architectures x 16 scenarios, seed 0, drift n = 10 per side). Summary:
+
+- **Met:**
+  - H2 execution F1 1.0 (temporal baseline 0.26)
+  - H2 information recall 0.79 / precision 0.84
+  - H3 lineage F1 0.86
+  - H4 top-1 localization 0.97 (index-aligned baseline 0.93)
+  - H5 motif precision/recall 0.94/0.94
+  - H7 drift detected (control: 0 features flagged)
+  - replay L1/L2 fidelity 1.0
+  - counterfactual accuracy 1.0
+  - causal hypotheses 1.0/1.0
+  - explanation faithfulness 1.0
+- **Not met:** H1 cross-source kind F1 **0.80 < 0.90**. OpenTelemetry has no convention for "artifact write", so the OTel-instrumented system's write span normalizes to OPERATION.
+
+**Validity caveats — read before citing any number:**
+
+1. **In-sample.** Several components were corrected after earlier AWBench runs exposed defects:
+   - memory TRANSFERS on stale reads
+   - traversal through shared artifacts ignoring time
+   - explanation rounding
+   - drift power
+   - profile features
+
+   These results therefore do not count as held-out validation. No analytic capability is promoted beyond EXPERIMENTAL on their basis.
+2. **Stub systems.** Deterministic stub models make ground truth exact but unrealistically clean (section 5, synthetic-to-real gap). There are no results with real models yet.
+3. **One seed.** Variance across seeds is not yet reported.
+4. **Evaluator definitions** are in `benchmarks/awbench/tasks.py`. Their docstrings and notes state what each metric does and does not measure.
+
+Before any VALIDATED claim, the next steps are held-out architectures, real-model runs, and multiple seeds.

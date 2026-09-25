@@ -1,49 +1,48 @@
 # AgentWatch v3 — Implementation State
 
-Branch: `architecture/v3` · Living document, updated at each milestone.
+Branch: `architecture/v3` · Updated 2026-09-25
 
 ## Completed
 
-| Area | Package | Notes |
+| Area | Where | Status |
 |---|---|---|
-| Evidence plane | `agentwatch/evidence`, `agentwatch/storage` | `RawObservation` (frozen; copy-on-read payload), edge redaction with manifest, SQLite/Postgres store (SQLAlchemy Core), DB triggers reject UPDATE/DELETE, idempotent append, blobs, Merkle segments, verify, inclusion proofs, authorized purge |
-| Sensors | `agentwatch/sensors`, `agentwatch/instrument.py` | native SDK (`aw.run/span/tool/model/retriever/memory_*/message/delegate/artifact`), OTel (OTLP JSON/protobuf, SpanProcessor), LangChain (keeps run_id/parent_run_id), Claude Code, OpenAI/Anthropic client wrappers, MCP tap, `LegacyTranslator` (ACCEPTED / ACCEPTED_WITH_LOSS / REJECTED) |
-| Events | `agentwatch/events` | `ComputationalEvent` with explicit `missing`, declared links, normalizers for every sensor, registry + entry points |
-| Engine | `agentwatch/runtime/engine.py` | versioned interpretation id = hash of component versions; deterministic full rebuild; invariant: every observation → event or diagnostic |
-| Runs / entities | `agentwatch/runs`, `agentwatch/entities` | runs only from declared ids (+ parent-chain inheritance, recorded); exact-key entities |
-| Graph | `agentwatch/graph` | EXECUTION + INFORMATION builders (declared, content-match, key-match, retry heuristic), hyperedge relations, traversal |
-| Read model | `agentwatch/query/workspace.py` | single read model for CLI/API/frontend |
-| Provenance | `agentwatch/provenance` | lineage trees with execution context, dependents, EXPERIMENTAL metrics |
-| Compare | `agentwatch/compare` | signature alignment, earliest divergence, structural/resource/information/motif diffs, dependency-cone share |
-| Behaviour | `agentwatch/behaviour` | 7 motifs, profiles, genome with bootstrap CIs, 4 candidate distances, permutation drift + BH |
-| Causality | `agentwatch/causality` | hypotheses with computed evidence class; causes/effects with separate dependency/correlation/hypothesis/intervention sections |
-| Lab | `agentwatch/lab` | observe, replay L0–L3 (stale captures never served), branches, counterfactuals (SIMULATED/MODEL_ESTIMATED/UNKNOWN) |
-| State / forecasting | `agentwatch/state`, `agentwatch/forecasting` | EXPERIMENTAL baselines with insufficient-data handling |
-| Query | `agentwatch/query/engine.py` | structured grammar + deterministic NL patterns; evidence ids on every answer |
-| CLI | `agentwatch/cli/v3.py` | all v3 commands; legacy `compare` → `agentwatch legacy compare` |
-| Example | `examples/research_system.py` | deterministic multi-agent pipeline with variants |
+| Immutable evidence: frozen observations, DB-enforced immutability, idempotent append, edge redaction + manifests, blobs, Merkle segments, verify, inclusion proofs, authorized purge | `agentwatch/evidence`, `agentwatch/storage` | tested on SQLite and PostgreSQL (CI) |
+| Sensors: native SDK, OTel (OTLP JSON/protobuf, SpanProcessor), LangChain (keeps parent_run_id), Claude Code, OpenAI/Anthropic wrappers, MCP tap, LegacyTranslator | `agentwatch/sensors`, `agentwatch/instrument.py` | tested |
+| Normalizers + canonical event algebra with explicit missing facts | `agentwatch/events` | tested (golden-style assertions per source) |
+| Engine: versioned, deterministic, atomic rebuild; every observation → event or diagnostic | `agentwatch/runtime` | tested, incl. concurrent engines on PG |
+| Runs from declared ids only; exact-key entities | `agentwatch/runs`, `agentwatch/entities` | tested |
+| Execution + information graphs (hyperedges, per-run content relations, time-respecting traversal) | `agentwatch/graph` | tested + AWBench H2 |
+| Provenance, dependents | `agentwatch/provenance` | tested + AWBench H3 |
+| Run inspection and comparison | `agentwatch/compare` | tested + AWBench H4 |
+| Motifs (7), profiles v2, genome, distances, drift with power check | `agentwatch/behaviour` | tested + AWBench H5/H7 |
+| Causality: hypotheses with computed evidence class; causes/effects | `agentwatch/causality` | tested + AWBench |
+| Lab: observe, replay L0–L3 (stale captures never served), branches, counterfactuals | `agentwatch/lab` | end-to-end tests + AWBench |
+| Latent states, forecasting frameworks | `agentwatch/state`, `agentwatch/forecasting` | tested (EXPERIMENTAL, insufficient-data paths) |
+| Query engine (structured + deterministic NL routing) | `agentwatch/query/engine.py` | tested + AWBench faithfulness |
+| API `/api/v3` + `/v1/traces` + legacy tee | `agentwatch/api/v3.py` | tested |
+| CLI (24 commands + `evidence` group) | `agentwatch/cli/v3.py` | end-to-end tests |
+| Frontend: LIVE, MAP, TIMELINE, LAB, GENOME, COMPARE, QUERY | `frontend/` | Jest, type-check, lint, build; verified in a browser against live data |
+| AWBench (3 architectures × 16 scenarios, 10 tasks, pre-registered thresholds) | `benchmarks/awbench` | results committed |
+| Performance benchmark | `benchmarks/perf` | results committed |
+| Misleading v0.2 outputs relabelled | `api/server.py`, `replay/counterfactual.py`, `governance/causal.py` | tested |
 
-## Currently implementing
-- `/api/v3` router + OTLP `/v1/traces` + legacy tee; fix of the v0.2 shared-event redaction race
+## Known limitations (honest list)
 
-## Remaining (in order)
-1. API v3 + tests (API, CLI, graph, provenance, compare, motifs, causality, lab, query)
-2. Postgres store test in CI (service container exists)
-3. AWBench (systems, perturbations, ground truth, tasks, runner, results; thresholds separate)
-4. Performance benchmarks (ingest, normalize, graph build, traversal, query, storage)
-5. Frontend rebuild: LIVE, MAP, TIMELINE, LAB, GENOME, COMPARE, QUERY on `/api/v3`
-6. Relabel misleading v0.2 features (`/simulate`, `hallucination_risk`, `governance/causal.py`)
-7. Docs: user guide, API reference, metric definitions, updates to V3_ARCHITECTURE/MIGRATION_MAP
-8. Final quality gate
+- **H1 cross-source equivalence** is below its threshold (0.80 < 0.90). OTel lacks a convention for artifact writes.
+- **AWBench results are in-sample** and come from stub models. No analytic capability is VALIDATED yet; see RESEARCH_HYPOTHESES §6.
+- **Full rebuild per interpretation**: 5.2 s for 4k events on a laptop. Fine for development-scale stores; large deployments need incremental processing.
+- **Storage** is about 9.6 KB per observation, including derived rows and relations. Not optimized.
+- **Privacy**: there is no per-subject encryption or crypto-shredding yet (ADR-0011). Erasure is available only as authorized purge of whole sealed segments. Secret redaction is on by default; PII redaction is opt-in (`PayloadPolicy(redact_pii=True)`).
+- **Replay** only mocks calls made through `aw.tool` / `aw.model` / `aw.retriever`. Other program logic runs live, and the reports say so.
+- **Entity resolution** is exact-key only. There is no aliasing (e.g. model version aliases).
+- **Legacy HIPAA redactor** (v0.2) misses US SSNs and mislabels email local parts as MRNs, as observed in the regression test. It is a v0.2 module and has not been fixed here.
+- **Packaging split** (ADR-0008) and legacy quarantine (M2) are not done. The base install still includes the server stack.
+- Local development used Python 3.14 against a `>=3.12,<3.13` pin (`--ignore-requires-python`). CI runs 3.12.
 
-## Decisions made during implementation
-- Packages sit at top level of `agentwatch/` (`evidence`, `events`, …). `lab/` holds replay/branch/counterfactual because `agentwatch/replay` is the v0.2 module.
-- Evidence and derived data share one SQL store. Derived rows are keyed by `interp_id`, and rebuilds replace them atomically. Postgres rebuilds take an advisory lock.
-- Replay keys instrumented calls by `kind|operation|ordinal`. A capture is served only when the call's input hash matches the recorded input.
-- Content-match relations are per run, because artifacts are content-addressed and shared across runs.
-- Git Credential Manager hangs in this environment. Pushes use `gh auth git-credential` (see scratch `push.sh`).
-- The local Python is 3.14 while `pyproject` pins `<3.13`. The dev install uses `pip install -e . --no-deps --ignore-requires-python`.
+## Next exact tasks
 
-## Known failures / limitations
-- Pre-existing: none remaining. The CLI surface golden is now normalized across click versions.
-- Full rebuild on every new observation batch: fine at example scale. It will be measured in the perf benchmark before any incremental design.
+1. M2: move DEPRECATE modules to `agentwatch/legacy/` with import shims, and add an import-linter contract to CI.
+2. AWBench: held-out architecture(s), real-model runs behind an opt-in flag, multiple seeds with CIs.
+3. OTel normalizer: map `file.*` / `db.operation=insert` attributes to STATE_MUTATION, and re-measure H1.
+4. Incremental normalization keyed by run, once a workload needs it.
+5. Crypto-shredding for per-subject erasure.

@@ -1,6 +1,6 @@
 # AgentWatch v3 — Target Architecture
 
-Status: Phase 0 deliverable · PROPOSED · Companion documents: [CURRENT_ARCHITECTURE](CURRENT_ARCHITECTURE.md), [MIGRATION_MAP](MIGRATION_MAP.md), [RESEARCH_HYPOTHESES](RESEARCH_HYPOTHESES.md), [ADRs](adr/), [PHASE1_PLAN](PHASE1_PLAN.md)
+Status: **IMPLEMENTED on `architecture/v3`** (see section 9 for deviations from the original proposal) · Companion documents: [CURRENT_ARCHITECTURE](CURRENT_ARCHITECTURE.md), [MIGRATION_MAP](MIGRATION_MAP.md), [RESEARCH_HYPOTHESES](RESEARCH_HYPOTHESES.md), [ADRs](adr/), [PHASE1_PLAN](PHASE1_PLAN.md)
 
 ---
 
@@ -599,3 +599,34 @@ tests/
 - Promotion `EXPERIMENTAL → VALIDATED` requires a checked-in AWBench result file that meets pre-registered thresholds (see `RESEARCH_HYPOTHESES.md`). Promotion `VALIDATED → PRODUCTION` additionally requires performance and robustness budgets.
 - Every metric has a definition document in `docs/v3/metrics/` before it is exposed. A metric without a definition cannot be registered.
 - Confidence values carry `calibrated: bool`. Uncalibrated confidences render as ordinal only: low, medium or high, never "0.82".
+
+
+---
+
+## 9. As built (2026-09-25)
+
+The architecture above is implemented. Where the implementation deviates from the proposal, the code wins and the change is recorded here.
+
+| Proposal | As built | Why |
+|---|---|---|
+| Packages `evidence, events, entities, runs, graph, provenance, compare, behaviour, causality, state, forecasting, replay, counterfactual, experiments, query, storage, runtime, analysis` | All present at the top level of `agentwatch/`, except replay, branching and counterfactuals, which live in `agentwatch/lab/` | `agentwatch/replay` is the v0.2 module. v3 must not shadow it during migration. |
+| Alembic migrations | `storage/schema.py` with SQLAlchemy Core, a `schema_version` row, and DB triggers (SQLite and PostgreSQL) | Only one schema version exists so far. Alembic is added with the first incompatible change. |
+| Incremental normalization | Deterministic full rebuild per interpretation, run inside one transaction (advisory-locked on PG) | Measured at 5.2 s for 4,000 events (`benchmarks/perf/results/latest.json`). Revisit when a measured workload needs incremental processing. |
+| Separate sensor package / `[server]` extra | Sensors live in `agentwatch/sensors`. The base install still carries the server dependencies. | Packaging split (ADR-0008) is deferred to migration stage M2. |
+| Encryption and crypto-shredding (ADR-0011) | Edge secret redaction plus manifests, and retention by authorized segment purge. No per-subject encryption yet. | Known limitation; see IMPLEMENTATION_STATE. |
+| Graph library chosen by benchmark | Pure-Python traversal (`graph/traverse.py`) | Per-run graphs (10^4 relations) build in 0.2 s and traverse in 17 ms. No dependency was justified. |
+| Causal view | Derived on demand from hypotheses with computed evidence classes (`causality/hypotheses.py`); never from structure | ADR-0007 |
+| Artifacts | Content-addressed per tenant. Content relations are per run, and traversal is time-respecting. | ADR-0015 (found by AWBench) |
+| API re-execution | Off unless `AGENTWATCH_ALLOW_REEXECUTION=1` | ADR-0014 |
+
+The data flow as built:
+
+```text
+sensors (native SDK, OTel, LangChain, Claude Code, OpenAI/Anthropic, MCP, LegacyTranslator)
+  -> Store.append (edge redaction, idempotent, immutable; sealed Merkle segments)
+  -> Engine.build: normalizers -> runs (declared ids only) -> entities (exact keys)
+                   -> EXECUTION + INFORMATION relations -> analyzers (motifs, profiles)
+  -> Store.write_interpretation (atomic, versioned by component versions)
+  -> Workspace (single read model) -> CLI, /api/v3, frontend
+  -> lab (observe, replay L0-L3, branches, counterfactuals) writes append-only experiment records
+```

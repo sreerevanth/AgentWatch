@@ -36,6 +36,19 @@ agentwatch watch "your agent command"
 
 </div>
 
+> **Branch `architecture/v3`: AgentWatch v3.** This branch rebuilds AgentWatch as a *passive instrument*. It reconstructs, compares, replays and explains the behaviour of AI-native systems from immutable runtime evidence, and it does not block or control them.
+>
+> ```bash
+> agentwatch observe python examples/research_system.py   # record a program
+> agentwatch inspect latest                                 # reconstructed execution
+> agentwatch provenance report.md --run latest              # evidence lineage
+> agentwatch compare latest~1 latest                        # earliest divergence
+> agentwatch replay latest --level L2                       # replay with captured results
+> ```
+>
+> See [docs/v3/USER_GUIDE.md](docs/v3/USER_GUIDE.md), [docs/v3](docs/v3/README.md) (architecture, ADRs, migration) and [AWBench results](benchmarks/awbench/results/LATEST.md). Most analysis features are EXPERIMENTAL; `agentwatch status` shows each capability's maturity. The v0.2 guardrail features described below remain available during migration.
+
+
 ---
 
 ## The Problem Nobody Is Solving
