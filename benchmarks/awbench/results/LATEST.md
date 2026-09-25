@@ -1,7 +1,7 @@
 # AWBench results (machine-generated — do not edit)
 
-- generated: 2026-09-25T14:00:54.955832+00:00
-- git: `5262f1340496678f935029458ddaf92f4e7f3a6b` · registry sha256 `5231dd928fd7`
+- generated: 2026-09-25T14:34:03.524179+00:00
+- git: `73e80467176cafa0f684f87f44f08a1d454096a1` · registry sha256 `5231dd928fd7`
 - runs: 56 · seeds: 1 · models: deterministic stubs (no real LLMs)
 - python 3.14.2 on Windows-11-10.0.26200-SP0
 
