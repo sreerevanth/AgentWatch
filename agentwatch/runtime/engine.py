@@ -146,9 +146,8 @@ class Engine:
             relations=built["relations"],
             processed_through=through,
             stats=stats,
+            derived=derived,
         )
-        if derived:
-            self.store.put_derived(interp_id, tenant_id, derived)
         stats["total_ms"] = round((time.perf_counter() - t0) * 1000, 1)
         return {"interp_id": interp_id, "skipped": False, **stats}
 

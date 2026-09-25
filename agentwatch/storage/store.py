@@ -600,6 +600,11 @@ class Store:
         self, tenant_id: str, interp_id: str, pipeline: dict[str, Any], config_hash: str
     ) -> None:
         with self.engine.begin() as conn:
+            if not self.is_sqlite:  # concurrent processes activate the same interpretation id
+                conn.execute(
+                    text("SELECT pg_advisory_xact_lock(:k)"),
+                    {"k": _lock_key(f"activate|{tenant_id}")},
+                )
             conn.execute(
                 update(s.interpretations)
                 .where(
@@ -647,6 +652,7 @@ class Store:
         relations: Sequence[dict[str, Any]],
         processed_through: str | None,
         stats: dict[str, Any],
+        derived: Sequence[dict[str, Any]] = (),
     ) -> None:
         """Replace all derived rows of ``interp_id`` atomically. Evidence is untouched."""
         with self.engine.begin() as conn:
@@ -769,6 +775,10 @@ class Store:
                                 }
                             )
                 conn.execute(insert(s.relation_members), members)
+            if derived:
+                conn.execute(
+                    insert(s.derived), [self._derived_row(interp_id, tenant_id, r) for r in derived]
+                )
             conn.execute(
                 update(s.interpretations)
                 .where(s.interpretations.c.interp_id == interp_id)
@@ -833,21 +843,21 @@ class Store:
                 conn.execute(q)
             if records:
                 conn.execute(
-                    insert(s.derived),
-                    [
-                        {
-                            "record_id": r["record_id"],
-                            "interp_id": interp_id,
-                            "tenant_id": tenant_id,
-                            "record_type": r["record_type"],
-                            "scope": r["scope"][:256],
-                            "analyzer": r["analyzer"],
-                            "maturity": r["maturity"],
-                            "doc": canonical_json(r),
-                        }
-                        for r in records
-                    ],
+                    insert(s.derived), [self._derived_row(interp_id, tenant_id, r) for r in records]
                 )
+
+    @staticmethod
+    def _derived_row(interp_id: str, tenant_id: str, r: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "record_id": r["record_id"],
+            "interp_id": interp_id,
+            "tenant_id": tenant_id,
+            "record_type": r["record_type"],
+            "scope": r["scope"][:256],
+            "analyzer": r["analyzer"],
+            "maturity": r["maturity"],
+            "doc": canonical_json(r),
+        }
 
     # ── interpretation reads ───────────────────────────────────────────────
     def events(
@@ -1086,6 +1096,11 @@ class Store:
                 return
             yield from chunk
             after = chunk[-1].obs_id
+
+
+def _lock_key(name: str) -> int:
+    """Stable signed 63-bit key for pg_advisory_xact_lock."""
+    return int(sha256_hex(name)[:15], 16)
 
 
 def _leaf(tenant_id: str, r: Any) -> str:

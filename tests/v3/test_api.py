@@ -13,8 +13,13 @@ from agentwatch.runtime.engine import Engine
 
 @pytest.fixture
 def client(store, monkeypatch):
+    from agentwatch.api import server
+    from agentwatch.api.middleware.rate_limiter import InMemoryBackend
     from agentwatch.api.server import app
 
+    # the legacy per-user limit (100/hour) is process-global; give this module a fresh quota
+    server.reset_rate_limiter_for_tests()
+    monkeypatch.setattr(server._rate_limiter, "backend", InMemoryBackend())
     engine = Engine(store)
     v3api.set_engine(engine)
     monkeypatch.delenv("AGENTWATCH_ALLOW_REEXECUTION", raising=False)
