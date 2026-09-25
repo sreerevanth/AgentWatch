@@ -7,8 +7,9 @@ controller. For each call, identified by its call key ``kind|operation|ordinal``
 * the operation is in ``live``      → the real function runs (partial re-execution);
 * a *capture* exists               → the captured result is returned, or the captured
                                      exception re-raised (mock replay);
+* a capture whose recorded input differs from the new input is *stale* and is not served;
 * otherwise                        → L3: run live and record a capture miss;
-                                     L2: raise :class:`ReplayDivergence`.
+                                     L2: raise :class:`ReplayDivergenceError`.
 
 A report of what was mocked, substituted, run live or missing is written on exit.
 """
@@ -22,7 +23,7 @@ from pathlib import Path
 from typing import Any
 
 
-class ReplayDivergence(RuntimeError):
+class ReplayDivergenceError(RuntimeError):
     """The re-executed program made a call that the original run never made."""
 
 
@@ -38,6 +39,7 @@ class ReplayController:
     ran_live: list[str] = field(default_factory=list)
     missing: list[str] = field(default_factory=list)
     unfaithful: list[str] = field(default_factory=list)
+    stale: list[str] = field(default_factory=list)
 
     @classmethod
     def from_file(cls, path: str) -> ReplayController:
@@ -66,6 +68,13 @@ class ReplayController:
             span.set(replay="live")
             return False, None
         cap = self.captures.get(key)
+        if cap is not None and cap.get("input_sha") and span.inputs:
+            from agentwatch.evidence.canonical import canonical_json, sha256_hex
+
+            if sha256_hex(canonical_json(span.inputs[0].get("value"))) != cap["input_sha"]:
+                # the capture was recorded for different input: serving it would hide the change
+                self.stale.append(key)
+                cap = None
         if cap is not None:
             if not cap.get("faithful", True):
                 self.unfaithful.append(key)
@@ -84,7 +93,7 @@ class ReplayController:
             span.set(replay="live_capture_miss")
             return False, None
         span.set(replay="divergence")
-        raise ReplayDivergence(f"no captured result for {key}; the replayed program diverged from the original run")
+        raise ReplayDivergenceError(f"no captured result for {key}; the replayed program diverged from the original run")
 
     def report(self) -> dict[str, Any]:
         return {
@@ -94,6 +103,7 @@ class ReplayController:
             "ran_live": self.ran_live,
             "missing": self.missing,
             "unfaithful_values": self.unfaithful,
+            "stale_captures": self.stale,
         }
 
 

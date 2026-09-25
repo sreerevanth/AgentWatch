@@ -15,11 +15,11 @@ from agentwatch.runtime.engine import Engine
 from agentwatch.storage.store import Store
 
 
-class NotFound(LookupError):
+class NotFoundError(LookupError):
     pass
 
 
-class Ambiguous(LookupError):
+class AmbiguousError(LookupError):
     pass
 
 
@@ -39,12 +39,12 @@ class Workspace:
     def resolve_run(self, ref: str) -> dict[str, Any]:
         runs = self.runs()
         if not runs:
-            raise NotFound("no runs recorded yet")
+            raise NotFoundError("no runs recorded yet")
         if ref.startswith("latest"):
             offset = int(ref.split("~", 1)[1]) if "~" in ref else 0
             ordered = sorted(runs, key=lambda r: r.get("started_at") or "", reverse=True)
             if offset >= len(ordered):
-                raise NotFound(f"only {len(ordered)} runs exist")
+                raise NotFoundError(f"only {len(ordered)} runs exist")
             return ordered[offset]
         exact = [r for r in runs if r["run_id"] == ref]
         if exact:
@@ -53,11 +53,11 @@ class Workspace:
         if len(pref) == 1:
             return pref[0]
         if len(pref) > 1:
-            raise Ambiguous(f"run prefix {ref!r} matches {len(pref)} runs")
+            raise AmbiguousError(f"run prefix {ref!r} matches {len(pref)} runs")
         named = [r for r in runs if r.get("name") == ref]
         if named:
             return sorted(named, key=lambda r: r.get("started_at") or "", reverse=True)[0]
-        raise NotFound(f"no run matches {ref!r}")
+        raise NotFoundError(f"no run matches {ref!r}")
 
     # ── events ────────────────────────────────────────────────────────────
     def events(self, run_id: str | None = None, kind: str | None = None) -> list[dict[str, Any]]:
@@ -76,8 +76,8 @@ class Workspace:
         if len(matches) == 1:
             return matches[0]
         if len(matches) > 1:
-            raise Ambiguous(f"event prefix {ref!r} matches {len(matches)} events")
-        raise NotFound(f"no event matches {ref!r}")
+            raise AmbiguousError(f"event prefix {ref!r} matches {len(matches)} events")
+        raise NotFoundError(f"no event matches {ref!r}")
 
     def event_evidence(self, event_id: str) -> list[dict[str, Any]]:
         ev = self.event(event_id)
@@ -104,7 +104,7 @@ class Workspace:
         aid = self.resolve_artifact_id(ref)
         art = self.store.artifact(self.tenant_id, aid, with_content=with_content)
         if art is None:
-            raise NotFound(f"artifact {ref!r} not found")
+            raise NotFoundError(f"artifact {ref!r} not found")
         art["labels"] = sorted({a.get("label") for e in self.all_events.values() for a in e["outputs"] + e["inputs"] if a["artifact_id"] == aid and a.get("label")})
         return art
 
@@ -127,8 +127,8 @@ class Workspace:
             if len(matches) == 1:
                 return matches[0]
             if len(matches) > 1:
-                raise Ambiguous(f"artifact prefix {ref!r} matches {len(matches)} artifacts")
-        raise NotFound(f"no artifact matches {ref!r}")
+                raise AmbiguousError(f"artifact prefix {ref!r} matches {len(matches)} artifacts")
+        raise NotFoundError(f"no artifact matches {ref!r}")
 
     def resolve_node(self, ref: str) -> str:
         if ref.startswith("entity:"):
@@ -139,7 +139,7 @@ class Workspace:
             return f"event:{self.event(ref)['event_id']}"
         try:
             return f"event:{self.event(ref)['event_id']}"
-        except (NotFound, Ambiguous):
+        except (NotFoundError, AmbiguousError):
             return f"artifact:{self.resolve_artifact_id(ref)}"
 
     def describe_node(self, node: str) -> dict[str, Any]:

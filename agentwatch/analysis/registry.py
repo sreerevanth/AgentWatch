@@ -6,4 +6,7 @@ from agentwatch.analysis.base import Analyzer
 
 
 def builtin_analyzers() -> list[Analyzer]:
-    return []
+    from agentwatch.behaviour.motifs import MotifAnalyzer
+    from agentwatch.behaviour.profile import ProfileAnalyzer
+
+    return [MotifAnalyzer(), ProfileAnalyzer()]

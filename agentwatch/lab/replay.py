@@ -17,13 +17,14 @@ from pathlib import Path
 from typing import Any
 
 from agentwatch.compare.runs import compare
+from agentwatch.evidence.canonical import canonical_json, sha256_hex
 from agentwatch.lab.observe import observe
 from agentwatch.query.workspace import Workspace
 
 LEVELS = ("L0", "L1", "L2", "L3")
 
 
-class ReplayUnavailable(RuntimeError):
+class ReplayUnavailableError(RuntimeError):
     pass
 
 
@@ -38,11 +39,14 @@ def captures_for(ws: Workspace, run_id: str) -> dict[str, dict[str, Any]]:
         if out is not None:
             art = ws.store.artifact(ws.tenant_id, out["artifact_id"])
             value = art["content"] if art else None
+        inp = e["inputs"][0] if e["inputs"] else None
+        in_art = ws.store.artifact(ws.tenant_id, inp["artifact_id"]) if inp else None
         caps[key] = {
+            "input_sha": sha256_hex(canonical_json(in_art["content"])) if in_art else None,
             "value": value,
             "status": e["status"],
             "error": e.get("error"),
-            "faithful": out is not None and "non_json_values" not in e["attributes"] or e["status"] != "OK",
+            "faithful": e["status"] != "OK" or (out is not None and "non_json_values" not in e["attributes"]),
             "event_id": e["event_id"],
         }
     return caps
@@ -51,7 +55,7 @@ def captures_for(ws: Workspace, run_id: str) -> dict[str, dict[str, Any]]:
 def _command(run: dict[str, Any]) -> list[str]:
     cmd = (run.get("attributes") or {}).get("command")
     if not cmd:
-        raise ReplayUnavailable("run has no recorded command; L2/L3 replay needs a run captured with `agentwatch observe`")
+        raise ReplayUnavailableError("run has no recorded command; L2/L3 replay needs a run captured with `agentwatch observe`")
     return [str(c) for c in cmd]
 
 
@@ -122,7 +126,7 @@ def _execute(ws: Workspace, run: dict[str, Any], level: str, live: list[str], su
     command = _command(run)
     caps = captures_for(ws, run["run_id"])
     if not caps:
-        raise ReplayUnavailable("run has no instrumented calls with call keys to mock")
+        raise ReplayUnavailableError("run has no instrumented calls with call keys to mock")
     with tempfile.TemporaryDirectory(prefix="agentwatch-replay-") as tmp:
         spec_path = Path(tmp) / "spec.json"
         report_path = Path(tmp) / "report.json"
@@ -133,7 +137,7 @@ def _execute(ws: Workspace, run: dict[str, Any], level: str, live: list[str], su
         if branch_id:
             env["AGENTWATCH_BRANCH_ID"] = branch_id
         cwd_attr = (run.get("attributes") or {}).get("cwd")
-        res = observe(ws.engine, command, tenant_id=ws.tenant_id, env=env, capture_output=True)
+        res = observe(ws.engine, command, tenant_id=ws.tenant_id, env=env)
         report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.exists() else {}
     fresh = Workspace(ws.engine, ws.tenant_id)
     comparison = compare(fresh, run["run_id"], res.run_id) if res.run_id else None
@@ -150,6 +154,7 @@ def _execute(ws: Workspace, run: dict[str, Any], level: str, live: list[str], su
         "live_components": [uninstrumented, *sorted(set(report.get("ran_live", [])))],
         "substituted": report.get("substituted", []),
         "missing_dependencies": report.get("missing", []),
+        "stale_captures": report.get("stale_captures", []),
         "working_directory_at_capture": cwd_attr,
         "comparison": comparison,
         "reproduction_confidence": reproduced,
