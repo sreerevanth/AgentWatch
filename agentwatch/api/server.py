@@ -1073,8 +1073,10 @@ async def get_replay(session_id: str, _auth: None = Depends(_require_api_key)) -
     d = replay.to_dict()
     d["reasoning_audit"] = {
         "overall_score": audit_summary.average_score,
-        "hallucination_risk": 1.0 - audit_summary.average_score,  # Simple heuristic for UI
-        "goal_alignment": audit_summary.average_score,  # Shared heuristic
+        # v0.2 used to derive "hallucination_risk" (1 - score) and "goal_alignment" (= score) from
+        # this single uncalibrated audit score. Those names promised measurements that were never
+        # made, so they are no longer reported.
+        "note": "overall_score is an uncalibrated heuristic/LLM-judge audit score, not a hallucination or goal-alignment measurement",
         "findings": [
             {
                 "type": a.verdict,
@@ -1113,6 +1115,11 @@ async def simulate_session(
     return {
         "session_id": session_id,
         "diverged_at_step": result.diverged_at_step,
+        # Honest labelling (v3 audit): without a step function this endpoint only substitutes one
+        # value into a copy of the recorded timeline; nothing downstream is re-executed.
+        "method": "value_substitution_only" if engine.step_fn is None else "step_function",
+        "simulated": engine.step_fn is not None,
+        "note": "For re-executed counterfactuals with uncertainty labels use POST /api/v3/counterfactual.",
         "original_events": [e.model_dump_for_storage() for e in result.original_events],
         "alternate_events": [e.model_dump_for_storage() for e in result.alternate_events],
         "summary": result.summary,
