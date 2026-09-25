@@ -49,7 +49,13 @@ StepFn = Callable[[list[AgentEvent], AgentEvent], AgentEvent | None]
 
 
 class CounterfactualEngine:
-    """Replay a session forward from a chosen step under an alternate output."""
+    """Substitute an alternate tool output at a chosen step (v0.2).
+
+    Without a ``step_fn`` this does **not** simulate anything: the recorded suffix is copied
+    unchanged after the substituted value. It is kept for compatibility; v3 counterfactuals
+    (``agentwatch.lab.branch.counterfactual``) re-execute the program and label results
+    OBSERVED / SIMULATED / MODEL_ESTIMATED / UNKNOWN.
+    """
 
     def __init__(self, step_fn: StepFn | None = None):
         # If no step fn is given, the engine just replays the alternate

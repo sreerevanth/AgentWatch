@@ -174,7 +174,7 @@ def test_compare_sends_api_key_on_all_requests():
         ),
     )
     with ctx:
-        result = runner.invoke(app, ["compare", "s1", "s2", "--api-key", "k"])
+        result = runner.invoke(app, ["legacy", "compare", "s1", "s2", "--api-key", "k"])
     assert result.exit_code == 0
     assert mock_client.get.call_count == 4
     for call in mock_client.get.call_args_list:

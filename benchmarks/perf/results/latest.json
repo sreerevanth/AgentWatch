@@ -1,0 +1,20 @@
+{
+  "generated_at": "2026-09-25T14:07:25.099124+00:00",
+  "python": "3.14.2",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "spans": 2000,
+  "sensor_overhead_us_per_call": 61.89,
+  "observations": 8004,
+  "ingest_obs_per_s": 4674.0,
+  "rebuild_s": 5.158,
+  "rebuild_events_per_s": 775.9,
+  "relations": 32000,
+  "graph_build_ms": 211.9,
+  "descendants_ms": 16.74,
+  "descendants_reached": 5502,
+  "provenance_ms": 463.4,
+  "compare_ms": 1398.3,
+  "verify_s": 0.088,
+  "store_bytes": 76898304,
+  "store_bytes_per_observation": 9607.5
+}

@@ -41,6 +41,8 @@ from agentwatch.api.auth import require_permission
 from agentwatch.api.entitlement import require_entitlement
 from agentwatch.api.middleware.rate_limiter import RateLimiter, RateLimitMiddleware
 from agentwatch.api.tenant_auth import get_tenant_store
+from agentwatch.api.v3 import build_router as build_v3_router
+from agentwatch.api.v3 import get_engine as get_v3_engine
 from agentwatch.core.config import get_cloud_config
 from agentwatch.core.event_bus import get_event_bus
 from agentwatch.core.models import Repository, TenantRepository, init_db
@@ -671,6 +673,19 @@ _rate_limiter = RateLimiter(
 app.add_middleware(RateLimitMiddleware, limiter=_rate_limiter)
 
 
+def _v3_tenant(x_api_key: str | None = Header(default=None, alias="X-Api-Key")) -> str:
+    """Tenant for v3 endpoints: bound to the API key in cloud mode, 'default' otherwise."""
+    if _CLOUD_MODE and x_api_key:
+        key = get_tenant_store().validate_api_key(x_api_key)
+        if key is not None:
+            return key.tenant_id
+    return "default"
+
+
+# AgentWatch v3: /api/v3/* and the OTLP receiver at /v1/traces (see docs/v3).
+app.include_router(build_v3_router(_require_api_key, _v3_tenant))
+
+
 @app.exception_handler(HTTPException)
 async def _agentwatch_http_exception_handler(request: Request, exc: HTTPException):
     if exc.status_code == 429 and exc.detail == "rate_limit_exceeded":
@@ -951,6 +966,20 @@ async def get_events(
     )
 
 
+def _v3_tee(event: AgentEvent) -> None:
+    """Also record legacy events as v3 evidence (via LegacyTranslator). Never fails the request."""
+    if os.getenv("AGENTWATCH_V3_TEE", "1").lower() in ("0", "false", "no"):
+        return
+    try:
+        from agentwatch.sensors.legacy.translator import LegacyTranslator
+
+        result = LegacyTranslator().translate(event)
+        if result.draft is not None:
+            get_v3_engine().ingest([result.draft])
+    except Exception:
+        logger.warning("v3 tee of legacy event failed", exc_info=True)
+
+
 @app.post("/api/v1/events")
 async def ingest_event(
     request: Request,
@@ -969,6 +998,7 @@ async def ingest_event(
             if not valid:
                 raise HTTPException(status_code=422, detail=f"Schema validation failed: {err}")
     await get_event_bus().publish(event)
+    _v3_tee(event)
 
     if event.agent_id and hasattr(event, "status"):
         if getattr(event, "status", None) == ExecutionStatus.FAILURE:
@@ -1043,8 +1073,10 @@ async def get_replay(session_id: str, _auth: None = Depends(_require_api_key)) -
     d = replay.to_dict()
     d["reasoning_audit"] = {
         "overall_score": audit_summary.average_score,
-        "hallucination_risk": 1.0 - audit_summary.average_score,  # Simple heuristic for UI
-        "goal_alignment": audit_summary.average_score,  # Shared heuristic
+        # v0.2 used to derive "hallucination_risk" (1 - score) and "goal_alignment" (= score) from
+        # this single uncalibrated audit score. Those names promised measurements that were never
+        # made, so they are no longer reported.
+        "note": "overall_score is an uncalibrated heuristic/LLM-judge audit score, not a hallucination or goal-alignment measurement",
         "findings": [
             {
                 "type": a.verdict,
@@ -1083,6 +1115,11 @@ async def simulate_session(
     return {
         "session_id": session_id,
         "diverged_at_step": result.diverged_at_step,
+        # Honest labelling (v3 audit): without a step function this endpoint only substitutes one
+        # value into a copy of the recorded timeline; nothing downstream is re-executed.
+        "method": "value_substitution_only" if engine.step_fn is None else "step_function",
+        "simulated": engine.step_fn is not None,
+        "note": "For re-executed counterfactuals with uncertainty labels use POST /api/v3/counterfactual.",
         "original_events": [e.model_dump_for_storage() for e in result.original_events],
         "alternate_events": [e.model_dump_for_storage() for e in result.alternate_events],
         "summary": result.summary,

@@ -49,6 +49,7 @@ embeddings = [
   "numpy>=1.26.0",
 ]
 otel = [
+  "opentelemetry-proto>=1.27.0",
   "opentelemetry-sdk>=1.27.0",
   "opentelemetry-exporter-otlp-proto-grpc>=1.27.0",
   "opentelemetry-semantic-conventions>=0.48b0",
@@ -78,7 +79,12 @@ docs = [
   "mkdocs-material>=9.5.0",
   "mkdocstrings[python]>=0.26.0",
 ]
+postgres = [
+  # synchronous driver used by the v3 store (SQLAlchemy Core) in server mode
+  "psycopg[binary]>=3.2.0,<4.0.0",
+]
 dev = [
+  "psycopg[binary]>=3.2.0,<4.0.0",
   "pytest>=8.3.0",
   "pytest-asyncio>=0.24.0",
   "pytest-cov>=5.0.0",
@@ -89,7 +95,7 @@ dev = [
   "opentelemetry-sdk>=1.27.0",
 ]
 all = [
-  "agentwatch[embeddings,otel,crypto,langchain]",
+  "agentwatch-ai[embeddings,otel,crypto,langchain,postgres]",
 ]
 
 [project.scripts]

@@ -1,5 +1,10 @@
 """
-CMP-008 — Causal Compliance Attribution.
+CMP-008 — Compliance attribution over an asserted decision graph (v0.2, deprecated).
+
+Despite the historical name, the "causal_chain" below is an upstream walk over edges that
+callers *asserted* in :class:`~agentwatch.memory.causal_graph.CausalGraph`; no causal
+evidence is involved. Reports now say so explicitly (``evidence_class``). Use v3
+``agentwatch causes`` for dependency/correlation/intervention evidence kept separate.
 
 Given an adverse outcome: full causal chain.
 Which policy → which action → what remediation. Machine-readable report.
@@ -72,6 +77,8 @@ def attribute(
         "severity": outcome.severity,
         "occurred_at": outcome.occurred_at.isoformat(),
         "causal_chain": [step.__dict__ for step in chain],
+        "evidence_class": "ASSERTED_EDGES_UNVALIDATED",
+        "note": "chain = upstream walk over caller-asserted edges; not evidence of causation",
         "remediation": remediation_steps,
     }
     body = json.dumps(machine, sort_keys=True, default=str).encode()

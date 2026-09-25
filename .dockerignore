@@ -1,8 +1,7 @@
-# Node
-node_modules/
-.next/
-out/
-build/
+# Git / CI
+.git/
+.github/
+.agents/
 
 # Python
 __pycache__/
@@ -11,16 +10,31 @@ __pycache__/
 .pytest_cache/
 .ruff_cache/
 .pytest-tmp/
+pytest-cache-files-*
+.coverage
+coverage.json
+coverage.xml
+htmlcov/
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/.next/
+agentwatch-landing/node_modules/
+agentwatch-landing/.next/
+.next/
+out/
 
 # Build artifacts
 dist/
+build/
 coverage/
 *.log
 .DS_Store
 
-# Git
-.git/
-.github/
+# Secrets
+.env
+.env.*
 
 # Tests
 tests/

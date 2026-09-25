@@ -247,8 +247,10 @@ class EventBus:
                 if hid in self._handlers and self._handler_accepts(self._handlers[hid], event)
             ]
 
-        # Dispatch outside the lock to avoid holding it during handler I/O
-        tasks = [self._dispatch(reg, event) for reg in handlers_to_dispatch]
+        # Dispatch outside the lock to avoid holding it during handler I/O.
+        # Each handler gets its own deep copy: a handler that mutates its event (e.g. to redact
+        # it) must not change what other handlers — or the persisted record — observe.
+        tasks = [self._dispatch(reg, event.model_copy(deep=True)) for reg in handlers_to_dispatch]
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 

@@ -5,17 +5,42 @@ command: agentwatch
     param show_completion kind=TyperOption type=boolean required=False default=None flags=--show-completion help='Show completion for the current shell, to copy it or customize the installation.'
     param version kind=TyperOption type=boolean required=False default=False flags=--version,-V help='Show version and exit.'
 
+command: agentwatch branch
+    help: Create (and execute) a [bold]branch[/bold]: fork a run at an event with a substituted result.
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param at kind=TyperOption type=str required=True default=None flags=--at help='event id/prefix of an instrumented call'
+    param execute kind=TyperOption type=boolean required=False default=True flags=--execute help=''
+    param level kind=TyperOption type=str required=False default='L3' flags=--level help='L2 (mock everything) | L3 (changed inputs run live)'
+    param run kind=TyperArgument type=str required=True default=None flags=run help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+    param substitute kind=TyperOption type=str required=True default=None flags=--substitute help='JSON (or plain string) result to substitute'
+
+command: agentwatch branches
+    help: Branch history of a run.
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param run kind=TyperArgument type=str required=False default='latest' flags=run help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+
+command: agentwatch causes
+    help: What may have influenced an event — dependency, correlation, hypothesis, intervention kept separate.
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param event kind=TyperArgument type=str required=True default=None flags=event help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+
 command: agentwatch check-env
     help: [bold]Verify[/bold] local developer environment variables and dependencies.
     short_help: 
 
 command: agentwatch compare
-    help: [bold]Compare[/bold] confidence and quality metrics across two sessions.
+    help: [bold]Compare[/bold] two runs: earliest divergence, structure, resources, information flow.
     short_help: 
-    param api_key kind=TyperOption type=str required=False default=None flags=--api-key help='API key for protected endpoints (or set AGENTWATCH_API_KEY).'
-    param api_url kind=TyperOption type=str required=False default='http://localhost:8000' flags=--api help=''
-    param session_id_1 kind=TyperArgument type=str required=True default=None flags=session_id_1 help='ID of the first session to compare'
-    param session_id_2 kind=TyperArgument type=str required=True default=None flags=session_id_2 help='ID of the second session to compare'
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param run_a kind=TyperArgument type=str required=True default=None flags=run_a help=''
+    param run_b kind=TyperArgument type=str required=True default=None flags=run_b help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
 
 command: agentwatch compliance
     help: Compliance audit log export and reporting.
@@ -55,9 +80,42 @@ grouped by [b]--group-by[/b].
     param days kind=TyperOption type=int required=False default=30 flags=--days help='Reporting window in days (must be >= 1).'
     param group_by kind=TyperOption type=str required=False default='framework' flags=--group-by help='Group by: framework, agent, or status.'
 
+command: agentwatch counterfactual
+    help: EXPERIMENTAL: what might have happened if an event had produced a different result?
+    short_help: 
+    param alternative kind=TyperOption type=str required=True default=None flags=--alternative help='JSON value'
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param at kind=TyperOption type=str required=True default=None flags=--at help=''
+    param execute kind=TyperOption type=boolean required=False default=True flags=--execute help=''
+    param run kind=TyperArgument type=str required=True default=None flags=run help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+
+command: agentwatch dependents
+    help: Which later events and outputs depend on this node?
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param node kind=TyperArgument type=str required=True default=None flags=node help=''
+    param run kind=TyperOption type=str required=False default=None flags=--run help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+
 command: agentwatch doctor
     help: [bold]Doctor[/bold]: Check AgentWatch installation health.
     short_help: 
+
+command: agentwatch drift
+    help: Behavioural [bold]drift[/bold] between two scopes of runs. EXPERIMENTAL.
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param baseline kind=TyperArgument type=str required=True default=None flags=baseline help='scope, e.g. variant:normal'
+    param candidate kind=TyperArgument type=str required=True default=None flags=candidate help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+
+command: agentwatch effects
+    help: What depends on an event, and what changed when it was intervened on.
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param event kind=TyperArgument type=str required=True default=None flags=event help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
 
 command: agentwatch eval
     help: AgentWatch Evaluation. Run an agent against a dataset and score the batch.
@@ -74,14 +132,154 @@ command: agentwatch eval run
     param dataset kind=TyperArgument type=path required=True default=None flags=dataset help='Path to the dataset JSON: a list of {id, prompt, expected?}.'
     param threshold kind=TyperOption type=float range required=False default=0.5 flags=--threshold help='Minimum confidence for a case to pass.'
 
+command: agentwatch events
+    help: List a run's normalized [bold]events[/bold].
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param kind kind=TyperOption type=str required=False default=None flags=--kind help=''
+    param run kind=TyperArgument type=str required=False default='latest' flags=run help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+
+command: agentwatch evidence
+    help: Verify, seal and manage immutable evidence.
+    short_help: 
+
+command: agentwatch evidence purge
+    help: Retention: remove sealed segments older than N days (authorization recorded, chain preserved).
+    short_help: 
+    param older_than_days kind=TyperOption type=int required=True default=None flags=--older-than-days help=''
+    param reason kind=TyperOption type=str required=True default=None flags=--reason help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+    param tenant kind=TyperOption type=str required=False default='default' flags=--tenant help=''
+    param yes kind=TyperOption type=boolean required=False default=False flags=--yes help=''
+
+command: agentwatch evidence seal
+    help: Seal pending observations into hash-chained segments.
+    short_help: 
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+    param tenant kind=TyperOption type=str required=False default='default' flags=--tenant help=''
+
+command: agentwatch evidence show
+    help: Show a raw observation exactly as stored, with its inclusion proof.
+    short_help: 
+    param obs_id kind=TyperArgument type=str required=True default=None flags=obs_id help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+
+command: agentwatch evidence verify
+    help: Verify the hash chain and Merkle roots of all sealed evidence.
+    short_help: 
+    param seal kind=TyperOption type=boolean required=False default=True flags=--seal help='seal pending observations first'
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+    param tenant kind=TyperOption type=str required=False default='default' flags=--tenant help=''
+
+command: agentwatch forecast
+    help: EXPERIMENTAL outcome forecast for a (partial) run, with calibration evidence.
+    short_help: 
+    param evaluate_only kind=TyperOption type=boolean required=False default=False flags=--evaluate help=''
+    param run kind=TyperArgument type=str required=False default='latest' flags=run help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+
+command: agentwatch genome
+    help: Behavioural [bold]genome[/bold] (aggregate profile) for a scope of runs. EXPERIMENTAL.
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param scope kind=TyperArgument type=str required=False default='all' flags=scope help='all | name:<run name> | version:<v> | runs:<a>,<b> | variant:<v> | <run>'
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+
+command: agentwatch graph
+    help: Print a run's [bold]graph[/bold] (execution, information or causal view).
+    short_help: 
+    param fmt kind=TyperOption type=str required=False default='text' flags=--format help='text | dot | json'
+    param run kind=TyperArgument type=str required=False default='latest' flags=run help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+    param view kind=TyperOption type=str required=False default='execution' flags=--view help='execution | information | causal | all'
+
+command: agentwatch ingest
+    help: [bold]Ingest[/bold] observations from a file into the evidence store.
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param fmt kind=TyperOption type=str required=False default='auto' flags=--format help='auto | ndjson | otlp-json | claude-code | legacy-jsonl'
+    param path kind=TyperArgument type=path required=True default=None flags=path help='File to import'
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+
+command: agentwatch inspect
+    help: [bold]Inspect[/bold] a run: reconstructed execution tree, graph statistics, motifs.
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param run kind=TyperArgument type=str required=False default='latest' flags=run help="run id/prefix, name, 'latest' or 'latest~N'"
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+
+command: agentwatch legacy
+    help: v0.2 commands kept for compatibility (superseded by v3 commands).
+    short_help: 
+
+command: agentwatch legacy compare
+    help: [bold]Compare[/bold] confidence and quality metrics across two sessions.
+    short_help: 
+    param api_key kind=TyperOption type=str required=False default=None flags=--api-key help='API key for protected endpoints (or set AGENTWATCH_API_KEY).'
+    param api_url kind=TyperOption type=str required=False default='http://localhost:8000' flags=--api help=''
+    param session_id_1 kind=TyperArgument type=str required=True default=None flags=session_id_1 help='ID of the first session to compare'
+    param session_id_2 kind=TyperArgument type=str required=True default=None flags=session_id_2 help='ID of the second session to compare'
+
 command: agentwatch mcp
     help: Run the AgentWatch MCP server over stdio.
     short_help: 
+
+command: agentwatch motifs
+    help: Behavioural [bold]motifs[/bold] detected in a run (or registry statistics).
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param run kind=TyperArgument type=str required=False default=None flags=run help='run reference; omit for registry statistics over all runs'
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+
+command: agentwatch observe
+    help: [bold]Observe[/bold] a program: run it under the v3 sensors and reconstruct the run.
+    short_help: 
+    param command kind=TyperArgument type=str required=True default=None flags=command help='Program to run, e.g. python app.py --flag'
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+    param system kind=TyperOption type=str required=False default=None flags=--system help='System name recorded on the run.'
+
+command: agentwatch provenance
+    help: [bold]Provenance[/bold]: where did this information come from?
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param node kind=TyperArgument type=str required=True default=None flags=node help='artifact:<id|label>, event id, or artifact label (e.g. report.md)'
+    param run kind=TyperOption type=str required=False default=None flags=--run help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+
+command: agentwatch query
+    help: [bold]Query[/bold] system behaviour; answers cite the evidence they rest on.
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+    param text kind=TyperArgument type=str required=True default=None flags=text help="structured query (e.g. 'compare A B') or a question"
 
 command: agentwatch redteam
     help: [bold]Red-team[/bold] the safety engine with simulated attacks and score resilience.
     short_help: 
     param json_output kind=TyperOption type=boolean required=False default=False flags=--json help='Emit the report as JSON'
+
+command: agentwatch replay
+    help: [bold]Replay[/bold] a run at an explicit level; reports reproduction confidence and what was mocked or live.
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param level kind=TyperOption type=str required=False default='L1' flags=--level help='L0 | L1 | L2 | L3'
+    param live kind=TyperOption type=str required=False default=[] flags=--live help='operation to run live at L3 (repeatable)'
+    param run kind=TyperArgument type=str required=False default='latest' flags=run help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+
+command: agentwatch reprocess
+    help: Rebuild the current interpretation from raw evidence (evidence is never modified).
+    short_help: 
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+    param tenant kind=TyperOption type=str required=False default='default' flags=--tenant help=''
+
+command: agentwatch runs
+    help: List reconstructed [bold]runs[/bold].
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param limit kind=TyperOption type=int required=False default=20 flags=--limit help=''
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
 
 command: agentwatch safety
     help: AgentWatch Safety & Risk Engine. Analyze shell commands against security policies.
@@ -216,6 +414,27 @@ command: agentwatch share
     param expires_days kind=TyperOption type=int range required=False default=7 flags=--expires-days help='Days before the shared link expires.'
     param session_file kind=TyperArgument type=path required=True default=None flags=session_file help='Path to the trace/session JSON file to share'
     param share_url kind=TyperOption type=str required=False default=None flags=--share-url help='Base URL of the share service (or set AGENTWATCH_SHARE_URL).'
+
+command: agentwatch show
+    help: [bold]Show[/bold] an event: normalized form, raw evidence, parents and children.
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param event kind=TyperArgument type=str required=True default=None flags=event help='event id or prefix'
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+
+command: agentwatch states
+    help: EXPERIMENTAL latent behavioural states (interpretable baseline).
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param runs_ kind=TyperArgument type=str required=False default=None flags=runs_ help='runs (default: all)'
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
+    param window kind=TyperOption type=int required=False default=4 flags=--window help=''
+
+command: agentwatch status
+    help: v3 store status, interpretation and capability maturity.
+    short_help: 
+    param as_json kind=TyperOption type=boolean required=False default=False flags=--json help='Machine-readable JSON output.'
+    param store kind=TyperOption type=str required=False default=None flags=--store help='Store URL (sqlite:///path or postgresql+psycopg://…). Default: ~/.agentwatch/agentwatch.db'
 
 command: agentwatch upgrade
     help: [bold]Upgrade[/bold] to AgentWatch Premium via the secure web checkout.

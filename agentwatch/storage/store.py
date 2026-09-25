@@ -1,0 +1,1143 @@
+"""v3 store: evidence (append-only) + versioned interpretations, on SQLite or PostgreSQL.
+
+One implementation serves both backends through SQLAlchemy Core. All state lives in
+the database (and the blob directory), never in process memory, so any number of API or
+worker processes can share a store.
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import secrets
+from collections.abc import Iterable, Iterator, Sequence
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from pathlib import Path
+from typing import Any
+
+from sqlalchemy import create_engine, delete, event, func, insert, select, text, update
+from sqlalchemy.engine import Engine
+from sqlalchemy.exc import IntegrityError
+
+from agentwatch.evidence.blobs import BlobStore, FsBlobStore, MemoryBlobStore
+from agentwatch.evidence.canonical import canonical_json, sha256_hex
+from agentwatch.evidence.ids import new_ulid
+from agentwatch.evidence.model import (
+    ClockInfo,
+    ObservationDraft,
+    RawObservation,
+    RedactionManifest,
+    SamplingInfo,
+    SensorRef,
+    parse_ts,
+)
+from agentwatch.evidence.redaction import DEFAULT_POLICY, PayloadPolicy, redact_payload
+from agentwatch.evidence.segments import (
+    GENESIS,
+    Segment,
+    VerifyReport,
+    merkle_proof,
+    merkle_root,
+    segment_hash,
+)
+from agentwatch.storage import schema as s
+
+INLINE_PAYLOAD_LIMIT = 64 * 1024
+
+
+class ImmutableEvidenceError(RuntimeError):
+    """Raised when something attempts to modify stored evidence."""
+
+
+@dataclass
+class AppendResult:
+    accepted: list[str] = field(default_factory=list)
+    duplicates: list[str] = field(default_factory=list)
+    rejected: list[tuple[int, str]] = field(default_factory=list)
+    redacted: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "accepted": len(self.accepted),
+            "duplicates": len(self.duplicates),
+            "rejected": [{"index": i, "reason": r} for i, r in self.rejected],
+            "redacted_observations": self.redacted,
+            "obs_ids": self.accepted,
+        }
+
+
+def _iso(dt: datetime | None) -> str | None:
+    return dt.isoformat() if dt else None
+
+
+def default_store_url() -> str:
+    url = os.environ.get("AGENTWATCH_STORE")
+    if url:
+        return url
+    home = Path(os.environ.get("AGENTWATCH_HOME", Path.home() / ".agentwatch"))
+    return f"sqlite:///{(home / 'agentwatch.db').as_posix()}"
+
+
+class Store:
+    def __init__(
+        self,
+        url: str | None = None,
+        *,
+        blob_dir: str | Path | None = None,
+        blob_store: BlobStore | None = None,
+    ) -> None:
+        self.url = url or default_store_url()
+        self.is_sqlite = self.url.startswith("sqlite")
+        kwargs: dict[str, Any] = {"future": True}
+        if self.is_sqlite:
+            kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
+            path = self.url.split("///", 1)[-1]
+            if path and path != ":memory:":
+                Path(path).parent.mkdir(parents=True, exist_ok=True)
+        else:
+            kwargs["pool_pre_ping"] = True
+        self.engine: Engine = create_engine(self.url, **kwargs)
+        if self.is_sqlite:
+
+            @event.listens_for(self.engine, "connect")
+            def _pragmas(dbapi_conn: Any, _rec: Any) -> None:
+                cur = dbapi_conn.cursor()
+                cur.execute("PRAGMA journal_mode=WAL")
+                cur.execute("PRAGMA synchronous=NORMAL")
+                cur.execute("PRAGMA foreign_keys=ON")
+                cur.close()
+
+        if blob_store is not None:
+            self.blobs: BlobStore = blob_store
+        elif blob_dir is not None:
+            self.blobs = FsBlobStore(blob_dir)
+        elif self.is_sqlite and ":memory:" not in self.url:
+            self.blobs = FsBlobStore(Path(self.url.split("///", 1)[-1]).parent / "blobs")
+        elif os.environ.get("AGENTWATCH_BLOB_DIR"):
+            self.blobs = FsBlobStore(os.environ["AGENTWATCH_BLOB_DIR"])
+        else:
+            self.blobs = MemoryBlobStore()
+        self.init()
+
+    # ── lifecycle ──────────────────────────────────────────────────────────
+    def init(self) -> None:
+        s.metadata.create_all(self.engine)
+        with self.engine.begin() as conn:
+            for stmt in s.SQLITE_TRIGGERS if self.is_sqlite else s.POSTGRES_TRIGGERS:
+                conn.execute(text(stmt))
+            existing = conn.execute(
+                select(s.meta_table.c.value).where(s.meta_table.c.key == "schema_version")
+            ).scalar()
+            if existing is None:
+                conn.execute(
+                    insert(s.meta_table).values(key="schema_version", value=str(s.SCHEMA_VERSION))
+                )
+            elif int(existing) > s.SCHEMA_VERSION:
+                raise RuntimeError(
+                    f"store schema {existing} is newer than this AgentWatch ({s.SCHEMA_VERSION})"
+                )
+
+    def close(self) -> None:
+        self.engine.dispose()
+
+    # ── tenant keys ────────────────────────────────────────────────────────
+    def artifact_key(self, tenant_id: str) -> bytes:
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                select(s.tenant_keys.c.artifact_key_hex).where(
+                    s.tenant_keys.c.tenant_id == tenant_id
+                )
+            ).scalar()
+            if row:
+                return bytes.fromhex(row)
+            key = secrets.token_hex(32)
+            try:
+                conn.execute(
+                    insert(s.tenant_keys).values(
+                        tenant_id=tenant_id, artifact_key_hex=key, created_at=_now()
+                    )
+                )
+            except IntegrityError:  # pragma: no cover - concurrent creation
+                pass
+        with self.engine.connect() as conn:
+            return bytes.fromhex(
+                conn.execute(
+                    select(s.tenant_keys.c.artifact_key_hex).where(
+                        s.tenant_keys.c.tenant_id == tenant_id
+                    )
+                ).scalar_one()
+            )
+
+    # ── evidence: append ───────────────────────────────────────────────────
+    def append(
+        self, drafts: Sequence[ObservationDraft], policy: PayloadPolicy = DEFAULT_POLICY
+    ) -> AppendResult:
+        """Append observations. Idempotent on (tenant, idempotency_key)."""
+        result = AppendResult()
+        received = datetime.now(UTC)
+        rows: list[dict[str, Any]] = []
+        id_rows: list[dict[str, Any]] = []
+        keys_seen: dict[tuple[str, str], str] = {}
+        for i, draft in enumerate(drafts):
+            problem = _validate_draft(draft)
+            if problem:
+                result.rejected.append((i, problem))
+                continue
+            try:
+                payload, manifest = redact_payload(draft.payload, policy)
+                obs = RawObservation.build(
+                    draft,
+                    obs_id=new_ulid(),
+                    received_at=received,
+                    payload=payload,
+                    redaction=manifest,
+                )
+            except (TypeError, ValueError) as exc:
+                result.rejected.append((i, f"unserializable payload: {exc}"))
+                continue
+            if manifest:
+                result.redacted += 1
+            k = (obs.tenant_id, obs.idempotency_key)
+            if k in keys_seen:
+                result.duplicates.append(keys_seen[k])
+                continue
+            keys_seen[k] = obs.obs_id
+            rows.append(self._obs_row(obs))
+            id_rows.extend(
+                {"obs_id": obs.obs_id, "key": key, "value": val[:256], "tenant_id": obs.tenant_id}
+                for key, val in obs.declared_ids_items
+            )
+        if not rows:
+            return result
+        with self.engine.begin() as conn:
+            existing: dict[tuple[str, str], str] = {}
+            by_tenant: dict[str, list[str]] = {}
+            for r in rows:
+                by_tenant.setdefault(r["tenant_id"], []).append(r["idempotency_key"])
+            for tenant, idems in by_tenant.items():
+                for chunk in _chunks(idems, 500):
+                    q = select(s.observations.c.idempotency_key, s.observations.c.obs_id).where(
+                        s.observations.c.tenant_id == tenant,
+                        s.observations.c.idempotency_key.in_(chunk),
+                    )
+                    for idem, oid in conn.execute(q):
+                        existing[(tenant, idem)] = oid
+            fresh = [r for r in rows if (r["tenant_id"], r["idempotency_key"]) not in existing]
+            fresh_ids = {r["obs_id"] for r in fresh}
+            result.duplicates.extend(existing.values())
+            if fresh:
+                conn.execute(insert(s.observations), fresh)
+                ids = [r for r in id_rows if r["obs_id"] in fresh_ids]
+                if ids:
+                    conn.execute(insert(s.declared_ids), ids)
+            result.accepted.extend(r["obs_id"] for r in fresh)
+        return result
+
+    def _obs_row(self, obs: RawObservation) -> dict[str, Any]:
+        payload_json: str | None = obs.payload_json
+        payload_blob = None
+        if len(obs.payload_json.encode("utf-8")) > INLINE_PAYLOAD_LIMIT:
+            payload_blob = self.blobs.put(obs.payload_json.encode("utf-8"))
+            payload_json = None
+        return {
+            "obs_id": obs.obs_id,
+            "tenant_id": obs.tenant_id,
+            "sensor_type": obs.sensor.sensor_type,
+            "sensor_version": obs.sensor.sensor_version,
+            "sensor_instance": obs.sensor.instance_id,
+            "source_kind": obs.source_kind,
+            "source_seq": obs.source_seq,
+            "idempotency_key": obs.idempotency_key,
+            "observed_at": _iso(obs.observed_at),
+            "received_at": _iso(obs.received_at),
+            "clock": canonical_json(obs.clock.to_dict()),
+            "content_type": obs.content_type,
+            "payload_json": payload_json,
+            "payload_blob": payload_blob,
+            "payload_sha256": obs.payload_sha256,
+            "declared_ids": canonical_json(dict(obs.declared_ids_items)),
+            "redaction": canonical_json(obs.redaction.to_dict()) if obs.redaction else None,
+            "sampling": canonical_json(obs.sampling.to_dict()) if obs.sampling else None,
+            "segment_id": None,
+        }
+
+    def _row_to_obs(self, r: Any) -> RawObservation:
+        payload_json = r.payload_json
+        if payload_json is None and r.payload_blob:
+            payload_json = self.blobs.get(r.payload_blob).decode("utf-8")
+        clock = json.loads(r.clock)
+        sampling = json.loads(r.sampling) if r.sampling else None
+        return RawObservation(
+            obs_id=r.obs_id,
+            tenant_id=r.tenant_id,
+            sensor=SensorRef(r.sensor_type, r.sensor_version, r.sensor_instance),
+            source_kind=r.source_kind,
+            source_seq=r.source_seq,
+            idempotency_key=r.idempotency_key,
+            observed_at=parse_ts(r.observed_at) if r.observed_at else None,
+            received_at=parse_ts(r.received_at),
+            clock=ClockInfo(
+                clock.get("source", "sensor"), clock.get("clock_id"), clock.get("precision_ms")
+            ),
+            content_type=r.content_type,
+            payload_json=payload_json or "null",
+            payload_sha256=r.payload_sha256,
+            declared_ids_items=tuple(sorted(json.loads(r.declared_ids).items())),
+            redaction=RedactionManifest.from_dict(json.loads(r.redaction) if r.redaction else None),
+            sampling=SamplingInfo(sampling["policy"], sampling["rate"]) if sampling else None,
+            segment_id=r.segment_id,
+        )
+
+    # ── evidence: read ─────────────────────────────────────────────────────
+    def get_observation(self, obs_id: str) -> RawObservation | None:
+        with self.engine.connect() as conn:
+            r = conn.execute(
+                select(s.observations).where(s.observations.c.obs_id == obs_id)
+            ).first()
+        return self._row_to_obs(r) if r else None
+
+    def observations(
+        self,
+        tenant_id: str = "default",
+        *,
+        after: str | None = None,
+        through: str | None = None,
+        source_kinds: Iterable[str] | None = None,
+        obs_ids: Iterable[str] | None = None,
+        limit: int | None = None,
+    ) -> list[RawObservation]:
+        q = select(s.observations).where(s.observations.c.tenant_id == tenant_id)
+        if after:
+            q = q.where(s.observations.c.obs_id > after)
+        if through:
+            q = q.where(s.observations.c.obs_id <= through)
+        if source_kinds is not None:
+            q = q.where(s.observations.c.source_kind.in_(list(source_kinds)))
+        if obs_ids is not None:
+            q = q.where(s.observations.c.obs_id.in_(list(obs_ids)))
+        q = q.order_by(s.observations.c.obs_id)
+        if limit:
+            q = q.limit(limit)
+        with self.engine.connect() as conn:
+            return [self._row_to_obs(r) for r in conn.execute(q)]
+
+    def count_observations(self, tenant_id: str = "default") -> int:
+        with self.engine.connect() as conn:
+            return int(
+                conn.execute(
+                    select(func.count())
+                    .select_from(s.observations)
+                    .where(s.observations.c.tenant_id == tenant_id)
+                ).scalar_one()
+            )
+
+    def latest_obs_id(self, tenant_id: str = "default") -> str | None:
+        with self.engine.connect() as conn:
+            return conn.execute(
+                select(func.max(s.observations.c.obs_id)).where(
+                    s.observations.c.tenant_id == tenant_id
+                )
+            ).scalar()
+
+    def find_by_declared_id(self, tenant_id: str, key: str, value: str) -> list[str]:
+        q = select(s.declared_ids.c.obs_id).where(
+            s.declared_ids.c.tenant_id == tenant_id,
+            s.declared_ids.c.key == key,
+            s.declared_ids.c.value == value,
+        )
+        with self.engine.connect() as conn:
+            return [r[0] for r in conn.execute(q)]
+
+    def tenants(self) -> list[str]:
+        with self.engine.connect() as conn:
+            return [r[0] for r in conn.execute(select(s.observations.c.tenant_id).distinct())]
+
+    # ── evidence: sealing & verification ───────────────────────────────────
+    def seal(self, tenant_id: str = "default", max_obs: int = 10_000) -> Segment | None:
+        with self.engine.begin() as conn:
+            rows = conn.execute(
+                select(
+                    s.observations.c.obs_id,
+                    s.observations.c.payload_sha256,
+                    s.observations.c.idempotency_key,
+                )
+                .where(
+                    s.observations.c.tenant_id == tenant_id, s.observations.c.segment_id.is_(None)
+                )
+                .order_by(s.observations.c.obs_id)
+                .limit(max_obs)
+            ).all()
+            if not rows:
+                return None
+            last = conn.execute(
+                select(s.segments.c.seq, s.segments.c.segment_hash)
+                .where(s.segments.c.tenant_id == tenant_id)
+                .order_by(s.segments.c.seq.desc())
+                .limit(1)
+            ).first()
+            seq = (last.seq + 1) if last else 1
+            prev = last.segment_hash if last else GENESIS
+            leaves = [_leaf(tenant_id, r) for r in rows]
+            root = merkle_root(leaves)
+            seg = Segment(
+                segment_id=f"{tenant_id}:{seq:08d}",
+                tenant_id=tenant_id,
+                seq=seq,
+                first_obs=rows[0].obs_id,
+                last_obs=rows[-1].obs_id,
+                n_obs=len(rows),
+                merkle_root=root,
+                prev_segment_hash=prev,
+                segment_hash=segment_hash(tenant_id, seq, root, prev, len(rows)),
+                sealed_at=datetime.now(UTC),
+            )
+            conn.execute(
+                insert(s.segments).values(
+                    **{**seg.to_dict(), "sealed_at": seg.sealed_at.isoformat(), "purged_at": None}
+                )
+            )
+            for chunk in _chunks([r.obs_id for r in rows], 500):
+                conn.execute(
+                    update(s.observations)
+                    .where(s.observations.c.obs_id.in_(chunk))
+                    .values(segment_id=seg.segment_id)
+                )
+        return seg
+
+    def seal_all(self, tenant_id: str = "default") -> list[Segment]:
+        out = []
+        while (seg := self.seal(tenant_id)) is not None:
+            out.append(seg)
+        return out
+
+    def segments(self, tenant_id: str = "default") -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            return [
+                dict(r._mapping)
+                for r in conn.execute(
+                    select(s.segments)
+                    .where(s.segments.c.tenant_id == tenant_id)
+                    .order_by(s.segments.c.seq)
+                )
+            ]
+
+    def verify(self, tenant_id: str = "default") -> VerifyReport:
+        errors: list[str] = []
+        n_obs = 0
+        prev = GENESIS
+        segs = self.segments(tenant_id)
+        with self.engine.connect() as conn:
+            for seg in segs:
+                expect = segment_hash(
+                    tenant_id,
+                    seg["seq"],
+                    seg["merkle_root"],
+                    seg["prev_segment_hash"],
+                    seg["n_obs"],
+                )
+                if seg["prev_segment_hash"] != prev:
+                    errors.append(f"segment {seg['segment_id']}: chain broken (prev hash mismatch)")
+                if expect != seg["segment_hash"]:
+                    errors.append(f"segment {seg['segment_id']}: segment hash mismatch")
+                prev = seg["segment_hash"]
+                if seg["purged_at"]:
+                    continue  # rows removed by authorized retention purge; chain still verifies
+                rows = conn.execute(
+                    select(
+                        s.observations.c.obs_id,
+                        s.observations.c.payload_sha256,
+                        s.observations.c.idempotency_key,
+                        s.observations.c.payload_json,
+                        s.observations.c.payload_blob,
+                    )
+                    .where(s.observations.c.segment_id == seg["segment_id"])
+                    .order_by(s.observations.c.obs_id)
+                ).all()
+                n_obs += len(rows)
+                if len(rows) != seg["n_obs"]:
+                    errors.append(
+                        f"segment {seg['segment_id']}: expected {seg['n_obs']} observations, found {len(rows)}"
+                    )
+                for r in rows:
+                    body = (
+                        r.payload_json
+                        if r.payload_json is not None
+                        else self.blobs.get(r.payload_blob).decode("utf-8")
+                    )
+                    from agentwatch.evidence.canonical import sha256_hex
+
+                    if sha256_hex(body) != r.payload_sha256:
+                        errors.append(f"observation {r.obs_id}: payload hash mismatch")
+                if merkle_root([_leaf(tenant_id, r) for r in rows]) != seg["merkle_root"]:
+                    errors.append(f"segment {seg['segment_id']}: merkle root mismatch")
+            unsealed = int(
+                conn.execute(
+                    select(func.count())
+                    .select_from(s.observations)
+                    .where(
+                        s.observations.c.tenant_id == tenant_id,
+                        s.observations.c.segment_id.is_(None),
+                    )
+                ).scalar_one()
+            )
+        return VerifyReport(
+            ok=not errors,
+            segments_checked=len(segs),
+            observations_checked=n_obs,
+            unsealed_observations=unsealed,
+            errors=errors,
+        )
+
+    def inclusion_proof(self, obs_id: str) -> dict[str, Any] | None:
+        obs = self.get_observation(obs_id)
+        if obs is None or obs.segment_id is None:
+            return None
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                select(
+                    s.observations.c.obs_id,
+                    s.observations.c.payload_sha256,
+                    s.observations.c.idempotency_key,
+                )
+                .where(s.observations.c.segment_id == obs.segment_id)
+                .order_by(s.observations.c.obs_id)
+            ).all()
+            seg = conn.execute(
+                select(s.segments).where(s.segments.c.segment_id == obs.segment_id)
+            ).first()
+        leaves = [_leaf(obs.tenant_id, r) for r in rows]
+        idx = [r.obs_id for r in rows].index(obs_id)
+        return {
+            "obs_id": obs_id,
+            "segment_id": obs.segment_id,
+            "leaf": leaves[idx],
+            "proof": merkle_proof(leaves, idx),
+            "merkle_root": seg.merkle_root if seg else None,
+            "segment_hash": seg.segment_hash if seg else None,
+        }
+
+    # ── retention ──────────────────────────────────────────────────────────
+    def purge_segment(self, segment_id: str, reason: str, actor: str | None = None) -> int:
+        """Remove a sealed segment's observations under retention policy.
+
+        The authorization is recorded and the segment row (with its hashes) is kept, so
+        the chain still verifies and the purge is visible.
+        """
+        with self.engine.begin() as conn:
+            seg = conn.execute(
+                select(s.segments).where(s.segments.c.segment_id == segment_id)
+            ).first()
+            if seg is None:
+                raise KeyError(segment_id)
+            conn.execute(
+                insert(s.purge_authorizations).values(
+                    segment_id=segment_id,
+                    tenant_id=seg.tenant_id,
+                    reason=reason,
+                    authorized_at=_now(),
+                    actor=actor,
+                )
+            )
+            ids = [
+                r[0]
+                for r in conn.execute(
+                    select(s.observations.c.obs_id).where(s.observations.c.segment_id == segment_id)
+                )
+            ]
+            for chunk in _chunks(ids, 500):
+                conn.execute(delete(s.declared_ids).where(s.declared_ids.c.obs_id.in_(chunk)))
+            n = conn.execute(
+                delete(s.observations).where(s.observations.c.segment_id == segment_id)
+            ).rowcount
+            conn.execute(
+                update(s.segments)
+                .where(s.segments.c.segment_id == segment_id)
+                .values(purged_at=_now())
+            )
+        return int(n or 0)
+
+    def segments_sealed_before(self, tenant_id: str, cutoff: datetime) -> list[str]:
+        return [
+            seg["segment_id"]
+            for seg in self.segments(tenant_id)
+            if not seg["purged_at"] and parse_ts(seg["sealed_at"]) < cutoff
+        ]
+
+    # ── interpretations ────────────────────────────────────────────────────
+    def active_interpretation(self, tenant_id: str = "default") -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            r = conn.execute(
+                select(s.interpretations)
+                .where(
+                    s.interpretations.c.tenant_id == tenant_id,
+                    s.interpretations.c.status == "active",
+                )
+                .order_by(s.interpretations.c.created_at.desc())
+                .limit(1)
+            ).first()
+        return _interp(r) if r else None
+
+    def interpretations(self, tenant_id: str = "default") -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            return [
+                _interp(r)
+                for r in conn.execute(
+                    select(s.interpretations)
+                    .where(s.interpretations.c.tenant_id == tenant_id)
+                    .order_by(s.interpretations.c.created_at)
+                )
+            ]
+
+    def get_interpretation(self, interp_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            r = conn.execute(
+                select(s.interpretations).where(s.interpretations.c.interp_id == interp_id)
+            ).first()
+        return _interp(r) if r else None
+
+    def activate_interpretation(
+        self, tenant_id: str, interp_id: str, pipeline: dict[str, Any], config_hash: str
+    ) -> None:
+        with self.engine.begin() as conn:
+            if not self.is_sqlite:  # concurrent processes activate the same interpretation id
+                conn.execute(
+                    text("SELECT pg_advisory_xact_lock(:k)"),
+                    {"k": _lock_key(f"activate|{tenant_id}")},
+                )
+            conn.execute(
+                update(s.interpretations)
+                .where(
+                    s.interpretations.c.tenant_id == tenant_id,
+                    s.interpretations.c.interp_id != interp_id,
+                    s.interpretations.c.status == "active",
+                )
+                .values(status="superseded")
+            )
+            exists = conn.execute(
+                select(s.interpretations.c.interp_id).where(
+                    s.interpretations.c.interp_id == interp_id
+                )
+            ).first()
+            if exists:
+                conn.execute(
+                    update(s.interpretations)
+                    .where(s.interpretations.c.interp_id == interp_id)
+                    .values(status="active")
+                )
+            else:
+                conn.execute(
+                    insert(s.interpretations).values(
+                        interp_id=interp_id,
+                        tenant_id=tenant_id,
+                        pipeline=canonical_json(pipeline),
+                        config_hash=config_hash,
+                        created_at=_now(),
+                        status="active",
+                        processed_through=None,
+                        stats=None,
+                    )
+                )
+
+    def write_interpretation(
+        self,
+        interp_id: str,
+        tenant_id: str,
+        *,
+        events: Sequence[dict[str, Any]],
+        diagnostics: Sequence[dict[str, Any]],
+        artifacts: Sequence[dict[str, Any]],
+        entities: Sequence[dict[str, Any]],
+        runs: Sequence[dict[str, Any]],
+        relations: Sequence[dict[str, Any]],
+        processed_through: str | None,
+        stats: dict[str, Any],
+        derived: Sequence[dict[str, Any]] = (),
+    ) -> None:
+        """Replace all derived rows of ``interp_id`` atomically. Evidence is untouched."""
+        with self.engine.begin() as conn:
+            if not self.is_sqlite:  # serialize concurrent rebuilds of one interpretation
+                conn.execute(
+                    text("SELECT pg_advisory_xact_lock(:k)"),
+                    {"k": int(sha256_hex(interp_id)[:15], 16)},
+                )
+            for table in (
+                s.events,
+                s.event_sources,
+                s.diagnostics,
+                s.entities,
+                s.runs,
+                s.relations,
+                s.relation_members,
+            ):
+                conn.execute(delete(table).where(table.c.interp_id == interp_id))
+            conn.execute(delete(s.derived).where(s.derived.c.interp_id == interp_id))
+            if events:
+                conn.execute(
+                    insert(s.events),
+                    [
+                        {
+                            "event_id": e["event_id"],
+                            "interp_id": interp_id,
+                            "tenant_id": tenant_id,
+                            "run_id": e.get("run_id"),
+                            "kind": e["kind"],
+                            "operation": e["operation"][:256],
+                            "actor": e.get("actor"),
+                            "object": e.get("object"),
+                            "status": e["status"],
+                            "t_start": e["time"]["start"],
+                            "t_end": e["time"]["end"],
+                            "ordering_key": e["time"].get("ordering_key", "")[:160],
+                            "doc": canonical_json(e),
+                        }
+                        for e in events
+                    ],
+                )
+                conn.execute(
+                    insert(s.event_sources),
+                    [
+                        {"event_id": e["event_id"], "interp_id": interp_id, "obs_id": o}
+                        for e in events
+                        for o in sorted(set(e["derived_from"]))
+                    ],
+                )
+            if diagnostics:
+                conn.execute(
+                    insert(s.diagnostics),
+                    [{"interp_id": interp_id, "tenant_id": tenant_id, **d} for d in diagnostics],
+                )
+            if artifacts:
+                self._put_artifacts(conn, artifacts)
+            if entities:
+                conn.execute(
+                    insert(s.entities),
+                    [
+                        {
+                            "entity_id": en["entity_id"],
+                            "tenant_id": tenant_id,
+                            "interp_id": interp_id,
+                            "kind": en["kind"],
+                            "canonical_key": en["canonical_key"][:512],
+                            "doc": canonical_json(en),
+                        }
+                        for en in entities
+                    ],
+                )
+            if runs:
+                conn.execute(
+                    insert(s.runs),
+                    [
+                        {
+                            "run_id": r["run_id"],
+                            "interp_id": interp_id,
+                            "tenant_id": tenant_id,
+                            "name": (r.get("name") or "")[:256],
+                            "started_at": r.get("started_at"),
+                            "ended_at": r.get("ended_at"),
+                            "status": r.get("status"),
+                            "system_version": r.get("system_version"),
+                            "doc": canonical_json(r),
+                        }
+                        for r in runs
+                    ],
+                )
+            if relations:
+                conn.execute(
+                    insert(s.relations),
+                    [
+                        {
+                            "rel_id": rel["rel_id"],
+                            "interp_id": interp_id,
+                            "tenant_id": tenant_id,
+                            "run_id": rel.get("run_id"),
+                            "view": rel["view"],
+                            "type": rel["type"],
+                            "basis": rel["basis"],
+                            "evidence_class": rel.get("evidence_class"),
+                            "confidence": rel["confidence"],
+                            "doc": canonical_json(rel),
+                        }
+                        for rel in relations
+                    ],
+                )
+                members = []
+                for rel in relations:
+                    for role in ("tail", "head"):
+                        for i, node in enumerate(rel[role]):
+                            members.append(
+                                {
+                                    "rel_id": rel["rel_id"],
+                                    "interp_id": interp_id,
+                                    "role": role,
+                                    "ordinal": i,
+                                    "node": node[:600],
+                                }
+                            )
+                conn.execute(insert(s.relation_members), members)
+            if derived:
+                conn.execute(
+                    insert(s.derived), [self._derived_row(interp_id, tenant_id, r) for r in derived]
+                )
+            conn.execute(
+                update(s.interpretations)
+                .where(s.interpretations.c.interp_id == interp_id)
+                .values(processed_through=processed_through, stats=canonical_json(stats))
+            )
+
+    def _put_artifacts(self, conn: Any, artifacts: Sequence[dict[str, Any]]) -> None:
+        by_tenant: dict[str, list[dict[str, Any]]] = {}
+        for a in artifacts:
+            by_tenant.setdefault(a["tenant_id"], []).append(a)
+        for tenant, items in by_tenant.items():
+            have: set[str] = set()
+            for chunk in _chunks([a["artifact_id"] for a in items], 500):
+                have.update(
+                    r[0]
+                    for r in conn.execute(
+                        select(s.artifacts.c.artifact_id).where(
+                            s.artifacts.c.tenant_id == tenant, s.artifacts.c.artifact_id.in_(chunk)
+                        )
+                    )
+                )
+            rows = []
+            for a in items:
+                if a["artifact_id"] in have:
+                    continue
+                have.add(a["artifact_id"])
+                content = a["content_json"]
+                blob = None
+                if len(content.encode("utf-8")) > INLINE_PAYLOAD_LIMIT:
+                    blob = self.blobs.put(content.encode("utf-8"))
+                    content = None
+                rows.append(
+                    {
+                        "tenant_id": tenant,
+                        "artifact_id": a["artifact_id"],
+                        "media_type": a["media_type"],
+                        "size_bytes": a["size_bytes"],
+                        "preview": a["preview"],
+                        "content_json": content,
+                        "content_blob": blob,
+                    }
+                )
+            if rows:
+                conn.execute(insert(s.artifacts), rows)
+
+    def put_derived(
+        self,
+        interp_id: str,
+        tenant_id: str,
+        records: Sequence[dict[str, Any]],
+        *,
+        replace_types: Iterable[str] = (),
+        scope: str | None = None,
+    ) -> None:
+        with self.engine.begin() as conn:
+            for rt in replace_types:
+                q = delete(s.derived).where(
+                    s.derived.c.interp_id == interp_id, s.derived.c.record_type == rt
+                )
+                if scope is not None:
+                    q = q.where(s.derived.c.scope == scope)
+                conn.execute(q)
+            if records:
+                conn.execute(
+                    insert(s.derived), [self._derived_row(interp_id, tenant_id, r) for r in records]
+                )
+
+    @staticmethod
+    def _derived_row(interp_id: str, tenant_id: str, r: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "record_id": r["record_id"],
+            "interp_id": interp_id,
+            "tenant_id": tenant_id,
+            "record_type": r["record_type"],
+            "scope": r["scope"][:256],
+            "analyzer": r["analyzer"],
+            "maturity": r["maturity"],
+            "doc": canonical_json(r),
+        }
+
+    # ── interpretation reads ───────────────────────────────────────────────
+    def events(
+        self,
+        interp_id: str,
+        *,
+        run_id: str | None = None,
+        kind: str | None = None,
+        event_ids: Iterable[str] | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        q = select(s.events.c.doc).where(s.events.c.interp_id == interp_id)
+        if run_id is not None:
+            q = q.where(s.events.c.run_id == run_id)
+        if kind:
+            q = q.where(s.events.c.kind == kind)
+        if event_ids is not None:
+            q = q.where(s.events.c.event_id.in_(list(event_ids)))
+        q = q.order_by(s.events.c.t_start, s.events.c.ordering_key, s.events.c.event_id)
+        if limit:
+            q = q.limit(limit)
+        with self.engine.connect() as conn:
+            return [json.loads(r[0]) for r in conn.execute(q)]
+
+    def event(self, interp_id: str, event_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            r = conn.execute(
+                select(s.events.c.doc).where(
+                    s.events.c.interp_id == interp_id, s.events.c.event_id == event_id
+                )
+            ).first()
+        return json.loads(r[0]) if r else None
+
+    def events_for_observation(self, obs_id: str) -> list[tuple[str, str]]:
+        with self.engine.connect() as conn:
+            return [
+                (r.event_id, r.interp_id)
+                for r in conn.execute(
+                    select(s.event_sources).where(s.event_sources.c.obs_id == obs_id)
+                )
+            ]
+
+    def diagnostics(self, interp_id: str) -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            return [
+                dict(r._mapping)
+                for r in conn.execute(
+                    select(s.diagnostics)
+                    .where(s.diagnostics.c.interp_id == interp_id)
+                    .order_by(s.diagnostics.c.id)
+                )
+            ]
+
+    def artifact(
+        self, tenant_id: str, artifact_id: str, *, with_content: bool = True
+    ) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            r = conn.execute(
+                select(s.artifacts).where(
+                    s.artifacts.c.tenant_id == tenant_id, s.artifacts.c.artifact_id == artifact_id
+                )
+            ).first()
+        if r is None:
+            return None
+        d = {
+            "artifact_id": r.artifact_id,
+            "media_type": r.media_type,
+            "size_bytes": r.size_bytes,
+            "preview": r.preview,
+        }
+        if with_content:
+            content = (
+                r.content_json
+                if r.content_json is not None
+                else self.blobs.get(r.content_blob).decode("utf-8")
+            )
+            d["content"] = json.loads(content)
+        return d
+
+    def artifacts_by_prefix(self, tenant_id: str, prefix: str) -> list[str]:
+        with self.engine.connect() as conn:
+            return [
+                r[0]
+                for r in conn.execute(
+                    select(s.artifacts.c.artifact_id)
+                    .where(
+                        s.artifacts.c.tenant_id == tenant_id,
+                        s.artifacts.c.artifact_id.like(f"{prefix}%"),
+                    )
+                    .limit(20)
+                )
+            ]
+
+    def entities(self, interp_id: str) -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            return [
+                json.loads(r[0])
+                for r in conn.execute(
+                    select(s.entities.c.doc)
+                    .where(s.entities.c.interp_id == interp_id)
+                    .order_by(s.entities.c.canonical_key)
+                )
+            ]
+
+    def runs(self, interp_id: str, *, limit: int | None = None) -> list[dict[str, Any]]:
+        q = (
+            select(s.runs.c.doc)
+            .where(s.runs.c.interp_id == interp_id)
+            .order_by(s.runs.c.started_at.desc())
+        )
+        if limit:
+            q = q.limit(limit)
+        with self.engine.connect() as conn:
+            return [json.loads(r[0]) for r in conn.execute(q)]
+
+    def run(self, interp_id: str, run_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            r = conn.execute(
+                select(s.runs.c.doc).where(
+                    s.runs.c.interp_id == interp_id, s.runs.c.run_id == run_id
+                )
+            ).first()
+        return json.loads(r[0]) if r else None
+
+    def relations(
+        self,
+        interp_id: str,
+        *,
+        run_id: str | None = None,
+        view: str | None = None,
+        all_runs: bool = False,
+    ) -> list[dict[str, Any]]:
+        q = select(s.relations.c.doc).where(s.relations.c.interp_id == interp_id)
+        if not all_runs:
+            q = q.where(s.relations.c.run_id == run_id) if run_id is not None else q
+        if view:
+            q = q.where(s.relations.c.view == view)
+        with self.engine.connect() as conn:
+            return [json.loads(r[0]) for r in conn.execute(q)]
+
+    def relations_touching(self, interp_id: str, node: str) -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            ids = [
+                r[0]
+                for r in conn.execute(
+                    select(s.relation_members.c.rel_id)
+                    .where(
+                        s.relation_members.c.interp_id == interp_id,
+                        s.relation_members.c.node == node,
+                    )
+                    .distinct()
+                )
+            ]
+            if not ids:
+                return []
+            return [
+                json.loads(r[0])
+                for r in conn.execute(
+                    select(s.relations.c.doc).where(
+                        s.relations.c.interp_id == interp_id, s.relations.c.rel_id.in_(ids)
+                    )
+                )
+            ]
+
+    def derived(
+        self, interp_id: str, record_type: str, scope: str | None = None
+    ) -> list[dict[str, Any]]:
+        q = select(s.derived.c.doc).where(
+            s.derived.c.interp_id == interp_id, s.derived.c.record_type == record_type
+        )
+        if scope is not None:
+            q = q.where(s.derived.c.scope == scope)
+        with self.engine.connect() as conn:
+            return [json.loads(r[0]) for r in conn.execute(q)]
+
+    # ── experiments (append-only) ──────────────────────────────────────────
+    def put_experiment(
+        self,
+        tenant_id: str,
+        record_type: str,
+        doc: dict[str, Any],
+        subject: str | None = None,
+        record_id: str | None = None,
+    ) -> str:
+        rid = record_id or new_ulid()
+        doc = {**doc, "record_id": rid, "record_type": record_type}
+        with self.engine.begin() as conn:
+            conn.execute(
+                insert(s.experiments).values(
+                    record_id=rid,
+                    tenant_id=tenant_id,
+                    record_type=record_type,
+                    subject=subject,
+                    created_at=_now(),
+                    doc=canonical_json(doc),
+                )
+            )
+        return rid
+
+    def experiments(
+        self, tenant_id: str, record_type: str, subject: str | None = None
+    ) -> list[dict[str, Any]]:
+        q = select(s.experiments.c.doc).where(
+            s.experiments.c.tenant_id == tenant_id, s.experiments.c.record_type == record_type
+        )
+        if subject is not None:
+            q = q.where(s.experiments.c.subject == subject)
+        with self.engine.connect() as conn:
+            return [json.loads(r[0]) for r in conn.execute(q.order_by(s.experiments.c.record_id))]
+
+    def experiment(self, record_id: str) -> dict[str, Any] | None:
+        with self.engine.connect() as conn:
+            r = conn.execute(
+                select(s.experiments.c.doc).where(s.experiments.c.record_id == record_id)
+            ).first()
+        return json.loads(r[0]) if r else None
+
+    # ── guarded mutation entry points (always refuse) ──────────────────────
+    def update_observation(self, *_: Any, **__: Any) -> None:
+        raise ImmutableEvidenceError(
+            "raw observations are immutable; create a new interpretation instead"
+        )
+
+    def delete_observation(self, *_: Any, **__: Any) -> None:
+        raise ImmutableEvidenceError(
+            "raw observations cannot be deleted individually; use retention purge of sealed segments"
+        )
+
+    def iter_all_observations(
+        self, tenant_id: str = "default", batch: int = 5000
+    ) -> Iterator[RawObservation]:
+        after = None
+        while True:
+            chunk = self.observations(tenant_id, after=after, limit=batch)
+            if not chunk:
+                return
+            yield from chunk
+            after = chunk[-1].obs_id
+
+
+def _lock_key(name: str) -> int:
+    """Stable signed 63-bit key for pg_advisory_xact_lock."""
+    return int(sha256_hex(name)[:15], 16)
+
+
+def _leaf(tenant_id: str, r: Any) -> str:
+    from agentwatch.evidence.canonical import sha256_hex
+
+    return sha256_hex(f"leaf|{r.obs_id}|{r.payload_sha256}|{r.idempotency_key}|{tenant_id}")
+
+
+def _interp(r: Any) -> dict[str, Any]:
+    d = dict(r._mapping)
+    d["pipeline"] = json.loads(d["pipeline"])
+    d["stats"] = json.loads(d["stats"]) if d.get("stats") else None
+    return d
+
+
+def _validate_draft(d: ObservationDraft) -> str | None:
+    if not isinstance(d.sensor, SensorRef) or not d.sensor.sensor_type or not d.sensor.instance_id:
+        return "sensor identity is required"
+    if not d.source_kind or len(d.source_kind) > 128:
+        return "source_kind is required (<=128 chars)"
+    if d.observed_at is not None and d.observed_at.tzinfo is None:
+        return "observed_at must be timezone-aware"
+    if len(d.declared_ids) > 64:
+        return "too many declared ids"
+    if not d.tenant_id or len(d.tenant_id) > 64:
+        return "tenant_id is required (<=64 chars)"
+    return None
+
+
+def _chunks(items: Sequence[Any], n: int) -> Iterator[Sequence[Any]]:
+    for i in range(0, len(items), n):
+        yield items[i : i + n]
+
+
+def _now() -> str:
+    return datetime.now(UTC).isoformat()
+
+
+# re-exported helpers
+__all__ = ["AppendResult", "ImmutableEvidenceError", "Store", "default_store_url"]
