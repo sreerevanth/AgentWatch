@@ -18,6 +18,7 @@ from typing import Any
 from agentwatch.behaviour.profile import FEATURES
 
 MIN_RUNS = 5
+PERMUTATIONS = 2000
 
 
 def _js(p: dict[str, float], q: dict[str, float]) -> float:
@@ -92,7 +93,9 @@ def _energy(a: list[dict[str, Any]], b: list[dict[str, Any]]) -> float:
     return round(2 * ab - aa - bb, 6)
 
 
-def permutation_test(x: list[float], y: list[float], *, n: int = 2000, seed: int = 11) -> float:
+def permutation_test(
+    x: list[float], y: list[float], *, n: int = PERMUTATIONS, seed: int = 11
+) -> float:
     obs = abs(mean(x) - mean(y))
     pooled = x + y
     rng = random.Random(seed)  # noqa: S311 - seeded statistics, not security
@@ -141,7 +144,17 @@ def drift(
         pvals[f] = 1.0 if (pstdev(x + y) == 0) else permutation_test(x, y)
     q = benjamini_hochberg(pvals)
     feats = _deltas(baseline, candidate, (pvals, q))
-    result["status"] = "tested"
+    # The smallest q-value this design can produce even for perfectly separated samples:
+    # permutation p is bounded below by 1/(permutations+1) and by the number of distinct
+    # splits; BH multiplies the smallest p by the number of features.
+    splits = math.comb(len(baseline) + len(candidate), len(baseline))
+    p_floor = max(1 / (PERMUTATIONS + 1), 2 / splits)
+    result["min_achievable_q"] = round(min(1.0, p_floor * len(FEATURES)), 6)
+    result["status"] = "tested" if result["min_achievable_q"] < alpha else "underpowered"
+    if result["status"] == "underpowered":
+        result["message"] = (
+            f"with {len(baseline)}+{len(candidate)} runs no feature can reach q<{alpha}; add runs before concluding 'no drift'"
+        )
     result["features"] = feats
     result["drifted_features"] = [
         f["feature"] for f in feats if f["q_value"] is not None and f["q_value"] < alpha

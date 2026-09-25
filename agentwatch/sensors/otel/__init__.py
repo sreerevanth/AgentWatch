@@ -148,7 +148,13 @@ def drafts_from_spans(
     return drafts
 
 
-class AgentWatchSpanProcessor:
+try:  # inherit the SDK base class when available so newer SDK hooks (e.g. _on_ending) exist
+    from opentelemetry.sdk.trace import SpanProcessor as _SpanProcessorBase
+except ImportError:  # pragma: no cover - optional dependency
+    _SpanProcessorBase = object  # type: ignore[assignment,misc]
+
+
+class AgentWatchSpanProcessor(_SpanProcessorBase):  # type: ignore[misc,valid-type]
     """OpenTelemetry SDK SpanProcessor that emits each finished span as an observation."""
 
     def __init__(self, sink: Any, tenant_id: str = "default") -> None:
@@ -157,6 +163,9 @@ class AgentWatchSpanProcessor:
         self.instance_id = f"otel-sdk-{uuid.uuid4().hex[:8]}"
 
     def on_start(self, span: Any, parent_context: Any = None) -> None:
+        return None
+
+    def _on_ending(self, span: Any) -> None:
         return None
 
     def on_end(self, span: Any) -> None:

@@ -302,12 +302,12 @@ def explain(res: dict[str, Any]) -> list[str]:
         ):
             v = res_[k]
             if v["delta"]:
-                lines.append(f"{k}: {v['a']:g} → {v['b']:g} ({v['delta']:+g}).")
+                lines.append(f"{k}: {v['a']} → {v['b']} (delta {v['delta']}).")
         for m, c in r["motifs"].items():
             if c["a"] != c["b"]:
                 lines.append(f"motif {m}: {c['a']} → {c['b']} instances.")
         lines.append(
-            f"Structural similarity {r['structural']['alignment_similarity']:.2f}; same system version: {r['fingerprint']['same_system_version']}."
+            f"Structural similarity {r['structural']['alignment_similarity']}; same system version: {r['fingerprint']['same_system_version']}."
         )
     elif t == "provenance":
         m = r["metrics"]

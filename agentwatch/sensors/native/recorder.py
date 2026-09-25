@@ -31,6 +31,10 @@ _current_span: contextvars.ContextVar[Span | None] = contextvars.ContextVar("aw_
 _current_run: contextvars.ContextVar[RunHandle | None] = contextvars.ContextVar(
     "aw_run", default=None
 )
+# (parent span id at tag time, attributes): applied to spans started directly inside ``tag()``
+_tags: contextvars.ContextVar[tuple[str | None, dict[str, Any]] | None] = contextvars.ContextVar(
+    "aw_tags", default=None
+)
 
 
 def _jsonable(value: Any) -> tuple[Any, bool]:
@@ -211,6 +215,9 @@ class Recorder(Sensor):
         for other in links or []:
             span.link(other)
         span.facets.extend(facets or [])
+        tagged = _tags.get()
+        if tagged is not None and tagged[0] == (parent.span_id if parent else None):
+            span.set(**tagged[1])
         span.set(**attributes)
         if run is not None and replayable:
             span.call_key = f"{kind}|{operation}|{run.next_ordinal(kind, operation)}"
@@ -302,6 +309,19 @@ class Recorder(Sensor):
 # ---------------------------------------------------------------------------
 
 _replay: contextvars.ContextVar[Any] = contextvars.ContextVar("aw_replay", default=None)
+
+
+@contextmanager
+def tag(**attributes: Any) -> Iterator[None]:
+    """Attach attributes to spans started *directly* inside this block (not their children)."""
+    parent = _current_span.get()
+    token = _tags.set(
+        (parent.span_id if parent else None, {k: _jsonable(v)[0] for k, v in attributes.items()})
+    )
+    try:
+        yield
+    finally:
+        _tags.reset(token)
 
 
 def current_span() -> Span | None:

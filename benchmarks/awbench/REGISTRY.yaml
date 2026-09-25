@@ -1,0 +1,62 @@
+# AWBench registry — benchmark definitions and PRE-REGISTERED thresholds.
+#
+# Thresholds are targets written before results were seen. Measured values live only in
+# results/*.json (machine-generated). Changing a threshold requires a dated changelog
+# entry below that predates the results it applies to.
+version: 1
+changelog:
+  - date: 2026-09-25
+    note: >
+      Initial registry. H4 is measured as top-1 localization plus "root cause at or upstream
+      of the reported divergence" instead of the top-3 metric sketched in
+      RESEARCH_HYPOTHESES.md, because the v3 comparator reports a single earliest divergence.
+
+systems:
+  tool_loop: single model-driven tool loop (native SDK; OTel variant for H1)
+  rag_memory: retrieval, summarization, memory write/read, second retrieval round
+  multi_agent: planner delegating to researcher/analyst/critic, synthesizer join
+
+scenarios:
+  tool_loop: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, tool_error, incorrect_tool_result, context_pressure, model_substitution, latency_injection, retry_loop]
+  rag_memory: [normal, bad_retrieval, corrupted_retrieval, stale_memory, duplicate_memory, model_substitution, latency_injection]
+  multi_agent: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, message_duplication, message_loss, model_substitution, delegation_loop, resource_contention, retry_loop]
+
+tasks:
+  h1_normalization:
+    hypothesis: H1
+    capability: events.normalization.*
+    thresholds: {kind_coverage: 0.95, cross_source_kind_f1: 0.9}
+  h2_structure:
+    hypothesis: H2
+    capability: graph.execution, graph.information
+    thresholds: {execution_f1: 0.9, information_recall: 0.75, information_precision: 0.75}
+  h3_lineage:
+    hypothesis: H3
+    capability: provenance.lineage
+    thresholds: {lineage_membership_f1: 0.8}
+  h4_divergence:
+    hypothesis: H4
+    capability: compare.runs
+    thresholds: {top1_localization: 0.7, root_at_or_upstream: 0.9}
+  h5_motifs:
+    hypothesis: H5
+    capability: behaviour.motifs
+    thresholds: {micro_precision: 0.9, micro_recall: 0.8}
+  h7_drift:
+    hypothesis: H7
+    capability: behaviour.drift
+    thresholds: {detects_model_substitution: true, control_flagged_features_max: 0}
+  replay_fidelity:
+    capability: lab.replay
+    thresholds: {l1_consistency: 1.0, l2_mean_reproduction: 0.99}
+  counterfactual_quality:
+    hypothesis: H10
+    capability: lab.counterfactual
+    thresholds: {simulated_outcome_accuracy: 0.8}
+  causal_hypotheses:
+    hypothesis: H8
+    capability: causality.hypotheses
+    thresholds: {true_hypothesis_supported: 0.8, control_not_supported: 0.8}
+  explanation_faithfulness:
+    capability: query.engine
+    thresholds: {evidence_resolves: 1.0, numbers_grounded: 0.95}

@@ -34,6 +34,7 @@ from agentwatch.sensors.native.recorder import (
     current_run,
     current_span,
     instrumented_call,
+    tag,
 )
 
 F = TypeVar("F", bound=Callable[..., Any])
@@ -204,5 +205,6 @@ __all__ = [
     "retriever",
     "run",
     "span",
+    "tag",
     "tool",
 ]

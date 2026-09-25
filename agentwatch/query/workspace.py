@@ -10,6 +10,7 @@ from collections.abc import Iterable
 from functools import cached_property
 from typing import Any
 
+from agentwatch.evidence.model import parse_ts
 from agentwatch.graph.traverse import Graph
 from agentwatch.runtime.engine import Engine
 from agentwatch.storage.store import Store
@@ -103,7 +104,13 @@ class Workspace:
     def graph(self, run_id: str | None = None, views: Iterable[str] | None = None) -> Graph:
         rels = self.relations(run_id)
         vs = set(views) if views else None
-        return Graph([r for r in rels if vs is None or r["view"] in vs])
+        events = self.events(run_id) if run_id is not None else list(self.all_events.values())
+        times = {
+            f"event:{e['event_id']}": parse_ts(e["time"]["start"]).timestamp()
+            for e in events
+            if e["time"]["start"]
+        }
+        return Graph([r for r in rels if vs is None or r["view"] in vs], times=times)
 
     # ── artifacts / nodes ─────────────────────────────────────────────────
     def artifact(self, ref: str, with_content: bool = True) -> dict[str, Any]:

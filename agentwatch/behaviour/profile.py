@@ -21,7 +21,7 @@ from agentwatch.behaviour.motifs import REGISTRY, MotifAnalyzer
 from agentwatch.events.model import EventKind, EventStatus
 from agentwatch.graph.traverse import Graph
 
-FEATURES_VERSION = "1"
+FEATURES_VERSION = "2"
 PROFILE_NS = uuid.UUID("7a2b3c4d-5e6f-5071-8293-a4b5c6d7e8f9")
 LEAF = {
     EventKind.TOOL_INVOCATION,
@@ -54,6 +54,8 @@ FEATURES: dict[str, str] = {
     "duration_ms": "run wall-clock duration",
     "log_leaf_latency_p50": "log10(1 + median leaf latency ms)",
     "tokens_total": "declared input + output tokens",
+    "model_input_bytes_mean": "mean size of model-invocation input artifacts (bytes)",
+    "model_output_bytes_mean": "mean size of model-invocation output artifacts (bytes)",
     "cost_usd": "declared cost",
 }
 
@@ -66,9 +68,14 @@ def _entropy(counter: Counter[str]) -> float:
 
 
 def profile_features(
-    run: dict[str, Any], events: list[Any], relations: list[dict[str, Any]], motif_ids: list[str]
+    run: dict[str, Any],
+    events: list[Any],
+    relations: list[dict[str, Any]],
+    motif_ids: list[str],
+    artifacts: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     g = Graph(relations)
+    sizes = {aid: a.size_bytes for aid, a in (artifacts or {}).items()}
     stats = g.stats({f"event:{e.event_id}" for e in events})
     leaf = [e for e in events if e.kind in LEAF]
     tools = Counter(
@@ -135,6 +142,12 @@ def profile_features(
         "duration_ms": float(run.get("duration_ms") or 0.0),
         "log_leaf_latency_p50": round(math.log10(1 + median(lat)), 4) if lat else 0.0,
         "tokens_total": tok,
+        "model_input_bytes_mean": _mean_size(
+            [a.artifact_id for e in model_events for a in e.inputs], sizes, len(model_events)
+        ),
+        "model_output_bytes_mean": _mean_size(
+            [a.artifact_id for e in model_events for a in e.outputs], sizes, len(model_events)
+        ),
         "cost_usd": float(run.get("cost_usd") or 0.0),
     }
     kinds = Counter(e.kind.value for e in events)
@@ -146,6 +159,10 @@ def profile_features(
         else {},
         "motif_counts": {mid: motifs.get(mid, 0) for mid in sorted(REGISTRY.definitions)},
     }
+
+
+def _mean_size(artifact_ids: list[str], sizes: dict[str, int], n: int) -> float:
+    return round(sum(sizes.get(a, 0) for a in artifact_ids) / n, 2) if n else 0.0
 
 
 class ProfileAnalyzer(Analyzer):
@@ -162,7 +179,11 @@ class ProfileAnalyzer(Analyzer):
         out = []
         for run_id, run in data.runs.items():
             prof = profile_features(
-                run, data.run_events(run_id), data.run_relations(run_id), by_run.get(run_id, [])
+                run,
+                data.run_events(run_id),
+                data.run_relations(run_id),
+                by_run.get(run_id, []),
+                data.artifacts,
             )
             out.append(
                 self.record(

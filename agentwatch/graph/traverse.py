@@ -34,8 +34,15 @@ class Step:
 
 
 class Graph:
-    def __init__(self, relations: Sequence[dict[str, Any]]) -> None:
+    def __init__(
+        self, relations: Sequence[dict[str, Any]], times: dict[str, float] | None = None
+    ) -> None:
+        """``times`` maps event nodes to start timestamps (epoch seconds). When given, traversal
+        is time-respecting: a path may not reach an event that started before the event it
+        came from (information cannot flow backwards in time, even through a shared,
+        content-addressed artifact)."""
         self.relations = {r["rel_id"]: r for r in relations}
+        self.times = times or {}
         self.out: dict[str, list[tuple[str, str]]] = defaultdict(
             list
         )  # node -> [(rel_id, neighbour)]
@@ -79,15 +86,16 @@ class Graph:
         min_confidence: float,
         min_evidence: EvidenceClass | None,
         skip_kinds: Iterable[str] = (),
+        direction: int = 1,
     ) -> list[Step]:
         vset = set(views) if views else None
         tset = set(types) if types else None
         skip = tuple(f"{k}:" for k in skip_kinds)
         seen = {start}
         out: list[Step] = []
-        q: deque[tuple[str, int]] = deque([(start, 0)])
+        q: deque[tuple[str, int, float | None]] = deque([(start, 0, self.times.get(start))])
         while q:
-            node, depth = q.popleft()
+            node, depth, t = q.popleft()
             if depth >= max_depth:
                 continue
             for rel_id, nb in adj.get(node, []):
@@ -96,9 +104,12 @@ class Graph:
                 rel = self.relations[rel_id]
                 if not self._ok(rel, vset, tset, min_confidence, min_evidence):
                     continue
+                tn = self.times.get(nb)
+                if t is not None and tn is not None and (tn - t) * direction < -1e-6:
+                    continue  # would reach an event on the wrong side of time
                 seen.add(nb)
                 out.append(Step(nb, depth + 1, rel_id, rel["type"], node))
-                q.append((nb, depth + 1))
+                q.append((nb, depth + 1, tn if tn is not None else t))
         return out
 
     def ancestors(
@@ -115,6 +126,7 @@ class Graph:
         return self._walk(
             node,
             self.inc,
+            direction=-1,
             views=views,
             types=types,
             max_depth=max_depth,

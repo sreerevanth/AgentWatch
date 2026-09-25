@@ -284,10 +284,10 @@ def _resources(a: dict[str, Any], b: dict[str, Any]) -> dict[str, Any]:
     ra, rb = agg(a), agg(b)
     return {
         k: {
-            "a": ra[k],
-            "b": rb[k],
-            "delta": rb[k] - ra[k],
-            "ratio": (rb[k] / ra[k]) if ra[k] else None,
+            "a": round(ra[k], 3),
+            "b": round(rb[k], 3),
+            "delta": round(rb[k] - ra[k], 3),
+            "ratio": round(rb[k] / ra[k], 4) if ra[k] else None,
         }
         for k in ra
     }

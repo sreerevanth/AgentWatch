@@ -25,7 +25,7 @@ from agentwatch.graph.model import (
 )
 
 EXEC_BUILDER = "graph.execution@1"
-INFO_BUILDER = "graph.information@2"
+INFO_BUILDER = "graph.information@3"
 
 SHINGLE = 5
 MIN_SHINGLES = 3
@@ -322,13 +322,25 @@ def build_information(
             and attrs.get("key") is not None
         ):
             w = writes[key]
+            written = {a.artifact_id for a in w.inputs if a.role == "value"} or {
+                a.artifact_id for a in w.inputs
+            }
+            read = {a.artifact_id for a in ev.outputs if a.role == "value"} or {
+                a.artifact_id for a in ev.outputs
+            }
+            if read and written and not (read & written):
+                # same key, different content: the read did not return what was written
+                # (stale or overwritten elsewhere) — no information flowed from this write
+                continue
+            verified = bool(read & written)
             rels.append(
                 make_relation(
                     View.INFORMATION,
                     RelType.TRANSFERS,
                     [node_event(w.event_id)],
                     [node_event(ev.event_id)],
-                    basis=Basis.KEY_MATCH,
+                    basis=Basis.CONTENT_MATCH if verified else Basis.KEY_MATCH,
+                    confidence=1.0 if verified else 0.5,
                     run_id=run_of.get(ev.event_id),
                     evidence=[node_event(w.event_id), node_event(ev.event_id)],
                     derived_by=INFO_BUILDER,
@@ -336,6 +348,7 @@ def build_information(
                         "memory": ev.object.canonical,
                         "key": attrs.get("key"),
                         "via": "memory",
+                        "value_match": "identical" if verified else "unverified",
                     },
                 )
             )

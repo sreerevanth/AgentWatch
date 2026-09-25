@@ -332,13 +332,16 @@ def _profile(**feats):
 
 
 def test_drift_detects_shift_and_respects_min_runs():
-    a = [_profile(retry_rate=0.0 + i * 0.01) for i in range(8)]
-    b = [_profile(retry_rate=0.5 + i * 0.01) for i in range(8)]
+    a = [_profile(retry_rate=0.0 + i * 0.01) for i in range(10)]
+    b = [_profile(retry_rate=0.5 + i * 0.01) for i in range(10)]
     res = drift(a, b)
     assert res["status"] == "tested" and "retry_rate" in res["drifted_features"]
     assert "tool_calls" not in res["drifted_features"]
     small = drift(a[:3], b[:3])
     assert small["status"] == "insufficient_data" and "drifted_features" not in small
+    # 6 vs 6 cannot reach significance across all features, even with perfect separation
+    under = drift(a[:6], b[:6])
+    assert under["status"] == "underpowered" and under["min_achievable_q"] >= 0.05
 
 
 def test_benjamini_hochberg_monotone():
@@ -373,3 +376,57 @@ def test_query_routing_and_evidence(ws):
     assert not ask(ws, "what is the meaning of life")["answered"]
     res = execute(ws, f"events {a[:8]} kind=TOOL_INVOCATION")
     assert res["evidence"] and all(e["kind"] == "TOOL_INVOCATION" for e in res["result"])
+
+
+def test_stale_memory_read_is_not_a_transfer(engine, sink):
+    """Regression: a read of the same key that returns different content is not information
+    flow from the write (it previously produced a KEY_MATCH TRANSFERS relation)."""
+    with aw.run("mem"):
+        aw.memory_write(
+            "notes", "k", "fresh summary of the research findings for the report", actor="agent:a"
+        )
+        aw.memory_read(
+            "notes",
+            "k",
+            "an old note that was cached before the research happened",
+            actor="agent:b",
+        )
+        aw.memory_write("notes", "k2", "value two", actor="agent:a")
+        aw.memory_read("notes", "k2", "value two", actor="agent:b")
+    engine.ingest(sink.drafts)
+    ws = Workspace(engine)
+    rels = [r for r in ws.relations(ws.resolve_run("latest")["run_id"]) if r["type"] == "TRANSFERS"]
+    assert len(rels) == 1 and rels[0]["attributes"]["key"] == "k2"
+    assert (
+        rels[0]["attributes"]["value_match"] == "identical" and rels[0]["basis"] == "CONTENT_MATCH"
+    )
+
+
+def test_traversal_respects_time_through_shared_artifacts():
+    """Regression: an artifact consumed early and produced later by another event must not let
+    information 'flow' back to the earlier consumer."""
+    rels = [
+        make_relation(
+            View.INFORMATION,
+            RelType.CONSUMES,
+            ["artifact:x"],
+            ["event:early"],
+            basis=Basis.DECLARED,
+            run_id=None,
+            derived_by="t",
+        ),
+        make_relation(
+            View.INFORMATION,
+            RelType.PRODUCES,
+            ["event:late"],
+            ["artifact:x"],
+            basis=Basis.DECLARED,
+            run_id=None,
+            derived_by="t",
+        ),
+    ]
+    g = Graph(rels, times={"event:early": 1.0, "event:late": 5.0})
+    assert "event:early" not in {s.node for s in g.descendants("event:late")}
+    assert "event:late" not in {s.node for s in g.ancestors("event:early")}
+    untimed = Graph(rels)
+    assert "event:early" in {s.node for s in untimed.descendants("event:late")}
