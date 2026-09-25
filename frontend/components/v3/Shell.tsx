@@ -60,7 +60,9 @@ export function Shell({
             <select
               aria-label="run"
               className="max-w-[340px] rounded border border-zinc-700 bg-zinc-900 px-2 py-1 font-mono text-[11px]"
-              value={current ?? ''}
+              value={
+                runs.data?.runs.find((r) => current && r.run_id.startsWith(current))?.run_id ?? ''
+              }
               onChange={(e) => setRun(e.target.value)}
             >
               <option value="">select run…</option>

@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { edgeStyle, edgesOf, layeredLayout } from '../../lib/v3/graph';
 import type { NodeDesc, Relation } from '../../lib/v3/types';
@@ -37,19 +37,37 @@ export function GraphView({
     [nodes, edges],
   );
   const byId = useMemo(() => new Map(nodes.map((n) => [n.node, n])), [nodes]);
-  const [view, setView] = useState({ x: -80, y: -height / 2, k: 1 });
+  // view: (x, y) is the graph coordinate shown at the left edge / vertical centre; k = zoom
+  const [view, setView] = useState({ x: -40, y: 0, k: 1 });
+  const box = useRef<HTMLDivElement | null>(null);
   const drag = useRef<{ x: number; y: number } | null>(null);
 
   const bounds = useMemo(() => {
     let maxX = 0;
-    for (const p of layout.values()) maxX = Math.max(maxX, p.x);
-    return { maxX };
+    let maxY = 0;
+    for (const p of layout.values()) {
+      maxX = Math.max(maxX, p.x);
+      maxY = Math.max(maxY, Math.abs(p.y));
+    }
+    return { maxX, maxY };
   }, [layout]);
+
+  const fit = () => {
+    const width = box.current?.clientWidth ?? 1000;
+    const k = Math.max(
+      0.1,
+      Math.min(1.2, width / (bounds.maxX + 240), height / (2 * bounds.maxY + 80)),
+    );
+    setView({ x: -40 / k, y: 0, k });
+  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(fit, [bounds.maxX, bounds.maxY, height]);
 
   const dim = (id: string) => (highlight && !highlight.has(id) ? 0.12 : 1);
 
   return (
     <div
+      ref={box}
       className="relative select-none overflow-hidden rounded border border-zinc-800 bg-black/40"
       style={{ height }}
     >
@@ -66,12 +84,7 @@ export function GraphView({
         >
           −
         </button>
-        <button
-          className="rounded border border-zinc-700 px-1.5"
-          onClick={() =>
-            setView({ x: -80, y: -height / 2, k: Math.min(1, 1100 / (bounds.maxX + 300)) })
-          }
-        >
+        <button className="rounded border border-zinc-700 px-1.5" onClick={() => fit()}>
           fit
         </button>
       </div>
@@ -110,7 +123,10 @@ export function GraphView({
             <path d="M 0 0 L 10 5 L 0 10 z" fill="#52525b" />
           </marker>
         </defs>
-        <g transform={`scale(${view.k}) translate(${-view.x} ${-view.y + height / 2 / view.k})`}>
+        <g
+          transform={`scale(${view.k}) translate(${-view.x} ${-view.y + height / 2 / view.k})`}
+          data-testid="graph-root"
+        >
           {edges.map((e, i) => {
             const a = layout.get(e.from);
             const b = layout.get(e.to);

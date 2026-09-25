@@ -1,0 +1,20 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "api-v3-demo",
+      "runtimeExecutable": "python",
+      "runtimeArgs": [
+        "-c",
+        "import os; os.environ['AGENTWATCH_STORE']='sqlite:///C:/Users/sreer_mg/AppData/Local/Temp/claude/D--agentwatch/d0d18fdb-e05b-4204-b879-355933c94e3d/scratchpad/ui.db'; os.environ['AGENTWATCH_ALLOW_REEXECUTION']='1'; import uvicorn; uvicorn.run('agentwatch.api.server:app', host='127.0.0.1', port=8000)"
+      ],
+      "port": 8000
+    },
+    {
+      "name": "frontend",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "frontend", "run", "dev"],
+      "port": 3000
+    }
+  ]
+}
