@@ -79,7 +79,7 @@ def _context(ws: Workspace, g: Graph, event_node: str, limit: int = 6) -> list[d
 def lineage(
     ws: Workspace, ref: str, *, max_depth: int = 12, run_id: str | None = None
 ) -> dict[str, Any]:
-    root_node = ws.resolve_node(ref)
+    root_node = ws.resolve_node(ref, run_id)
     g = ws.graph(run_id)
     seen: set[str] = set()
 
@@ -116,7 +116,7 @@ def dependents(
     ws: Workspace, ref: str, *, max_depth: int = 12, run_id: str | None = None
 ) -> dict[str, Any]:
     """Forward lineage: later events and artifacts that depend on ``ref``."""
-    node = ws.resolve_node(ref)
+    node = ws.resolve_node(ref, run_id)
     g = ws.graph(run_id)
     steps = g.descendants(
         node, views=["INFORMATION"], types=INFO_BACK, max_depth=max_depth, skip_kinds=["entity"]

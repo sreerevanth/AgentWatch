@@ -121,21 +121,20 @@ class Workspace:
         )
         return art
 
-    def resolve_artifact_id(self, ref: str) -> str:
+    def resolve_artifact_id(self, ref: str, run_id: str | None = None) -> str:
+        """Resolve an artifact id, id prefix or output label (within ``run_id`` when given)."""
         ref = ref.removeprefix("artifact:")
         if self.store.artifact(self.tenant_id, ref, with_content=False):
             return ref
-        by_label = {
-            a["artifact_id"]
-            for e in self.all_events.values()
-            for a in e["outputs"]
-            if a.get("label") == ref
-        }
+        scoped = [
+            e for e in self.all_events.values() if run_id is None or e.get("run_id") == run_id
+        ]
+        by_label = {a["artifact_id"] for e in scoped for a in e["outputs"] if a.get("label") == ref}
         if len(by_label) == 1:
             return by_label.pop()
         if len(by_label) > 1:
             # the most recently produced version of a labelled artifact
-            order = sorted(self.all_events.values(), key=lambda e: e["time"]["start"] or "")
+            order = sorted(scoped, key=lambda e: e["time"]["start"] or "")
             for e in reversed(order):
                 for a in e["outputs"]:
                     if a.get("label") == ref:
@@ -148,17 +147,17 @@ class Workspace:
                 raise AmbiguousError(f"artifact prefix {ref!r} matches {len(matches)} artifacts")
         raise NotFoundError(f"no artifact matches {ref!r}")
 
-    def resolve_node(self, ref: str) -> str:
+    def resolve_node(self, ref: str, run_id: str | None = None) -> str:
         if ref.startswith("entity:"):
             return ref
         if ref.startswith("artifact:"):
-            return f"artifact:{self.resolve_artifact_id(ref)}"
+            return f"artifact:{self.resolve_artifact_id(ref, run_id)}"
         if ref.startswith("event:"):
             return f"event:{self.event(ref)['event_id']}"
         try:
             return f"event:{self.event(ref)['event_id']}"
         except (NotFoundError, AmbiguousError):
-            return f"artifact:{self.resolve_artifact_id(ref)}"
+            return f"artifact:{self.resolve_artifact_id(ref, run_id)}"
 
     def describe_node(self, node: str) -> dict[str, Any]:
         kind, _, ident = node.partition(":")
