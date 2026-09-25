@@ -1,406 +1,177 @@
-import type { ComponentType } from 'react'
-import { useState } from 'react'
-import { useRouter } from 'next/router'
-import { useQueryClient } from '@tanstack/react-query'
-import { Activity, AlertTriangle, ChevronRight, DollarSign, Loader2, RefreshCw, Shield, Zap } from 'lucide-react'
-import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
-import { AgentEvent, AgentSession, DashboardSummary } from '../lib/api'
-import { useLiveEventSocket } from '../lib/useLiveEventSocket'
-import type { LiveFeedStatus } from '../lib/wsReconnect'
-import { useDashboardSummary, useSessions, useBlockedEvents } from '../lib/api/hooks/useDashboard'
+import Link from 'next/link';
 
-const STATUS_COLORS: Record<string, string> = {
-  success: '#22c55e',
-  running: '#3b82f6',
-  failure: '#ef4444',
-  blocked: '#f59e0b',
-  rolled_back: '#a855f7',
-  timeout: '#f97316',
-  pending: '#6b7280',
-}
+import { Shell } from '../components/v3/Shell';
+import {
+  Empty,
+  ErrorBox,
+  Label,
+  Maturity,
+  Mono,
+  Panel,
+  RunLink,
+  Status,
+  fmtMs,
+  short,
+} from '../components/v3/ui';
+import { useLive, useStatus } from '../lib/v3/client';
+import type { CEvent, Run } from '../lib/v3/types';
 
-function cn(...classes: Array<string | false | null | undefined>) {
-  return classes.filter(Boolean).join(' ')
-}
-const dateTimeFormatter = new Intl.DateTimeFormat(undefined, {
-  hour: "2-digit",
-  minute: "2-digit",
-  second: "2-digit",
-  hour12: false,
-})
-
-function safeFormat(ts: string | null | undefined): string {
-  if (!ts) return "—"
-
-  try {
-    return dateTimeFormatter.format(new Date(ts))
-  } catch {
-    return "—"
-  }
-}
-
-function safeDistanceToNow(ts: string | null | undefined): string {
-  if (!ts) return "—"
-
-  const date = new Date(ts)
-  const now = new Date()
-
-  const diff = Math.floor((now.getTime() - date.getTime()) / 1000)
-
-  if (diff < 60) return `${diff} seconds ago`
-
-  const minutes = Math.floor(diff / 60)
-  if (minutes < 60) return `${minutes} minutes ago`
-
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} hours ago`
-
-  const days = Math.floor(hours / 24)
-  return `${days} days ago`
-}
-
-function statusBadge(status: string) {
-  const color = STATUS_COLORS[status] ?? '#6b7280'
+/** LIVE — what the observed system is doing now. Polls /api/v3/live every 3 s. */
+export default function Live() {
+  const live = useLive();
+  const status = useStatus();
+  const d = live.data;
+  const events = (d?.recent_events ?? []) as CEvent[];
+  const runs = (d?.recent_runs ?? []) as Run[];
+  const active = (d?.active_runs ?? []) as Run[];
+  const actors = Object.entries((d?.actors ?? {}) as Record<string, number>).sort(
+    (a, b) => b[1] - a[1],
+  );
+  // system topology from recent events: actor → object hand-offs
+  const topo = new Map<string, number>();
+  for (const e of events)
+    if (e.actor && e.object)
+      topo.set(`${e.actor} → ${e.object}`, (topo.get(`${e.actor} → ${e.object}`) ?? 0) + 1);
   return (
-    <span className="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: `${color}22`, color }}>
-      <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: color }} />
-      {status}
-    </span>
-  )
-}
-
-function MetricCard({
-  icon: Icon,
-  label,
-  value,
-  sub,
-  color,
-  loading,
-}: {
-  icon: ComponentType<{ size?: string | number }>
-  label: string
-  value: string | number
-  sub?: string
-  color: string
-  loading?: boolean
-}) {
-  if (loading) {
-    return (
-      <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-[0_20px_80px_rgba(0,0,0,0.22)]">
-        <div className="flex items-center justify-between">
-          <div className="flex-1 animate-pulse">
-            <div className="h-3 w-24 rounded bg-white/10" />
-            <div className="mt-4 h-8 w-20 rounded bg-white/10" />
-            <div className="mt-2 h-3 w-32 rounded bg-white/10" />
-          </div>
-          <div className="h-11 w-11 rounded-xl bg-white/10" />
-        </div>
-      </div>
-    )
-  }
-
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-5 shadow-[0_20px_80px_rgba(0,0,0,0.22)]">
-      <div className="flex items-center justify-between">
-        <div>
-          <div className="text-xs uppercase tracking-[0.24em] text-zinc-500">{label}</div>
-          <div className="mt-3 text-3xl font-semibold text-white">{value}</div>
-          {sub ? <div className="mt-1 text-xs text-zinc-400">{sub}</div> : null}
-        </div>
-        <div className="rounded-xl p-3" style={{ backgroundColor: `${color}22`, color }}>
-          <Icon size={18} />
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function liveFeedBadge(status: LiveFeedStatus, reconnectElapsedSec: number) {
-  if (status === 'streaming') {
-    return (
-      <span className="inline-flex items-center gap-2 text-xs text-emerald-400">
-        <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
-        streaming
-      </span>
-    )
-  }
-  if (status === 'reconnecting') {
-    return (
-      <span className="inline-flex items-center gap-2 text-xs text-amber-300">
-        <Loader2 className="h-3 w-3 animate-spin" />
-        Reconnecting… {reconnectElapsedSec}s
-      </span>
-    )
-  }
-  if (status === 'failed') {
-    return (
-      <span className="inline-flex items-center gap-2 text-xs text-red-400">
-        Connection failed — refresh to retry
-      </span>
-    )
-  }
-  return (
-    <span className="inline-flex items-center gap-2 text-xs text-zinc-500">
-      <Loader2 className="h-3 w-3 animate-spin" />
-      connecting
-    </span>
-  )
-}
-
-function LiveEventFeed({
-  events,
-  wsStatus,
-  reconnectElapsedSec,
-}: {
-  events: AgentEvent[]
-  wsStatus: LiveFeedStatus
-  reconnectElapsedSec: number
-}) {
-  return (
-    <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-300">Live Feed</h2>
-        {liveFeedBadge(wsStatus, reconnectElapsedSec)}
-      </div>
-      <div className="max-h-[24rem] space-y-2 overflow-y-auto pr-1">
-        {wsStatus === 'connecting' ? (
-          <div className="space-y-2">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="animate-pulse rounded-xl border border-white/5 bg-white/5 p-3 text-xs">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="h-3 w-24 rounded bg-white/10" />
-                  <div className="h-3 w-12 rounded bg-white/10" />
+    <Shell title="LIVE">
+      <ErrorBox error={live.error} />
+      <div className="grid grid-cols-12 gap-3">
+        <Panel
+          title="activity"
+          className="col-span-12 lg:col-span-8"
+          right={
+            <Mono className="text-zinc-500">
+              {status.data ? `${status.data.observations} observations` : ''}
+            </Mono>
+          }
+        >
+          {events.length === 0 ? (
+            <Empty>
+              No observations yet. Run <code>agentwatch observe python your_app.py</code>, point an
+              OTLP exporter at <code>/v1/traces</code>, or POST to <code>/api/v3/observations</code>
+              .
+            </Empty>
+          ) : (
+            <table className="w-full font-mono text-[11px]">
+              <thead className="text-left text-zinc-500">
+                <tr>
+                  <th className="py-1">time</th>
+                  <th>kind</th>
+                  <th>operation</th>
+                  <th>actor</th>
+                  <th>status</th>
+                  <th>duration</th>
+                  <th>run</th>
+                </tr>
+              </thead>
+              <tbody>
+                {events.slice(0, 40).map((e) => (
+                  <tr key={e.event_id} className="border-t border-zinc-900 hover:bg-zinc-900/60">
+                    <td className="py-0.5 text-zinc-500">{e.time.start?.slice(11, 23) ?? '—'}</td>
+                    <td className="text-sky-300">{e.kind}</td>
+                    <td className="max-w-[260px] truncate">
+                      <Link
+                        href={`/timeline?run=${e.run_id}&event=${e.event_id}`}
+                        className="hover:underline"
+                      >
+                        {e.operation}
+                      </Link>
+                    </td>
+                    <td className="text-zinc-400">{e.actor ?? '—'}</td>
+                    <td>
+                      <Status s={e.status} />
+                    </td>
+                    <td className="text-zinc-500">{fmtMs(e.time.duration_ms)}</td>
+                    <td>
+                      {e.run_id ? (
+                        <RunLink id={e.run_id} />
+                      ) : (
+                        <span className="text-amber-500" title="no run was declared">
+                          none
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </Panel>
+        <div className="col-span-12 space-y-3 lg:col-span-4">
+          <Panel title={`active runs (${active.length})`}>
+            {active.length === 0 ? (
+              <p className="text-xs text-zinc-500">none in progress</p>
+            ) : (
+              active.map((r) => (
+                <div key={r.run_id} className="flex justify-between font-mono text-[11px]">
+                  <RunLink id={r.run_id} /> <span>{r.name}</span>{' '}
+                  <span>{r.event_count} events</span>
                 </div>
-                <div className="mt-2 h-3 w-40/50 rounded bg-white/10" style={{ width: '60%' }} />
+              ))
+            )}
+          </Panel>
+          <Panel title="recent runs">
+            {runs.slice(0, 10).map((r) => (
+              <div
+                key={r.run_id}
+                className="flex items-center justify-between gap-2 py-0.5 font-mono text-[11px]"
+              >
+                <RunLink id={r.run_id} />
+                <span className="flex-1 truncate">{r.name}</span>
+                <Status s={r.status} />
+                <span className="text-zinc-500">{fmtMs(r.duration_ms)}</span>
+                <span className="text-zinc-500" title="declared-link completeness">
+                  {r.completeness.toFixed(2)}
+                </span>
               </div>
             ))}
-          </div>
-        ) : events.length === 0 ? (
-          <div className="py-10 text-center text-sm text-zinc-500">Waiting for events…</div>
-        ) : null}
-        {events.slice(0, 40).map((event) => (
-          <div key={event.event_id} className={cn('rounded-xl border px-3 py-2 text-xs', event.safety?.blocked ? 'border-red-500/30 bg-red-500/10' : 'border-white/5 bg-black/10')}>
-            <div className="flex items-center justify-between gap-3">
-              <div className="min-w-0">
-                <div className="truncate font-medium text-zinc-200">{event.event_type}</div>
-                <div className="truncate font-mono text-zinc-500">{event.tool_call?.raw_command ?? event.tool_call?.tool_name ?? event.agent_id}</div>
+          </Panel>
+          <Panel title="actors & resources (recent events)">
+            {actors.map(([a, n]) => (
+              <div key={a} className="flex justify-between font-mono text-[11px]">
+                <span>{a}</span>
+                <span className="text-zinc-500">{n}</span>
               </div>
-              <div className="shrink-0 text-zinc-500">{safeFormat(event.timestamp)}</div>
-            </div>
-          </div>
-        ))}
-      </div>
-    </section>
-  )
-}
-
-function SessionsTable({ sessions, loading }: { sessions: AgentSession[]; loading?: boolean }) {
-  const router = useRouter()
-  return (
-    <section className="rounded-2xl border border-white/10 bg-white/5">
-      <div className="border-b border-white/10 px-5 py-4">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-300">Recent Sessions</h2>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead className="text-left text-xs uppercase tracking-[0.16em] text-zinc-500">
-            <tr>
-              <th className="px-5 py-3">Session</th>
-              <th className="px-4 py-3">Framework</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3 text-right">Events</th>
-              <th className="px-4 py-3 text-right">Tokens</th>
-              <th className="px-4 py-3 text-right">Cost</th>
-              <th className="px-4 py-3 text-right">Started</th>
-              <th className="px-5 py-3" />
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              [...Array(5)].map((_, i) => (
-                <tr key={i} className="animate-pulse border-t border-white/5">
-                  <td className="px-5 py-3">
-                    <div className="mb-2 h-3 w-32 rounded bg-white/10" />
-                    <div className="h-3 w-48 rounded bg-white/10" />
-                  </td>
-                  <td className="px-4 py-3"><div className="h-3 w-16 rounded bg-white/10" /></td>
-                  <td className="px-4 py-3"><div className="h-5 w-20 rounded-full bg-white/10" /></td>
-                  <td className="px-4 py-3"><div className="ml-auto h-3 w-8 rounded bg-white/10" /></td>
-                  <td className="px-4 py-3"><div className="ml-auto h-3 w-12 rounded bg-white/10" /></td>
-                  <td className="px-4 py-3"><div className="ml-auto h-3 w-12 rounded bg-white/10" /></td>
-                  <td className="px-4 py-3"><div className="ml-auto h-3 w-20 rounded bg-white/10" /></td>
-                  <td className="px-5 py-3" />
-                </tr>
-              ))
-            ) : (
-              sessions.map((session) => (
-                <tr
-                  key={session.session_id}
-                  className="cursor-pointer border-t border-white/5 transition-colors hover:bg-white/5 focus:outline-none focus:bg-white/10"
-                  tabIndex={0}
-                  role="button"
-                  aria-label={`View details for session ${session.session_id.slice(0, 8)}`}
-                  onClick={() => router.push(`/sessions/${session.session_id}`)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      router.push(`/sessions/${session.session_id}`);
-                    }
-                  }}
-                >
-                  <td className="px-5 py-3">
-                    <div className="font-mono text-xs text-zinc-200">{session.session_id.slice(0, 16)}…</div>
-                    <div className="max-w-[20rem] truncate text-xs text-zinc-500">{session.goal ?? session.agent_name ?? session.agent_id}</div>
-                  </td>
-                  <td className="px-4 py-3 text-zinc-300">{session.framework}</td>
-                  <td className="px-4 py-3">{statusBadge(session.status)}</td>
-                  <td className="px-4 py-3 text-right font-mono text-zinc-300">{session.total_events}</td>
-                  <td className="px-4 py-3 text-right font-mono text-zinc-300">{session.total_tokens.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right font-mono text-zinc-300">${session.estimated_cost_usd.toFixed(4)}</td>
-                  <td className="px-4 py-3 text-right text-xs text-zinc-500">{safeDistanceToNow(session.started_at)}</td>
-                  <td className="px-5 py-3 text-zinc-500"><ChevronRight size={14} /></td>
-                </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
-    </section>
-  )
-}
-
-function SafetyPanel({ blockedEvents, loading }: { blockedEvents: AgentEvent[]; loading?: boolean }) {
-  return (
-    <section className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-5">
-      <div className="mb-4 flex items-center justify-between">
-        <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-300">Safety Blocks</h2>
-        <span className="rounded-full bg-amber-500/20 px-2 py-1 text-xs font-medium text-amber-300">{loading ? '…' : blockedEvents.length}</span>
-      </div>
-      <div className="space-y-2">
-        {loading ? (
-          [...Array(3)].map((_, i) => (
-            <div key={i} className="animate-pulse rounded-xl border border-amber-500/10 bg-black/10 p-3 text-xs">
-              <div className="flex items-center justify-between gap-3">
-                <div className="h-3 w-24 rounded bg-white/10" />
-                <div className="h-3 w-12 rounded bg-white/10" />
-              </div>
-              <div className="mt-2 h-3 w-40 rounded bg-white/10" />
-              <div className="mt-3 h-3 w-32 rounded bg-amber-500/20" />
-            </div>
-          ))
-        ) : blockedEvents.length === 0 ? (
-          <div className="text-sm text-zinc-500">No blocked actions in the current window.</div>
-        ) : (
-          blockedEvents.slice(0, 6).map((event) => (
-            <div key={event.event_id} className="rounded-xl border border-amber-500/10 bg-black/10 p-3 text-xs">
-              <div className="flex items-center justify-between gap-3">
-                <div className="font-medium text-zinc-200">{event.tool_call?.tool_name ?? event.event_type}</div>
-                <div className="text-zinc-500">{safeFormat(event.timestamp)}</div>
-              </div>
-              <div className="mt-1 truncate font-mono text-zinc-500">{event.tool_call?.raw_command}</div>
-              <div className="mt-2 text-amber-300">{event.safety?.reasons?.[0] ?? 'Blocked by policy'}</div>
-            </div>
-          ))
-        )}
-      </div>
-    </section>
-  )
-}
-
-export default function DashboardPage() {
-  const queryClient = useQueryClient()
-  const { summary, isSummaryLoading: summaryLoading } = useDashboardSummary()
-  const { sessions, isSessionsLoading } = useSessions()
-  const { blockedEvents, isBlockedLoading } = useBlockedEvents()
-  const [liveEvents, setLiveEvents] = useState<AgentEvent[]>([])
-  const { status: wsStatus, reconnectElapsedSec } = useLiveEventSocket(
-    (event) => {
-      setLiveEvents((previous) => [event, ...previous].slice(0, 200))
-    },
-    () => {
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] })
-      queryClient.invalidateQueries({ queryKey: ['sessions'] })
-    },
-  )
-
-  const confidenceTrend = sessions
-    .slice(0, 12)
-    .reverse()
-    .map((session, index) => ({
-      index,
-      confidence: Math.round((session.final_confidence ?? 0) * 100),
-    }))
-
-  return (
-    <div className="min-h-screen bg-agentwatch text-white">
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-zinc-950/80 backdrop-blur">
-        <div className="mx-auto flex max-w-screen-2xl items-center justify-between px-6 py-4">
-          <div>
-            <div className="text-xs uppercase tracking-[0.32em] text-zinc-500">AgentWatch</div>
-            <h1 className="text-2xl font-semibold text-white">Reliability, safety, and observability</h1>
-          </div>
-          <button onClick={() => { queryClient.invalidateQueries({ queryKey: ['dashboard'] }); queryClient.invalidateQueries({ queryKey: ['sessions'] }) }} aria-label="Refresh dashboard data" className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/5 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white/10 hover:text-white">
-            <RefreshCw size={14} />
-            Refresh
-          </button>
-        </div>
-      </header>
-
-      <main className="mx-auto max-w-screen-2xl space-y-6 px-6 py-6">
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard icon={Activity} label="Total Sessions" value={summary?.total_sessions ?? '—'} sub={`${summary?.active_sessions ?? 0} active`} color="#3b82f6" loading={summaryLoading} />
-          <MetricCard icon={AlertTriangle} label="Failed Sessions" value={summary?.failed_sessions ?? '—'} sub={`${summary?.blocked_sessions ?? 0} blocked`} color="#ef4444" loading={summaryLoading} />
-          <MetricCard icon={Shield} label="Safety Checks" value={summary?.safety_stats?.checked ?? '—'} sub={`${summary?.safety_stats?.blocked ?? 0} blocked`} color="#f59e0b" loading={summaryLoading} />
-          <MetricCard icon={DollarSign} label="Estimated Cost" value={`$${(summary?.estimated_cost_usd ?? 0).toFixed(4)}`} sub={`${(summary?.total_tokens ?? 0).toLocaleString()} tokens`} color="#22c55e" loading={summaryLoading} />
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-[1.05fr_1.95fr]">
-          <LiveEventFeed events={liveEvents} wsStatus={wsStatus} reconnectElapsedSec={reconnectElapsedSec} />
-          <SessionsTable sessions={sessions} loading={isSessionsLoading} />
-        </section>
-
-        <section className="grid gap-6 lg:grid-cols-[1fr_1.6fr]">
-          <SafetyPanel blockedEvents={blockedEvents} loading={isBlockedLoading} />
-          <section className="rounded-2xl border border-white/10 bg-white/5 p-5">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold uppercase tracking-[0.2em] text-zinc-300">Confidence Trend</h2>
-              <div className="inline-flex items-center gap-2 text-xs text-blue-300">
-                <Zap size={12} />
-                recent sessions
-              </div>
-            </div>
-            {isSessionsLoading ? (
-              <div className="flex h-48 animate-pulse items-center justify-center rounded-xl bg-white/5">
-                <div className="flex h-32 w-full flex-col justify-end px-4">
-                  <div className="flex items-end gap-2 h-full">
-                    {[...Array(12)].map((_, i) => (
-                      <div key={i} className="flex-1 bg-white/10 rounded-t" style={{ height: `${Math.random() * 60 + 20}%` }} />
-                    ))}
-                  </div>
+            ))}
+          </Panel>
+          <Panel title="system topology (actor → object)">
+            {[...topo.entries()]
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 14)
+              .map(([k, n]) => (
+                <div key={k} className="flex justify-between font-mono text-[11px]">
+                  <span className="truncate">{k}</span>
+                  <span className="text-zinc-500">{n}</span>
                 </div>
+              ))}
+          </Panel>
+          <Panel title={`unresolved observations (${d?.diagnostic_count ?? 0} diagnostics)`}>
+            {((d?.unresolved ?? []) as Record<string, string>[]).slice(0, 8).map((x, i) => (
+              <div key={i} className="font-mono text-[11px] text-amber-300/90">
+                {x.code}: {x.message} <span className="text-zinc-600">{short(x.obs_id)}</span>
               </div>
-            ) : confidenceTrend.length === 0 ? (
-              <div className="flex h-48 items-center justify-center text-sm text-zinc-500">Run a session to populate the dashboard.</div>
-            ) : (
-              <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={confidenceTrend}>
-                  <defs>
-                    <linearGradient id="confidenceFill" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.38} />
-                      <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid stroke="#ffffff08" strokeDasharray="4 4" />
-                  <XAxis dataKey="index" hide />
-                  <YAxis domain={[0, 100]} tick={{ fill: '#71717a', fontSize: 12 }} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={{ background: '#18181b', border: '1px solid #27272a', borderRadius: 16 }} />
-                  <Area dataKey="confidence" type="monotone" stroke="#60a5fa" fill="url(#confidenceFill)" strokeWidth={2} />
-                </AreaChart>
-              </ResponsiveContainer>
+            ))}
+            {(d?.unresolved ?? []).length === 0 && (
+              <p className="text-xs text-zinc-500">every observation was normalized</p>
             )}
-          </section>
-        </section>
-      </main>
-    </div>
-  )
+          </Panel>
+          <Panel title="capabilities">
+            {((status.data?.capabilities ?? []) as { name: string; maturity: string }[]).map(
+              (c) => (
+                <div key={c.name} className="flex justify-between py-px font-mono text-[10px]">
+                  <span className="text-zinc-400">{c.name}</span>
+                  <Maturity m={c.maturity} />
+                </div>
+              ),
+            )}
+            {status.data && !status.data.reexecution_enabled && (
+              <p className="mt-2 text-[10px] text-zinc-500">
+                <Label>note</Label> server re-execution disabled: LAB offers L0/L1 replay only
+              </p>
+            )}
+          </Panel>
+        </div>
+      </div>
+    </Shell>
+  );
 }

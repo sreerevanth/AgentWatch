@@ -8,7 +8,6 @@
 const nextConfig = {
   reactStrictMode: true,
   output: 'standalone',
-  transpilePackages: ['react-query-ease'],
 }
 
 module.exports = nextConfig

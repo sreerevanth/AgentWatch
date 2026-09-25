@@ -6,43 +6,38 @@
  * env var is not present during `docker build`).  This route runs on every
  * request and reads the env var from the live container environment.
  */
-import type { NextApiRequest, NextApiResponse } from 'next'
+import type { NextApiRequest, NextApiResponse } from 'next';
 
 // Reads from the container env at request time — never baked in at build time.
-const API_BASE =
-  (process.env.AGENTWATCH_API_URL ?? 'http://localhost:8000').replace(/\/$/, '')
+const API_BASE = (process.env.AGENTWATCH_API_URL ?? 'http://localhost:8000').replace(/\/$/, '');
 
 // No externalResolver: true — keeping Next.js's default error safety net so
 // that any uncaught exception in this handler results in a 500 response rather
 // than a silent connection close that Render's proxy reports as 502.
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   try {
-    const segments = Array.isArray(req.query.path)
-      ? req.query.path
-      : [req.query.path ?? '']
-    const path = segments.join('/')
+    const segments = Array.isArray(req.query.path) ? req.query.path : [req.query.path ?? ''];
+    const path = segments.join('/');
 
     // Forward query params (except the internal Next.js `path` param)
-    const { path: _drop, ...rest } = req.query
+    const { path: _drop, ...rest } = req.query;
     const qs = new URLSearchParams(
       Object.entries(rest).flatMap(([k, v]) =>
-        Array.isArray(v) ? v.map((val) => [k, val]) : [[k, String(v)]]
+        Array.isArray(v) ? v.map((val) => [k, val]) : [[k, String(v)]],
       ),
-    ).toString()
+    ).toString();
 
-    const upstream = `${API_BASE}/api/v1/${path}${qs ? `?${qs}` : ''}`
+    const upstream = `${API_BASE}/api/v1/${path}${qs ? `?${qs}` : ''}`;
 
-    const isReadMethod = req.method === 'GET' || req.method === 'HEAD'
-    const requestBody: string | undefined = isReadMethod
-      ? undefined
-      : JSON.stringify(req.body)
+    const isReadMethod = req.method === 'GET' || req.method === 'HEAD';
+    const requestBody: string | undefined = isReadMethod ? undefined : JSON.stringify(req.body);
 
-    const forwardHeaders: Record<string, string> = {}
+    const forwardHeaders: Record<string, string> = {};
     if (!isReadMethod && requestBody !== undefined) {
-      forwardHeaders['content-type'] = 'application/json'
+      forwardHeaders['content-type'] = 'application/json';
     }
     if (req.headers['authorization']) {
-      forwardHeaders['authorization'] = req.headers['authorization'] as string
+      forwardHeaders['authorization'] = req.headers['authorization'] as string;
     }
 
     const upstreamRes = await fetch(upstream, {
@@ -50,23 +45,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       headers: forwardHeaders,
       body: requestBody,
       signal: AbortSignal.timeout(30_000),
-    })
+    });
 
-    res.status(upstreamRes.status)
+    res.status(upstreamRes.status);
 
-    const ct = upstreamRes.headers.get('content-type')
-    if (ct) res.setHeader('content-type', ct)
+    const ct = upstreamRes.headers.get('content-type');
+    if (ct) res.setHeader('content-type', ct);
 
-    const payload = await upstreamRes.text()
-    res.send(payload)
+    const payload = await upstreamRes.text();
+    res.send(payload);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    const upstream = `${API_BASE}/api/v1/...`
-    console.error(`[proxy] ${req.method} ${req.url} →`, message)
+    const message = err instanceof Error ? err.message : String(err);
+    const upstream = `${API_BASE}/api/v1/...`;
+    console.error(`[proxy] ${req.method} ${req.url} →`, message);
     res.status(502).json({
       error: 'upstream_unavailable',
       upstream,
       detail: message,
-    })
+    });
   }
 }
