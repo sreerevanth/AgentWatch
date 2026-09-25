@@ -163,6 +163,14 @@ def main(argv: list[str] | None = None) -> int:
         t_runs = time.perf_counter()
         ws = Workspace(engine)
         results = tasks.evaluate_all(ws, engine, records, drift_n)
+        per_seed: dict[int, dict[str, Any]] = {}
+        if args.seeds > 1:
+            matrix_seeds = range(args.seeds)
+            for sd in matrix_seeds:
+                subset = [r for r in records if r.seed == sd]
+                per_seed[sd] = tasks.evaluate_all(
+                    Workspace(engine), engine, subset, drift_n, include_drift=False
+                )
         engine.store.close()
     finished = time.perf_counter()
     report: dict[str, Any] = {
@@ -188,6 +196,9 @@ def main(argv: list[str] | None = None) -> int:
         spec = registry["tasks"].get(name, {})
         thr = spec.get("thresholds", {})
         passed = {k: _meets(measured["metrics"].get(k), v) for k, v in thr.items()}
+        spread = _spread(name, per_seed)
+        if spread:
+            measured = {**measured, "across_seeds": spread}
         report["tasks"][name] = {
             "hypothesis": spec.get("hypothesis"),
             "capability": spec.get("capability"),
@@ -204,6 +215,25 @@ def main(argv: list[str] | None = None) -> int:
     (args.out / "LATEST.md").write_text(render_markdown(report), encoding="utf-8")
     print(render_markdown(report))
     return 0
+
+
+def _spread(task: str, per_seed: dict[int, dict[str, Any]]) -> dict[str, Any] | None:
+    """Per-metric mean/min/max over seeds (each seed evaluated on its own runs only)."""
+    if len(per_seed) < 2:
+        return None
+    out: dict[str, Any] = {}
+    metrics = set().union(*(set(v.get(task, {}).get("metrics", {})) for v in per_seed.values()))
+    for m in sorted(metrics):
+        vals = [v[task]["metrics"].get(m) for v in per_seed.values() if task in v]
+        nums = [float(x) for x in vals if isinstance(x, (int, float)) and not isinstance(x, bool)]
+        if nums:
+            out[m] = {
+                "mean": round(sum(nums) / len(nums), 4),
+                "min": round(min(nums), 4),
+                "max": round(max(nums), 4),
+                "n_seeds": len(nums),
+            }
+    return out
 
 
 def _meets(value: Any, threshold: Any) -> bool:
@@ -225,19 +255,21 @@ def render_markdown(report: dict[str, Any]) -> str:
         f"- runs: {report['config']['runs']} · seeds: {report['config']['seeds']} · models: {report['config']['models']}",
         f"- python {report['environment']['python']} on {report['environment']['platform']}",
         "",
-        "| task | metric | measured | threshold | met |",
-        "|---|---|---|---|---|",
+        "| task | metric | measured (pooled) | across seeds (min–max) | threshold | met |",
+        "|---|---|---|---|---|---|",
     ]
     for name, t in report["tasks"].items():
         for k, v in t["metrics"].items():
             thr = t["thresholds"].get(k, "")
             met = t["meets_threshold"].get(k)
-            lines.append(
-                f"| {name} | {k} | {v if not isinstance(v, float) else round(v, 4)} | {thr} | {'' if met is None else ('yes' if met else '**no**')} |"
-            )
+            sp = (t.get("across_seeds") or {}).get(k)
+            spread = f"{sp['min']}–{sp['max']} (n={sp['n_seeds']})" if sp else ""
+            shown = v if not isinstance(v, float) else round(v, 4)
+            verdict = "" if met is None else ("yes" if met else "**no**")
+            lines.append(f"| {name} | {k} | {shown} | {spread} | {thr} | {verdict} |")
     lines += [
         "",
-        "Results come from deterministic stub systems; they do not measure behaviour with real models.",
+        "Results come from stub systems (seeded document choice, failure counts and latency jitter); they do not measure behaviour with real models. Lab and faithfulness tasks use the lowest seed of each set.",
         "",
     ]
     for name, t in report["tasks"].items():

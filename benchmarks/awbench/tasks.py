@@ -64,7 +64,9 @@ def closure(edges: list[list[str]]) -> set[tuple[str, str]]:
     return out
 
 
-def evaluate_all(ws: Workspace, engine: Engine, records: list[Any], drift_n: int) -> dict[str, Any]:
+def evaluate_all(
+    ws: Workspace, engine: Engine, records: list[Any], drift_n: int, *, include_drift: bool = True
+) -> dict[str, Any]:
     native = [r for r in records if r.sensor == "native"]
     out = {
         "h1_normalization": h1(ws, records),
@@ -72,13 +74,23 @@ def evaluate_all(ws: Workspace, engine: Engine, records: list[Any], drift_n: int
         "h3_lineage": h3(ws, native),
         "h4_divergence": h4(ws, native),
         "h5_motifs": h5(ws, native),
-        "h7_drift": h7(ws, native, drift_n),
-        "replay_fidelity": replay_fidelity(ws, engine, native),
-        "counterfactual_quality": counterfactual_quality(engine, native),
-        "causal_hypotheses": causal_hypotheses(engine, native),
-        "explanation_faithfulness": faithfulness(ws, native),
     }
+    if include_drift:
+        out["h7_drift"] = h7(ws, native, drift_n)
+    out.update(
+        {
+            "replay_fidelity": replay_fidelity(ws, engine, native),
+            "counterfactual_quality": counterfactual_quality(engine, native),
+            "causal_hypotheses": causal_hypotheses(engine, native),
+            "explanation_faithfulness": faithfulness(ws, native),
+        }
+    )
     return out
+
+
+def _primary(records: list[Any]) -> int:
+    """Lowest seed present: the seed used by the expensive lab/faithfulness tasks."""
+    return min((r.seed for r in records), default=0)
 
 
 def _baseline(records: list[Any], rec: Any) -> Any | None:
@@ -359,14 +371,15 @@ def h7(ws: Workspace, records: list[Any], drift_n: int) -> dict[str, Any]:
 
 
 def replay_fidelity(ws: Workspace, engine: Engine, records: list[Any]) -> dict[str, Any]:
+    primary = _primary(records)
     l1 = [
         replay(ws, r.run_id, "L1", record=False)["consistent_with_stored_interpretation"]
         for r in records
-        if r.seed == 0
+        if r.seed == primary
     ]
     l2 = []
     for r in records:
-        if r.seed == 0 and r.scenario in ("normal", "tool_timeout", "bad_retrieval"):
+        if r.seed == primary and r.scenario in ("normal", "tool_timeout", "bad_retrieval"):
             res = replay(Workspace(engine), r.run_id, "L2", record=False)
             l2.append(res["reproduction_confidence"]["value"])
     return {
@@ -395,10 +408,11 @@ def _retrieval_output(ws: Workspace, run_id: str) -> Any:
 
 
 def counterfactual_quality(engine: Engine, records: list[Any]) -> dict[str, Any]:
+    primary = _primary(records)
     correct = n = 0
     details = []
     for r in records:
-        if r.scenario != "corrupted_retrieval" or r.seed != 0:
+        if r.scenario != "corrupted_retrieval" or r.seed != primary:
             continue
         base = _baseline(records, r)
         ws = Workspace(engine)
@@ -428,11 +442,12 @@ def counterfactual_quality(engine: Engine, records: list[Any]) -> dict[str, Any]
 
 
 def causal_hypotheses(engine: Engine, records: list[Any]) -> dict[str, Any]:
+    primary = _primary(records)
     from agentwatch.causality.hypotheses import add_evidence, get, propose
 
     true_ok = ctrl_ok = n = 0
     for r in records:
-        if r.scenario != "bad_retrieval" or r.seed != 0:
+        if r.scenario != "bad_retrieval" or r.seed != primary:
             continue
         base = _baseline(records, r)
         ws = Workspace(engine)
@@ -507,11 +522,12 @@ NUM = re.compile(r"(?<![\w.])[-+]?\d+(?:\.\d+)?")
 
 
 def faithfulness(ws: Workspace, records: list[Any]) -> dict[str, Any]:
+    primary = _primary(records)
     import json
 
     resolves = grounded = total_nums = n = 0
     for r in records:
-        if r.scenario == "normal" or r.seed != 0:
+        if r.scenario == "normal" or r.seed != primary:
             continue
         base = _baseline(records, r)
         ans = ask(ws, f"why did {r.run_id} take longer than {base.run_id}?")

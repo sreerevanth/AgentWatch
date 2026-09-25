@@ -127,7 +127,7 @@ def retrieve_docs(query: str) -> list[dict[str, str]]:
     if SCEN == "bad_retrieval":
         ids = ["D5", "D6"]
     else:
-        ids = RELEVANT[:3]
+        ids = sorted(RNG.sample(RELEVANT, 3))  # seed-dependent choice of relevant documents
     docs = [{"id": i, "text": CORPUS[i]} for i in ids]
     if SCEN == "corrupted_retrieval":
         docs[0] = {"id": docs[0]["id"], "text": "#### corrupted #### " + docs[0]["text"][::-1]}
@@ -150,6 +150,7 @@ _calc_state = {"fail": 0}
 
 
 def calculator(expr: str) -> float:
+    time.sleep(RNG.uniform(0, 0.003))  # seeded latency jitter
     if _calc_state["fail"] > 0:
         _calc_state["fail"] -= 1
         raise TimeoutError("calculator timed out")
@@ -207,8 +208,12 @@ def arch_tool_loop() -> None:
 
 def _calc_with_retries() -> tuple[Any, str | None]:
     if SCEN in ("tool_timeout", "retry_loop"):
-        _calc_state["fail"] = 2 if SCEN == "tool_timeout" else 3
-        GT.data["expected_motifs"] += ["M001", "M002"]
+        # seed-dependent number of failures before success
+        fails = RNG.randint(1, 3) if SCEN == "tool_timeout" else RNG.randint(3, 4)
+        _calc_state["fail"] = fails
+        GT.data["expected_motifs"].append("M001")  # >=2 attempts form a retry chain
+        if fails + 1 >= 3:
+            GT.data["expected_motifs"].append("M002")  # >=3 identical calls
     last = None
     first = None
     for _ in range(5):
