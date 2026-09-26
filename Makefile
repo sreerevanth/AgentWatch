@@ -4,7 +4,7 @@
 # contributor can run `make format` from the repo root and have every
 # sub-package format itself in one shot.
 
-.PHONY: format format-check format-py format-js format-landing format-frontend help
+.PHONY: format format-check format-py format-js format-landing format-frontend typecheck help
 
 help:
 	@echo "Available targets:"
@@ -13,6 +13,7 @@ help:
 	@echo "  make format-py    - ruff format (Python)"
 	@echo "  make format-frontend - Prettier (frontend/)"
 	@echo "  make format-landing  - Prettier (agentwatch-landing/)"
+	@echo "  make typecheck    - mypy over the v3 modules"
 
 format-py:
 	ruff format agentwatch/
@@ -35,3 +36,9 @@ format-check-frontend:
 
 format-check-landing:
 	cd agentwatch-landing && npm run format:check
+
+# v3 modules are type-checked in CI; the v0.2 packages are not (yet).
+V3_MODULES = agentwatch/evidence agentwatch/storage agentwatch/sensors agentwatch/events 	agentwatch/runtime agentwatch/graph agentwatch/provenance agentwatch/compare 	agentwatch/behaviour agentwatch/causality agentwatch/lab agentwatch/state 	agentwatch/forecasting agentwatch/analysis agentwatch/query agentwatch/runs 	agentwatch/entities agentwatch/api/v3.py agentwatch/cli/v3.py agentwatch/instrument.py
+
+typecheck:
+	mypy $(V3_MODULES)

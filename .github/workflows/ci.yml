@@ -21,11 +21,13 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Install deps
-        run: pip install ruff mypy pydantic
+        run: pip install ruff mypy pydantic && pip install -e .
       - name: Ruff lint
         run: ruff check agentwatch/
       - name: Ruff format check
         run: ruff format --check agentwatch/
+      - name: Type check (v3 modules)
+        run: make typecheck
 
   # ─── Python unit tests ────────────────────────────────────────────────────
   python-tests:
