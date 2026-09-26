@@ -1,0 +1,106 @@
+{
+  "generated_at": "2026-09-26T15:08:15.299207+00:00",
+  "python": "3.14.2",
+  "platform": "Windows-11-10.0.26200-SP0",
+  "spans": 2000,
+  "sensor_overhead_us_per_call": 122.46,
+  "observations": 8004,
+  "ingest_obs_per_s": 1977.5,
+  "rebuild_s": 24.79,
+  "rebuild_events_per_s": 161.4,
+  "relations": 24000,
+  "graph_construction_s": 18.357,
+  "incremental_process_s": 1.154,
+  "incremental_mode": "incremental",
+  "graph_build_ms": 416.4,
+  "descendants_ms": 0.06,
+  "descendants_reached": 13,
+  "provenance_ms": 2521.9,
+  "compare_ms": 3039.5,
+  "verify_s": 0.224,
+  "store_bytes": 66424832,
+  "store_bytes_per_observation": 8299.0,
+  "compared_with": "2026-09-26T15:06:49.466559+00:00",
+  "change_vs_previous": {
+    "sensor_overhead_us_per_call": {
+      "before": 121.61,
+      "now": 122.46,
+      "ratio": 1.007
+    },
+    "observations": {
+      "before": 8004,
+      "now": 8004,
+      "ratio": 1.0
+    },
+    "ingest_obs_per_s": {
+      "before": 1968.5,
+      "now": 1977.5,
+      "ratio": 1.005
+    },
+    "rebuild_s": {
+      "before": 25.442,
+      "now": 24.79,
+      "ratio": 0.974
+    },
+    "rebuild_events_per_s": {
+      "before": 157.3,
+      "now": 161.4,
+      "ratio": 1.026
+    },
+    "relations": {
+      "before": 24000,
+      "now": 24000,
+      "ratio": 1.0
+    },
+    "graph_construction_s": {
+      "before": 18.012,
+      "now": 18.357,
+      "ratio": 1.019
+    },
+    "incremental_process_s": {
+      "before": 1.11,
+      "now": 1.154,
+      "ratio": 1.04
+    },
+    "graph_build_ms": {
+      "before": 382.6,
+      "now": 416.4,
+      "ratio": 1.088
+    },
+    "descendants_ms": {
+      "before": 0.07,
+      "now": 0.06,
+      "ratio": 0.857
+    },
+    "descendants_reached": {
+      "before": 13,
+      "now": 13,
+      "ratio": 1.0
+    },
+    "provenance_ms": {
+      "before": 2461.4,
+      "now": 2521.9,
+      "ratio": 1.025
+    },
+    "compare_ms": {
+      "before": 3097.9,
+      "now": 3039.5,
+      "ratio": 0.981
+    },
+    "verify_s": {
+      "before": 0.187,
+      "now": 0.224,
+      "ratio": 1.198
+    },
+    "store_bytes": {
+      "before": 66318336,
+      "now": 66424832,
+      "ratio": 1.002
+    },
+    "store_bytes_per_observation": {
+      "before": 8285.6,
+      "now": 8299.0,
+      "ratio": 1.002
+    }
+  }
+}

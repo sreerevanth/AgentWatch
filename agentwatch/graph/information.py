@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import heapq
 import json
+import math
 from collections import defaultdict
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
@@ -134,6 +135,7 @@ class _Run:
         self.consumed: dict[tuple[str, str], str] = {}  # (event id, content id) -> node
         self.exact: dict[str, list[_Inst]] = defaultdict(list)
         self.tok_index: dict[str, list[_Inst]] = defaultdict(list)
+        self.df: dict[str, int] = {}
         self.pending: list[tuple[float, int, _Inst]] = []
         self.seq = 0
         self.scope: dict[str, tuple[str, ...]] = {}  # event -> declared CONTAINS chain from root
@@ -226,7 +228,11 @@ class _Run:
         inst.tokens = self.tokens(inst.content_id)
         if next(iter(inst.tokens)).startswith("#"):
             return
-        for t in inst.tokens:
+        # exact prefix filter: containment(y in x) >= theta requires x to contain one of y's
+        # first len - ceil(theta*len) + 1 tokens under any fixed order (pigeonhole), so indexing
+        # only those rarest tokens loses no match; every candidate is verified exactly
+        keep = len(inst.tokens) - math.ceil(self.p.theta * len(inst.tokens) - EPS) + 1
+        for t in sorted(inst.tokens, key=lambda k: (self.df.get(k, 0), k))[:keep]:
             self.tok_index[t].append(inst)
 
     def containment(self, toks: frozenset[str], exclude_event: str) -> list[tuple[_Inst, float]]:
@@ -260,6 +266,13 @@ class _Run:
                     self.declared_instance[ref.instance] = inst.node
                 self._decompose(ref.artifact_id)
             self.outputs[ev.event_id] = insts
+        # token document frequency over every value of the run (for the prefix filter)
+        contents = {r.artifact_id for ev in self.evs for r in (*ev.outputs, *ev.inputs)}
+        contents |= {i for items in self.items.values() for i in items}
+        for cid in contents:
+            if cid:
+                for t in self.p.tokens_of(cid):
+                    self.df[t] = self.df.get(t, 0) + 1
         parents = {
             ev.event_id: [
                 eid
@@ -354,7 +367,8 @@ class _Run:
                 ev.event_id in self.transfers and self.transfers[ev.event_id][1]
             ) or inst.content_id in {i.artifact_id for i in ev.inputs}
             # a decomposed list is matched through its items (one retrieved document at a time)
-            cands = [] if decomposed else self.containment(toks, ev.event_id)
+            wanted = ext or (ev.kind in CARRIER_KINDS and not explained)
+            cands = [] if decomposed or not wanted else self.containment(toks, ev.event_id)
             if ext and not decomposed:
                 self._similar(inst.node, cands)
             elif cands and ev.kind in CARRIER_KINDS and not explained:

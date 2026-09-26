@@ -192,30 +192,39 @@ class Workspace:
     def instances_of(self, content_id: str, run_id: str | None = None) -> list[str]:
         """Information instances carrying this content, oldest first (ADR-0017): equal bytes
         produced by different events are different instances."""
+        index = self._instance_index(run_id)
+        return list(index.get(content_id, []))
+
+    def _instance_index(self, run_id: str | None) -> dict[str, list[str]]:
+        """content id -> instance nodes (produced values first, oldest first), built once."""
+        cache = self.__dict__.setdefault("_instance_index_cache", {})
+        if run_id in cache:
+            return cache[run_id]
         scoped = sorted(
             (e for e in self.all_events.values() if run_id is None or e.get("run_id") == run_id),
             key=lambda e: e["time"]["start"] or "",
         )
-        out = [
-            f"inst:{e['event_id']}/o{k}"
-            for e in scoped
-            for k, a in enumerate(e["outputs"])
-            if a["artifact_id"] == content_id
-        ]
-        if out:
-            return out
+        index: dict[str, list[str]] = {}
+        for e in scoped:
+            for k, a in enumerate(e["outputs"]):
+                index.setdefault(a["artifact_id"], []).append(f"inst:{e['event_id']}/o{k}")
         runs = {run_id} if run_id else {e.get("run_id") for e in scoped}
         for r in sorted(x for x in runs if x):
             for rel in self.relations(r, view="INFORMATION"):
-                a = rel["attributes"]
-                if a.get("content_id") != content_id:
+                cid = rel["attributes"].get("content_id")
+                if not cid:
                     continue
-                node = rel["head"][0] if rel["type"] in ("PRODUCES", "CONTAINS_ITEM") else None
-                if rel["type"] == "CONSUMES":
+                if rel["type"] == "CONTAINS_ITEM":
+                    node = rel["head"][0]
+                elif rel["type"] == "CONSUMES" and rel["tail"][0].startswith("inst:"):
                     node = rel["tail"][0]
-                if node and node.startswith("inst:") and node not in out:
-                    out.append(node)
-        return out
+                else:
+                    continue
+                nodes = index.setdefault(cid, [])
+                if node not in nodes:
+                    nodes.append(node)
+        cache[run_id] = index
+        return index
 
     def instance_for(self, content_id: str, run_id: str | None = None) -> str:
         """The most recent instance of a content (e.g. the latest ``report.md``)."""
@@ -237,10 +246,13 @@ class Workspace:
         if len(parts) == 1 and parts[0].startswith("in") and parts[0][2:].isdigit():
             k = int(parts[0][2:])
             return e["inputs"][k]["artifact_id"] if k < len(e["inputs"]) else None
-        for rel in self.relations(e.get("run_id"), view="INFORMATION"):
-            if rel["type"] == "CONTAINS_ITEM" and rel["head"] == [node]:
-                return rel["attributes"].get("content_id")
-        return None
+        rev_cache = self.__dict__.setdefault("_instance_rev_cache", {})
+        rid = e.get("run_id")
+        if rid not in rev_cache:
+            rev_cache[rid] = {
+                n: cid for cid, nodes in self._instance_index(rid).items() for n in nodes
+            }
+        return rev_cache[rid].get(node)
 
     def describe_node(self, node: str) -> dict[str, Any]:
         kind, _, ident = node.partition(":")
