@@ -327,10 +327,43 @@ def h4(ws: Workspace, records: list[Any]) -> dict[str, Any]:
     }
 
 
+ORIGIN_KINDS = ("RETRIEVAL", "EXTERNAL_INPUT")
+
+
+def true_bottleneck(gt: dict[str, Any]) -> bool:
+    """M006 from the ground-truth data flow, by the motif's definition: some intermediate
+    operation lies on every true path from the origins (retrievals / external inputs; every
+    stub retrieval returns >= 2 documents) to the final output. M006 is structural, not an
+    injected fault, so it is derived here rather than declared per scenario."""
+    final = gt.get("final_output")
+    edges = gt["data_edges"]
+    kinds = {n: v["kind"] for n, v in gt["nodes"].items()}
+    anc = {a for a, b in closure(edges) if b == final}
+    origins = {n for n in anc if kinds.get(n) in ORIGIN_KINDS}
+    if not final or not origins:
+        return False
+    inc: dict[str, list[str]] = defaultdict(list)
+    for a, b in edges:
+        inc[b].append(a)
+
+    def reached(banned: str) -> set[str]:
+        seen, stack = set(), [final]
+        while stack:
+            for p in inc.get(stack.pop(), ()):
+                if p != banned and p not in seen:
+                    seen.add(p)
+                    stack.append(p)
+        return seen
+
+    return any(not (reached(x) & origins) for x in anc - origins)
+
+
 def h5(ws: Workspace, records: list[Any]) -> dict[str, Any]:
     stats: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0])  # tp, fp, fn
     for r in records:
-        expected = set(r.gt.get("expected_motifs", []))
+        expected = set(r.gt.get("expected_motifs", [])) - {"M006"}
+        if true_bottleneck(r.gt):
+            expected.add("M006")
         detected = {m["motif_id"] for m in ws.derived("motif_instance", r.run_id)}
         for m in expected | detected:
             s = stats[m]
@@ -353,7 +386,7 @@ def h5(ws: Workspace, records: list[Any]) -> dict[str, Any]:
         "metrics": {"micro_precision": p, "micro_recall": rcl},
         "n": {"runs": len(records)},
         "per_motif": per,
-        "notes": "expected motifs come from the injected scenario; motifs not injected but detected count as false positives",
+        "notes": "expected motifs come from the injected scenario (M006: derived from ground-truth data flow); motifs not expected but detected count as false positives",
     }
 
 

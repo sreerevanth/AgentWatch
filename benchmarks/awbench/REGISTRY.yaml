@@ -45,6 +45,14 @@ changelog:
       in response (content-containment shortcuts through an intermediate are reduced), so
       hybrid_rag_cache is no longer held-out evidence for H2 information precision or H5.
       A third held-out architecture is needed to validate that change.
+  - date: 2026-09-26
+    note: >
+      Ground-truth correction (benchmark, not AgentWatch): M006 (information bottleneck) is a
+      structural property of a run, not an injected fault, but only hybrid_rag_cache declared
+      it. Its expectation is now derived for every run from the ground-truth data flow using
+      the motif's definition (tasks.true_bottleneck). Made after seeing M006 fire on the
+      development set once content shortcuts were reduced; both the scenario-declared and the
+      derived scoring can be reproduced from the recorded ground truth.
 
 systems:
   tool_loop: single model-driven tool loop (native SDK; OTel variant for H1)
