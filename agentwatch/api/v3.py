@@ -537,6 +537,21 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
 
         return guard(go)
 
+    @router.get("/api/v3/experiments/{record_id}", tags=["v3 lab"])
+    def experiment(record_id: str, w: Workspace = Depends(ws)) -> dict[str, Any]:
+        """A recorded lab experiment (branch, replay, counterfactual, intervention)."""
+        doc = w.store.experiment(record_id)
+        if doc is None or doc.get("tenant_id", w.tenant_id) != w.tenant_id:
+            raise HTTPException(404, f"no experiment {record_id!r}")
+        return doc
+
+    @router.get("/api/v3/experiments", tags=["v3 lab"])
+    def experiments(
+        record_type: str = Query("branch"), subject: str | None = None, w: Workspace = Depends(ws)
+    ) -> list[dict[str, Any]]:
+        """Recorded lab experiments of one type (e.g. branch), optionally for one run."""
+        return w.store.experiments(w.tenant_id, record_type, subject)
+
     @router.post("/api/v3/counterfactual", tags=["v3 lab"])
     def counterfactual(req: CounterfactualRequest, w: Workspace = Depends(ws)) -> dict[str, Any]:
         from agentwatch.lab.branch import counterfactual as cf

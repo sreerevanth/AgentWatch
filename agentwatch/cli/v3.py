@@ -937,6 +937,65 @@ def status(store: str | None = STORE_OPTION, as_json: bool = JSON_OPTION) -> Non
     console.print(t)
 
 
+def v3_health(store: str | None = None) -> list[tuple[str, str, str]]:
+    """(component, status, detail) rows for ``agentwatch doctor``: the v3 evidence store and
+    interpretation. Read-only: nothing is processed or written."""
+    rows: list[tuple[str, str, str]] = []
+    try:
+        from agentwatch.runtime.engine import Engine
+        from agentwatch.storage.schema import SCHEMA_VERSION
+
+        engine = Engine(store)
+    except Exception as exc:  # noqa: BLE001 - reported, not raised
+        return [("v3 store", "ERROR", f"cannot open: {exc}")]
+    st = engine.store
+    rows.append(("v3 store", "OK", f"{st.url} (schema v{SCHEMA_VERSION})"))
+    n = st.count_observations()
+    rows.append(("v3 observations", "OK", str(n)))
+    interp = st.get_interpretation(engine.interp_id_for("default"))
+    if n == 0:
+        rows.append(("v3 interpretation", "OK", "nothing observed yet"))
+    elif interp is None or interp.get("status") != "active":
+        rows.append(
+            (
+                "v3 interpretation",
+                "STALE",
+                "components changed since the last build: run `agentwatch reprocess`",
+            )
+        )
+    else:
+        rows.append(("v3 interpretation", "OK", f"current ({interp.get('interp_id', '')[:24]})"))
+    try:
+        report = st.verify()
+        rows.append(
+            (
+                "v3 evidence chain",
+                "OK" if report.ok else "FAILED",
+                "verified" if report.ok else str(report),
+            )
+        )
+    except Exception as exc:  # noqa: BLE001
+        rows.append(("v3 evidence chain", "ERROR", str(exc)))
+    try:
+        import cryptography  # noqa: F401
+
+        crypto = "available"
+    except ImportError:
+        crypto = "unavailable (pip install cryptography): payload encryption / erasure disabled"
+    rows.append(("v3 crypto-shredding", "OK" if crypto == "available" else "WARN", crypto))
+    rows.append(
+        (
+            "v3 payload encryption",
+            "OK",
+            "on"
+            if getattr(st, "encrypt_payloads", False)
+            else "off (AGENTWATCH_ENCRYPT_PAYLOADS=1)",
+        )
+    )
+    st.close()
+    return rows
+
+
 @evidence_app.command("verify")
 @_guard
 def evidence_verify(

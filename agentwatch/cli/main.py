@@ -2567,6 +2567,12 @@ def doctor() -> None:
     except Exception:
         table.add_row("Docker", "[red]Not installed[/red]")
 
+    from agentwatch.cli.v3 import v3_health
+
+    colors = {"OK": "green", "WARN": "yellow", "STALE": "yellow", "FAILED": "red", "ERROR": "red"}
+    for component, state, detail in v3_health():
+        table.add_row(component, f"[{colors.get(state, 'white')}]{state}[/] {detail}")
+
     console.print(table)
 
 
