@@ -170,7 +170,14 @@ def main(argv: list[str] | None = None) -> int:
         held = [r for r in records if r.held_out]
         records = [r for r in records if not r.held_out]
         results = tasks.evaluate_all(ws, engine, records, drift_n)
-        held_results = tasks.evaluate_held_out(Workspace(engine), engine, held) if held else {}
+        # each held-out architecture is scored on its own: one that has informed a fix no
+        # longer tests that fix, so pooling them would blur held-out and development evidence
+        held_results = {
+            arch: tasks.evaluate_held_out(
+                Workspace(engine), engine, [r for r in held if r.arch == arch]
+            )
+            for arch in dict.fromkeys(r.arch for r in held)
+        }
         per_seed: dict[int, dict[str, Any]] = {}
         if args.seeds > 1:
             matrix_seeds = range(args.seeds)
@@ -216,15 +223,22 @@ def main(argv: list[str] | None = None) -> int:
             "all_thresholds_met": all(passed.values()) if passed else None,
         }
     report["held_out"] = {}
-    for name, measured in held_results.items():
-        spec = registry["tasks"].get(name, {})
-        thr = spec.get("thresholds", {})
-        passed = {
-            k: _meets(measured["metrics"].get(k), v)
-            for k, v in thr.items()
-            if k in measured["metrics"]
-        }
-        report["held_out"][name] = {**measured, "thresholds": thr, "meets_threshold": passed}
+    report["held_out_notes"] = registry.get("held_out_notes") or {}
+    for arch, arch_results in held_results.items():
+        report["held_out"][arch] = {}
+        for name, measured in arch_results.items():
+            spec = registry["tasks"].get(name, {})
+            thr = spec.get("thresholds", {})
+            passed = {
+                k: _meets(measured["metrics"].get(k), v)
+                for k, v in thr.items()
+                if k in measured["metrics"]
+            }
+            report["held_out"][arch][name] = {
+                **measured,
+                "thresholds": thr,
+                "meets_threshold": passed,
+            }
     args.out.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     body = json.dumps(report, indent=2, default=str)
@@ -285,15 +299,18 @@ def render_markdown(report: dict[str, Any]) -> str:
             shown = v if not isinstance(v, float) else round(v, 4)
             verdict = "" if met is None else ("yes" if met else "**no**")
             lines.append(f"| {name} | {k} | {shown} | {spread} | {thr} | {verdict} |")
-    if report.get("held_out"):
+    notes = report.get("held_out_notes", {})
+    for arch, arch_results in (report.get("held_out") or {}).items():
         lines += [
             "",
-            "## Held-out architecture (map_reduce; not used during development)",
+            f"## Held-out architecture: {arch}",
+            "",
+            notes.get(arch, ""),
             "",
             "| task | metric | measured | threshold | met |",
             "|---|---|---|---|---|",
         ]
-        for name, t in report["held_out"].items():
+        for name, t in arch_results.items():
             for k, v in t["metrics"].items():
                 thr = t["thresholds"].get(k, "")
                 met = t["meets_threshold"].get(k)

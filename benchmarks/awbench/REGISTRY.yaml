@@ -29,12 +29,23 @@ changelog:
       Information-flow reachability (H2) follows flow relations only (PRODUCES, CONSUMES,
       DERIVES_FROM, CONTAINS_ITEM, TRANSFERS), matching provenance. AgentWatch added a
       non-flow MATCHES_CONTENT relation (content similarity into externally sourced artifacts).
+  - date: 2026-09-26
+    note: >
+      Added a second held-out architecture, hybrid_rag_cache (vector + keyword retrieval,
+      dedupe tool, answerer over a growing multi-turn history, cache write/read-back). It was
+      designed after the most-recent-producer traversal, MATCHES_CONTENT and M005 v2 changes
+      and is committed before its first run, so its results are held-out evidence for them.
+      map_reduce informed those changes and is now reported as "used for development" for the
+      affected metrics. Held-out results are reported per architecture, no longer pooled.
+      AgentWatch code is not to be changed in response to hybrid_rag_cache results before
+      they are recorded.
 
 systems:
   tool_loop: single model-driven tool loop (native SDK; OTel variant for H1)
   rag_memory: retrieval, summarization, memory write/read, second retrieval round
   multi_agent: planner delegating to researcher/analyst/critic, synthesizer join
   map_reduce: HELD-OUT; planner fans out to 3 workers, reducer joins (multi-parent), critic model
+  hybrid_rag_cache: HELD-OUT; vector+keyword retrieval, dedupe, answerer over growing history, cache read-back
 
 scenarios:
   tool_loop: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, tool_error, incorrect_tool_result, context_pressure, model_substitution, latency_injection, retry_loop]
@@ -43,6 +54,15 @@ scenarios:
 
 held_out:
   map_reduce: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, model_substitution, message_loss, latency_injection]
+  hybrid_rag_cache: [normal, bad_retrieval, corrupted_retrieval, stale_memory, duplicate_memory, model_substitution, tool_timeout]
+
+held_out_notes:
+  map_reduce: >
+    Informed fixes after its first runs (ground-truth corrections; M005 v2; most-recent-producer
+    traversal; MATCHES_CONTENT). Its information-precision and motif-precision numbers are
+    development evidence, not held-out evidence.
+  hybrid_rag_cache: >
+    Committed before its first run, after all changes above. Its results are held-out evidence.
 
 tasks:
   h1_normalization:

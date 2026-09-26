@@ -517,12 +517,158 @@ def arch_map_reduce() -> None:
                 GT.data["final_output"] = fw
 
 
+def arch_hybrid_rag_cache() -> None:
+    """SECOND HELD-OUT architecture (added after the most-recent-producer / MATCHES_CONTENT /
+    M005 v2 changes; never used to design them).
+
+    Three conversation turns. Each turn: vector retrieval (+ keyword retrieval in turn 1) ->
+    dedupe tool -> answer model over an accumulated history that carries earlier turns forward
+    (same actor) -> cache write. From turn 2 the cached previous answer is read back into the
+    history. A final report is written from the last answer.
+    """
+    model = summarize_v2 if SCEN == "model_substitution" else summarize_v1
+    model_name = "stub/summarizer-v2" if SCEN == "model_substitution" else "stub/summarizer-v1"
+
+    def dedupe(docs: list[dict[str, str]]) -> list[dict[str, str]]:
+        seen: dict[str, dict[str, str]] = {}
+        for d in docs:
+            seen.setdefault(d["id"], d)
+        return [seen[k] for k in sorted(seen)]
+
+    cache: dict[str, str] = {}
+    history = "Conversation history:"
+    dedupe_nodes: list[str] = []
+    last_answer = ""
+    last_answer_node = None
+    cache_write_node = ""
+    with op("OPERATION", "session", actor="agent:router"):
+        for turn in range(3):
+            with op("OPERATION", f"turn{turn}", actor="agent:router"):
+                PERTURB["retrieval"] = False
+                vec, rv = call(
+                    "RETRIEVAL",
+                    "vector_search",
+                    retrieve_docs,
+                    f"solar turn {turn}",
+                    obj="vector_index",
+                    actor="agent:router",
+                )
+                sources = [rv]
+                docs = list(vec)
+                if turn == 0:
+                    PERTURB["retrieval"] = (
+                        True  # retrieval scenarios hit the keyword retriever only
+                    )
+                    kw, rk = call(
+                        "RETRIEVAL",
+                        "keyword_search",
+                        retrieve_docs,
+                        "solar keywords",
+                        obj="keyword_index",
+                        actor="agent:router",
+                    )
+                    PERTURB["retrieval"] = False
+                    docs += kw
+                    sources.append(rk)
+                    if SCEN in ("bad_retrieval", "corrupted_retrieval"):
+                        GT.data["root_cause"] = rk
+                merged, dd = call(
+                    "TOOL_INVOCATION", "dedupe", dedupe, docs, obj="dedupe", actor="agent:router"
+                )
+                for src in sources:
+                    GT.flow(src, dd)
+                cached = None
+                rd = None
+                if turn > 0:
+                    stale = SCEN == "stale_memory" and turn == 1
+                    value = (
+                        "Stale cached answer from an older session about wind turbines and tidal energy."
+                        if stale
+                        else cache.get("last")
+                    )
+                    with op(
+                        "MEMORY_ACCESS",
+                        "read:cache",
+                        object="memory:cache",
+                        actor="agent:answerer",
+                        facets=["read"],
+                    ) as (ms, rd):
+                        ms.set(key="last", access="read").output(value, role="value", label="last")
+                    cached = value
+                    if stale:
+                        GT.data["root_cause"] = rd
+                    elif last_answer_node:
+                        # the cache returned what the previous turn wrote
+                        GT.flow(cache_write_node, rd)
+                history = (
+                    history
+                    + f"\nTurn {turn} context:\n"
+                    + "\n".join(f"- {d['text']}" for d in merged)
+                )
+                if cached:
+                    history = history + f"\n- previous answer: {cached}"
+                answer, am = call(
+                    "MODEL_INVOCATION",
+                    "answer",
+                    model,
+                    history,
+                    obj=model_name,
+                    actor="agent:answerer",
+                )
+                GT.flow(dd, am)
+                for prev in dedupe_nodes:
+                    GT.flow(prev, am)  # earlier turns' documents are carried in the history
+                if rd is not None:
+                    GT.flow(rd, am)
+                if SCEN == "model_substitution" and turn == 0:
+                    GT.data["root_cause"] = am
+                dedupe_nodes.append(dd)
+                with op(
+                    "MEMORY_ACCESS",
+                    "write:cache",
+                    object="memory:cache",
+                    actor="agent:answerer",
+                    facets=["write"],
+                ) as (ws, cw):
+                    ws.input(answer, role="value", label="last").set(key="last", access="write")
+                    GT.flow(am, cw)
+                cache["last"] = answer
+                if SCEN == "duplicate_memory":
+                    with op(
+                        "MEMORY_ACCESS",
+                        "write:cache",
+                        object="memory:cache",
+                        actor="agent:answerer",
+                        facets=["write"],
+                    ) as (ws2, cw2):
+                        ws2.input(answer, role="value", label="last").set(
+                            key="last", access="write"
+                        )
+                        GT.flow(am, cw2)
+                    cw = cw2
+                cache_write_node = cw
+                last_answer, last_answer_node = answer, am
+        GT.data["expected_motifs"].append("M005")  # the answerer's history grows turn over turn
+        # every retrieved document reaches the report only through the last answer (M006 by definition)
+        GT.data["expected_motifs"].append("M006")
+        value, t = _calc_with_retries()
+        with op(
+            "STATE_MUTATION", "write_report", actor="agent:router", facets=["artifact_creation"]
+        ) as (fs, fw):
+            fs.output(last_answer + f" Estimate: {value}", role="artifact", label="report.md")
+            GT.flow(last_answer_node, fw)
+            if t:
+                GT.flow(t, fw)
+            GT.data["final_output"] = fw
+        PERTURB["retrieval"] = True
+
+
 def main() -> None:
     global GT, RNG, SCEN
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--arch",
-        choices=["tool_loop", "rag_memory", "multi_agent", "map_reduce"],
+        choices=["tool_loop", "rag_memory", "multi_agent", "map_reduce", "hybrid_rag_cache"],
         default="tool_loop",
     )
     ap.add_argument("--scenario", choices=SCENARIOS, default="normal")
@@ -544,6 +690,7 @@ def main() -> None:
                 "rag_memory": arch_rag_memory,
                 "multi_agent": arch_multi_agent,
                 "map_reduce": arch_map_reduce,
+                "hybrid_rag_cache": arch_hybrid_rag_cache,
             }[args.arch]()
     Path(args.gt).write_text(json.dumps(GT.data, indent=1), encoding="utf-8")
 
