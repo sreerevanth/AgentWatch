@@ -22,6 +22,7 @@ import argparse
 import asyncio
 import contextvars
 import json
+import os
 import random
 import sys
 import threading
@@ -174,6 +175,58 @@ def summarize_v1(prompt: str) -> str:
 def summarize_v2(prompt: str) -> str:
     lines = [ln.lstrip("- ") for ln in prompt.splitlines() if ln.startswith("- ")]
     return "Detailed summary. " + " ".join(lines) + " End of summary."
+
+
+def _real_model(spec: str, style: str) -> Any:
+    """A real provider call in place of a stub model (``provider:model``, opt-in via
+    AWBENCH_MODEL / AWBENCH_MODEL_ALT). Real models are abstractive and not deterministic, so
+    results are reported separately from the stub benchmark and never compared as equal."""
+    provider, _, name = spec.partition(":")
+    instruction = {
+        "v1": "Summarize the bullet points in two or three sentences. Use only the given text.",
+        "v2": "Write a detailed summary of every bullet point. Use only the given text.",
+    }[style]
+    if provider == "anthropic":
+        import anthropic  # noqa: PLC0415
+
+        client = anthropic.Anthropic()
+
+        def call(prompt: str) -> str:
+            r = client.messages.create(
+                model=name,
+                max_tokens=300,
+                temperature=0,
+                system=instruction,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return "".join(b.text for b in r.content if getattr(b, "type", "") == "text")
+
+        return call
+    if provider == "openai":
+        import openai  # noqa: PLC0415
+
+        client = openai.OpenAI()
+
+        def call(prompt: str) -> str:
+            r = client.chat.completions.create(
+                model=name,
+                temperature=0,
+                messages=[
+                    {"role": "system", "content": instruction},
+                    {"role": "user", "content": prompt},
+                ],
+            )
+            return r.choices[0].message.content or ""
+
+        return call
+    raise SystemExit(f"unsupported provider in AWBENCH_MODEL: {spec!r}")
+
+
+if os.environ.get("AWBENCH_MODEL"):  # opt-in real-model mode (benchmarks/awbench/REAL_MODELS.md)
+    summarize_v1 = _real_model(os.environ["AWBENCH_MODEL"], "v1")  # type: ignore[assignment]
+    summarize_v2 = _real_model(  # type: ignore[assignment]
+        os.environ.get("AWBENCH_MODEL_ALT") or os.environ["AWBENCH_MODEL"], "v2"
+    )
 
 
 _calc_state = {"fail": 0}

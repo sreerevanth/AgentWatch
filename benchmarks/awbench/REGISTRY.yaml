@@ -68,6 +68,14 @@ changelog:
       candidates were followed as flow. H1 adds an otel_enriched sensor run (AgentWatch OTel
       extension, ADR-0018) reported as cross_source_kind_f1_enriched with NO threshold; the
       thresholded cross_source_kind_f1 remains OTel-only.
+  - date: 2026-09-26
+    note: >
+      async_event_pipeline first scored run recorded unchanged (commit a00dac2; run at 9f7e97c).
+      Held-out result: information precision 0.95 (met), recall 0.51, lineage F1 0.33
+      (precision 1.0, recall 0.20), H4 top-1 0.89 (met) / root-at-or-upstream 0.89, motif
+      precision 1.0 (met) / recall 0.64. Afterwards AgentWatch changed in response (retry
+      alignment in compare; declared structure outranks content for outputs, b2af8bb), so the
+      architecture is FORMER_HELD_OUT for later runs. No threshold or ground truth was changed.
 
 systems:
   tool_loop: single model-driven tool loop (native SDK; OTel variant for H1)
@@ -96,6 +104,7 @@ architecture_status:
     first_scored_run: {commit: 1cf3886, results: awbench-20260926T104846Z.json}
   async_event_pipeline:
     declared: HELD_OUT
+    first_scored_run: {commit: 9f7e97c, results: awbench-20260926T145401Z.json}
     # PRE-REGISTRATION (2026-09-26), recorded before any scored run and before the
     # information-instance / provenance-hierarchy changes it is meant to test.
     preregistration:
@@ -137,6 +146,10 @@ held_out_notes:
     Informed fixes after its first runs (ground-truth corrections; M005 v2; most-recent-producer
     traversal; MATCHES_CONTENT). Its information-precision and motif-precision numbers are
     development evidence, not held-out evidence.
+  async_event_pipeline: >
+    Its first run (results/awbench-20260926T145401Z.json, commit 9f7e97c) is the held-out
+    evidence for the information-instance / provenance-hierarchy model (ADR-0017). It then
+    informed two fixes (b2af8bb); later numbers are development evidence.
   hybrid_rag_cache: >
     Its first run (results/awbench-20260926T104846Z.json, commit 1cf3886) is the held-out
     evidence: information precision 0.53 and motif recall 0.55 failed. It then informed the

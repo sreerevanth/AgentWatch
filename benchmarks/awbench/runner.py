@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import platform
 import sys
 import tempfile
@@ -70,6 +71,29 @@ def _git_dirty() -> bool | None:
 
 def _git_sha() -> str:
     return _git("rev-parse", "HEAD") or "unknown"
+
+
+def _credential_problem(spec: str) -> str | None:
+    """None when the provider accepts the credential; otherwise why not (never raises)."""
+    provider = spec.partition(":")[0]
+    var = {"anthropic": "ANTHROPIC_API_KEY", "openai": "OPENAI_API_KEY"}.get(provider)
+    if var is None:
+        return f"unsupported provider {provider!r}"
+    if not os.environ.get(var):
+        return f"{var} is not set"
+    try:
+        if provider == "anthropic":
+            import anthropic
+
+            anthropic.Anthropic().models.list(limit=1)
+        else:
+            import openai
+
+            openai.OpenAI().models.list()
+    except Exception as exc:  # noqa: BLE001 - reported
+        status = getattr(exc, "status_code", None)
+        return f"{provider} rejected the credential (HTTP {status})" if status else str(exc)
+    return None
 
 
 def effective_status(spec: dict[str, Any] | None) -> dict[str, Any]:
@@ -174,6 +198,17 @@ def main(argv: list[str] | None = None) -> int:
         help="write the benchmark store here for inspection",
     )
     ap.add_argument(
+        "--real-model",
+        default=None,
+        metavar="PROVIDER:MODEL",
+        help="opt-in: replace the stub models with a real provider (anthropic:<model> or "
+        "openai:<model>); results go to results/real/ and never replace the stub results",
+    )
+    ap.add_argument("--real-model-alt", default=None, metavar="PROVIDER:MODEL")
+    ap.add_argument(
+        "--archs", default=None, help="comma-separated architectures to run (default: all)"
+    )
+    ap.add_argument(
         "--first-scored-run",
         action="append",
         default=[],
@@ -186,6 +221,23 @@ def main(argv: list[str] | None = None) -> int:
     from benchmarks.awbench import tasks
 
     registry = yaml.safe_load(REGISTRY.read_text(encoding="utf-8"))
+    if args.real_model:
+        reason = _credential_problem(args.real_model)
+        if reason:
+            print(f"SKIPPED_EXTERNAL_CREDENTIAL: {reason}")
+            return 0
+        os.environ["AWBENCH_MODEL"] = args.real_model
+        if args.real_model_alt:
+            os.environ["AWBENCH_MODEL_ALT"] = args.real_model_alt
+        if args.out == RESULTS:
+            args.out = RESULTS / "real"
+    if args.archs:
+        keep = set(args.archs.split(","))
+        registry = {
+            **registry,
+            "scenarios": {k: v for k, v in registry["scenarios"].items() if k in keep},
+            "held_out": {k: v for k, v in (registry.get("held_out") or {}).items() if k in keep},
+        }
     status_specs = registry.get("architecture_status") or {}
     held_out = dict(registry.get("held_out") or {})
     for arch in list(held_out):
@@ -239,7 +291,11 @@ def main(argv: list[str] | None = None) -> int:
             "seeds": args.seeds,
             "drift_n": args.drift_n,
             "runs": len(records),
-            "models": "deterministic stubs (no real LLMs)",
+            "models": (
+                f"REAL provider model {os.environ['AWBENCH_MODEL']} (not deterministic)"
+                if os.environ.get("AWBENCH_MODEL")
+                else "deterministic stubs (no real LLMs)"
+            ),
         },
         "timing_s": {
             "system_runs": round(t_runs - t0, 2),
