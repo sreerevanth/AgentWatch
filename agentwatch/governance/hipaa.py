@@ -11,7 +11,21 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 _PHI_PATTERNS: list[tuple[re.Pattern[str], str]] = [
-    (re.compile(r"\b(?:patient|MRN|medical record)[:#]?\s*[A-Z0-9-]{4,}\b", re.I), "mrn"),
+    # emails first, so no later pattern matches inside an address
+    (re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)+\b"), "email"),
+    # US SSN: dashed form, or 9 digits right after an SSN keyword; area 000/666/9xx, group 00
+    # and serial 0000 are never issued
+    (re.compile(r"\b(?!000|666|9\d\d)\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b"), "ssn"),
+    (re.compile(r"\b(?:SSN|social security(?: number)?)[:#]?\s*\d{9}\b", re.I), "ssn"),
+    # record numbers: keyword, explicit separator, then an identifier containing a digit
+    (
+        re.compile(
+            r"\b(?:patient(?:\s+id)?|MRN|medical record(?:\s+number)?)(?:\s*[:#]\s*|\s+)"
+            r"(?=[A-Z0-9-]*\d)[A-Z0-9-]{4,}\b(?!@)",
+            re.I,
+        ),
+        "mrn",
+    ),
     (re.compile(r"\b(?:diagnosis|dx)[:\s]+[A-Za-z][\w \-/]{3,}\b", re.I), "diagnosis"),
     (re.compile(r"\bICD-?(?:10|9)[:\s]?[A-Z0-9.]{3,}", re.I), "icd_code"),
     (re.compile(r"\b[A-Z]{2}\d{6,10}\b"), "insurance_id"),

@@ -47,7 +47,6 @@ Branch: `main` (v3 merged 2026-09-27, `17d667d`) · Updated 2026-09-27 · Releas
   - PII redaction is opt-in.
 - **Replay** mocks only instrumented calls. Other program logic runs live, as the reports say.
 - **Entity resolution** is exact-key only.
-- **Legacy HIPAA redactor (v0.2)** misses US SSNs. It was not fixed here.
 - **Packaging split (ADR-0008)** is not done; the base install still includes the server stack.
 - **Python versions.** Local development used Python 3.14 against a `>=3.12,<3.13` pin; CI runs 3.12.
 

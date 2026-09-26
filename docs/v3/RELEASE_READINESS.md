@@ -116,7 +116,6 @@ The failed recall metrics are the deliberate trade-off of ADR-0017. Content that
 - **Privacy.** Crypto-shredding is opt-in (`AGENTWATCH_ENCRYPT_PAYLOADS=1`); declared ids are not encrypted; PII redaction is opt-in.
 - **Replay** mocks only instrumented calls. Real models are not deterministic, so replay differences can come from the model alone.
 - **Entity resolution** is exact-key only.
-- **Legacy v0.2 HIPAA redactor** misses US SSNs (unchanged v0.2 module).
 - **Unmeasured:** sensor overhead and ingest throughput vary with machine load; no multi-tenant load test exists.
 
 ## 7. Migration steps
