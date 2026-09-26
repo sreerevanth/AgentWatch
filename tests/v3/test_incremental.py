@@ -139,18 +139,42 @@ def test_late_observation_for_existing_run_rebuilds_only_that_run(engine, sink):
     assert snapshot(engine) == state
 
 
+def _langchain_run(parent_known: bool = True) -> list:
+    ls = ListSink()
+    h = AgentWatchLangChainSensor(ls)
+    root, child = uuid.uuid4(), uuid.uuid4()
+    if parent_known:
+        h.on_chain_start({"name": "c"}, {"q": 1}, run_id=root)
+    h.on_tool_start({"name": "t"}, "x", run_id=child, parent_run_id=root)
+    h.on_tool_end("y", run_id=child, parent_run_id=root)
+    if parent_known:
+        h.on_chain_end({"a": 1}, run_id=root)
+    return ls.drafts
+
+
+def test_langchain_root_run_enables_incremental(engine, sink):
+    native_run("x")
+    engine.ingest(sink.drafts)
+    engine.process()
+    drafts = _langchain_run()
+    assert all(d.declared_ids.get("root_run_id") for d in drafts)
+    engine.ingest(drafts)
+    engine.process()
+    assert engine.last_mode == "incremental"
+    state = snapshot(engine)
+    engine.process(force=True)
+    assert snapshot(engine) == state
+
+
 def test_unknown_correlation_falls_back_to_full(engine, sink):
     native_run("x")
     engine.ingest(sink.drafts)
     engine.process()
-    ls = ListSink()
-    h = AgentWatchLangChainSensor(ls)
-    rid = uuid.uuid4()
-    h.on_chain_start({"name": "c"}, {"q": 1}, run_id=rid)
-    h.on_chain_end({"a": 1}, run_id=rid)
-    engine.ingest(ls.drafts)
+    drafts = _langchain_run(parent_known=False)  # parent never seen: root unknown, no key
+    assert not any(d.declared_ids.get("root_run_id") for d in drafts)
+    engine.ingest(drafts)
     engine.process()
-    assert engine.last_mode == "full"  # LangChain observations carry no run-scoped key
+    assert engine.last_mode == "full"
 
 
 def test_legacy_sessions_are_incremental(engine):

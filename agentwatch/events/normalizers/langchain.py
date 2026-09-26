@@ -64,6 +64,10 @@ class LangChainNormalizer(Normalizer):
     )
     maturity = "EXPERIMENTAL"
 
+    def correlation_key(self, obs: RawObservation) -> tuple[str, str] | None:
+        # declared by the sensor from LangChain's own parent_run_id chain
+        return self._declared_key(obs, "root_run_id")
+
     def normalize(
         self, observations: Sequence[RawObservation], ctx: NormalizeContext
     ) -> NormalizeResult:

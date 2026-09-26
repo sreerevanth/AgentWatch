@@ -57,12 +57,14 @@ def _documents(docs: Any) -> list[Any]:
 
 class AgentWatchLangChainSensor(Sensor, _Base):  # type: ignore[misc,valid-type]
     sensor_type = "langchain"
-    version = "1"
+    version = "2"  # 2: declares root_run_id
     raise_error = False
     run_inline = True
 
     def __init__(self, sink: ObservationSink, tenant_id: str = "default") -> None:
         Sensor.__init__(self, sink, tenant_id)
+        # run_id -> root run_id, built only from parent_run_id values LangChain declared
+        self._root_of: dict[str, str] = {}
 
     def _emit(
         self,
@@ -77,6 +79,13 @@ class AgentWatchLangChainSensor(Sensor, _Base):  # type: ignore[misc,valid-type]
             "parent_run_id": str(parent_run_id) if parent_run_id else None,
         }
         ids.update({k: str(v) for k, v in extra_ids.items() if v})
+        # root of the declared parent chain; omitted when the chain is not fully known
+        rid, pid = ids["run_id"], ids["parent_run_id"]
+        if rid:
+            root = rid if pid is None else self._root_of.get(pid)
+            if root is not None:
+                self._root_of[rid] = root
+                ids["root_run_id"] = root
         self.ctx.emit(f"langchain.{callback}", payload, declared_ids=ids)
 
     # LLMs
