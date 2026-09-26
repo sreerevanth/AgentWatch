@@ -69,8 +69,10 @@ class Graph:
         min_strength: str | None = None,
     ) -> bool:
         attrs = rel.get("attributes") or {}
-        if not include_ambiguous and attrs.get("resolution") == "AMBIGUOUS":
-            return False
+        if not include_ambiguous and (
+            attrs.get("resolution") == "AMBIGUOUS" or attrs.get("strength") == "NONE"
+        ):
+            return False  # a candidate or a similarity, not an information flow
         if min_strength is not None and "strength" in attrs:
             if STRENGTH_RANK[attrs["strength"]] < STRENGTH_RANK[min_strength]:
                 return False
