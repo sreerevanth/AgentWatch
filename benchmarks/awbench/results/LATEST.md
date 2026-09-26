@@ -1,7 +1,7 @@
 # AWBench results (machine-generated — do not edit)
 
-- generated: 2026-09-26T14:54:01.374670+00:00
-- git: `9f7e97c4d7ed29910ab4654ee291be5dd7ebec50` · registry sha256 `8d883f8f6634`
+- generated: 2026-09-26T17:23:14.099113+00:00
+- git: `7916690411fa20d53d81343273a88836b66a61ea` · registry sha256 `80a00fdea938`
 - runs: 111 · seeds: 3 · models: deterministic stubs (no real LLMs)
 - python 3.14.2 on Windows-11-10.0.26200-SP0
 
@@ -49,9 +49,9 @@ Informed fixes after its first runs (ground-truth corrections; M005 v2; most-rec
 | h2_structure | execution_f1 | 1.0 | 0.9 | yes |
 | h2_structure | baseline_temporal_f1 | 0.2834 |  |  |
 | h2_structure | information_recall | 0.4015 | 0.75 | **no** |
-| h2_structure | information_precision | 0.6272 | 0.75 | **no** |
+| h2_structure | information_precision | 0.7681 | 0.75 | yes |
 | h2_structure | information_recall_with_candidates | 0.9205 |  |  |
-| h2_structure | information_precision_with_candidates | 0.5248 |  |  |
+| h2_structure | information_precision_with_candidates | 0.5548 |  |  |
 | h3_lineage | lineage_membership_precision | 1.0 |  |  |
 | h3_lineage | lineage_membership_recall | 0.2239 |  |  |
 | h3_lineage | lineage_membership_f1 | 0.3659 | 0.8 | **no** |
@@ -78,9 +78,9 @@ Its first run (results/awbench-20260926T104846Z.json, commit 1cf3886) is the hel
 | h2_structure | execution_f1 | 1.0 | 0.9 | yes |
 | h2_structure | baseline_temporal_f1 | 0.1931 |  |  |
 | h2_structure | information_recall | 0.3901 | 0.75 | **no** |
-| h2_structure | information_precision | 0.7633 | 0.75 | yes |
+| h2_structure | information_precision | 0.7745 | 0.75 | yes |
 | h2_structure | information_recall_with_candidates | 0.9481 |  |  |
-| h2_structure | information_precision_with_candidates | 0.5872 |  |  |
+| h2_structure | information_precision_with_candidates | 0.6667 |  |  |
 | h3_lineage | lineage_membership_precision | 1.0 |  |  |
 | h3_lineage | lineage_membership_recall | 0.1036 |  |  |
 | h3_lineage | lineage_membership_f1 | 0.1877 | 0.8 | **no** |
@@ -95,8 +95,9 @@ Its first run (results/awbench-20260926T104846Z.json, commit 1cf3886) is the hel
 | explanation_faithfulness | evidence_resolves | 1.0 | 1.0 | yes |
 | explanation_faithfulness | numbers_grounded | 1.0 | 0.95 | yes |
 
-## Held-out architecture: async_event_pipeline — status HELD_OUT
+## Held-out architecture: async_event_pipeline — status FORMER_HELD_OUT
 
+Its first run (results/awbench-20260926T145401Z.json, commit 9f7e97c) is the held-out evidence for the information-instance / provenance-hierarchy model (ADR-0017). It then informed two fixes (b2af8bb); later numbers are development evidence.
 
 
 | task | metric | measured | threshold | met |
@@ -106,14 +107,14 @@ Its first run (results/awbench-20260926T104846Z.json, commit 1cf3886) is the hel
 | h2_structure | execution_f1 | 1.0 | 0.9 | yes |
 | h2_structure | baseline_temporal_f1 | 0.1876 |  |  |
 | h2_structure | information_recall | 0.5096 | 0.75 | **no** |
-| h2_structure | information_precision | 0.9455 | 0.75 | yes |
-| h2_structure | information_recall_with_candidates | 0.7625 |  |  |
-| h2_structure | information_precision_with_candidates | 0.2982 |  |  |
+| h2_structure | information_precision | 1.0 | 0.75 | yes |
+| h2_structure | information_recall_with_candidates | 0.5785 |  |  |
+| h2_structure | information_precision_with_candidates | 0.3633 |  |  |
 | h3_lineage | lineage_membership_precision | 1.0 |  |  |
 | h3_lineage | lineage_membership_recall | 0.2 |  |  |
 | h3_lineage | lineage_membership_f1 | 0.3333 | 0.8 | **no** |
-| h4_divergence | top1_localization | 0.8889 | 0.7 | yes |
-| h4_divergence | root_at_or_upstream | 0.8889 | 0.9 | **no** |
+| h4_divergence | top1_localization | 1.0 | 0.7 | yes |
+| h4_divergence | root_at_or_upstream | 1.0 | 0.9 | yes |
 | h4_divergence | baseline_index_aligned_top1 | 1.0 |  |  |
 | h5_motifs | micro_precision | 1.0 | 0.9 | yes |
 | h5_motifs | micro_recall | 0.6429 | 0.8 | **no** |
