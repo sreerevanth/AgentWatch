@@ -1,7 +1,7 @@
 # AWBench results (machine-generated — do not edit)
 
-- generated: 2026-09-26T07:54:36.775579+00:00
-- git: `f33a8b8837690159a3f3ffbcf601b048ed3e6ffe` · registry sha256 `496fd25eab35`
+- generated: 2026-09-26T08:06:54.961101+00:00
+- git: `223b13aea0389356930ab327c61ebd75de086c3f` · registry sha256 `496fd25eab35`
 - runs: 108 · seeds: 3 · models: deterministic stubs (no real LLMs)
 - python 3.14.2 on Windows-11-10.0.26200-SP0
 
@@ -13,8 +13,8 @@
 | h2_structure | execution_recall | 1.0 | 1.0–1.0 (n=3) |  |  |
 | h2_structure | execution_f1 | 1.0 | 1.0–1.0 (n=3) | 0.9 | yes |
 | h2_structure | baseline_temporal_f1 | 0.2664 | 0.2689–0.2689 (n=3) |  |  |
-| h2_structure | information_recall | 0.8527 | 0.8952–0.8952 (n=3) | 0.75 | yes |
-| h2_structure | information_precision | 0.7466 | 0.6912–0.7705 (n=3) | 0.75 | **no** |
+| h2_structure | information_recall | 0.845 | 0.8857–0.8857 (n=3) | 0.75 | yes |
+| h2_structure | information_precision | 0.7823 | 0.7266–0.8158 (n=3) | 0.75 | yes |
 | h3_lineage | lineage_membership_precision | 0.9431 | 0.9286–0.9398 (n=3) |  |  |
 | h3_lineage | lineage_membership_recall | 0.8319 | 0.8764–0.8764 (n=3) |  |  |
 | h3_lineage | lineage_membership_f1 | 0.884 | 0.9017–0.907 (n=3) | 0.8 | yes |
@@ -43,14 +43,14 @@
 | h2_structure | execution_f1 | 1.0 | 0.9 | yes |
 | h2_structure | baseline_temporal_f1 | 0.2834 |  |  |
 | h2_structure | information_recall | 0.9205 | 0.75 | yes |
-| h2_structure | information_precision | 0.3738 | 0.75 | **no** |
+| h2_structure | information_precision | 0.403 | 0.75 | **no** |
 | h3_lineage | lineage_membership_precision | 0.8738 |  |  |
 | h3_lineage | lineage_membership_recall | 0.8955 |  |  |
 | h3_lineage | lineage_membership_f1 | 0.8845 | 0.8 | yes |
 | h4_divergence | top1_localization | 1.0 | 0.7 | yes |
 | h4_divergence | root_at_or_upstream | 1.0 | 0.9 | yes |
 | h4_divergence | baseline_index_aligned_top1 | 1.0 |  |  |
-| h5_motifs | micro_precision | 0.2778 | 0.9 | **no** |
+| h5_motifs | micro_precision | 1.0 | 0.9 | yes |
 | h5_motifs | micro_recall | 1.0 | 0.8 | yes |
 | replay_fidelity | l1_consistency | 1.0 | 1.0 | yes |
 | replay_fidelity | l2_mean_reproduction | 1.0 | 0.99 | yes |
