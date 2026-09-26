@@ -663,23 +663,23 @@ class _Run:
         # 2. parallel replicas
         target_is_input = "/in" in target
         for n in list(cands):
-            c = cands[n][0]
+            inst_n = cands[n][0]
             if (
                 target_is_input
                 and "/in" in n
-                and self._replicas(c.event_id, target_event)
-                and c.content_id == self._target_content(target)
+                and self._replicas(inst_n.event_id, target_event)
+                and inst_n.content_id == self._target_content(target)
             ):
                 del cands[n]  # the same input, constructed independently by a parallel replica
         replica_local: set[str] = set()
         for n in sorted(cands):
-            c = cands[n][0]
+            inst_n = cands[n][0]
             for n2 in sorted(cands):
-                c2 = cands[n2][0]
+                inst_n2 = cands[n2][0]
                 if (
                     n2 != n
-                    and c2.content_id == c.content_id
-                    and self._replicas(c.event_id, c2.event_id)
+                    and inst_n2.content_id == inst_n.content_id
+                    and self._replicas(inst_n.event_id, inst_n2.event_id)
                     and locality(n2) > locality(n)
                 ):
                     replica_local.add(n2)

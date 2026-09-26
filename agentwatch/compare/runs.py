@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import difflib
 from collections import Counter
+from collections.abc import Sequence
 from typing import Any
 
 from agentwatch.graph.traverse import Graph
@@ -111,7 +112,7 @@ def tree(
 
 
 def _right_shift_gaps(
-    ops: list[tuple[str, int, int, int, int]], ka: list[str], kb: list[str]
+    ops: Sequence[tuple[str, int, int, int, int]], ka: list[str], kb: list[str]
 ) -> list[tuple[str, int, int, int, int]]:
     """Normalize insertions/deletions to the right past identical elements.
 
