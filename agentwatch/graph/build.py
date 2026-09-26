@@ -26,7 +26,7 @@ from agentwatch.graph.model import (
 )
 
 EXEC_BUILDER = "graph.execution@1"
-INFO_BUILDER = "graph.information@4"
+INFO_BUILDER = "graph.information@5"
 
 SHINGLE = 5
 MIN_SHINGLES = 3
@@ -383,6 +383,16 @@ def build_information(
             by_run[rid].append(aid)
     for run_id, aids in by_run.items():
         aids.sort(key=lambda a: first_seen[(run_id, a)])
+        # contained[x] = {y: containment of y in x} for every earlier y whose text x contains
+        contained: dict[str, dict[str, float]] = defaultdict(dict)
+        # (m, y) -> positions at which an event consuming y produced m (content-identical values
+        # may be produced again after they were first seen)
+        made_from: dict[tuple[str, str], list[int]] = defaultdict(list)
+        for ev in ordered:
+            if run_of.get(ev.event_id) == run_id:
+                for o in ev.outputs:
+                    for i in ev.inputs:
+                        made_from[(o.artifact_id, i.artifact_id)].append(position[ev.event_id])
         # Exact prefix-filtered similarity join. containment(y in x) >= t requires x to contain
         # at least one of y's first |y| - ceil(t*|y|) + 1 shingles under any fixed global order
         # (pigeonhole). Ordering by rarity keeps those prefixes, and so the index, small;
@@ -415,27 +425,69 @@ def build_information(
                 sy = shingles_of(y)
                 containment = len(sx & sy) / len(sy)
                 if containment >= CONTAINMENT_THRESHOLD:
-                    rtype = (
-                        RelType.MATCHES_CONTENT if (run_id, x) in external else RelType.DERIVES_FROM
+                    contained[x][y] = containment
+        for x in aids:
+            sx = shingles_of(x)
+            for y, containment in sorted(contained[x].items()):
+                if (run_id, x) not in external and _mediated(
+                    y,
+                    x,
+                    contained,
+                    made_from,
+                    first_seen[(run_id, x)],
+                    sx,
+                    shingles_of,
+                    external,
+                    run_id,
+                ):
+                    continue
+                rtype = RelType.MATCHES_CONTENT if (run_id, x) in external else RelType.DERIVES_FROM
+                rels.append(
+                    make_relation(
+                        View.INFORMATION,
+                        rtype,
+                        [node_artifact(y)],
+                        [node_artifact(x)],
+                        basis=Basis.CONTENT_MATCH,
+                        confidence=round(containment, 3),
+                        run_id=run_id,
+                        evidence=[node_artifact(y), node_artifact(x)],
+                        derived_by=INFO_BUILDER,
+                        attributes={
+                            "method": f"word-{SHINGLE}gram containment",
+                            "containment": round(containment, 3),
+                        },
                     )
-                    rels.append(
-                        make_relation(
-                            View.INFORMATION,
-                            rtype,
-                            [node_artifact(y)],
-                            [node_artifact(x)],
-                            basis=Basis.CONTENT_MATCH,
-                            confidence=round(containment, 3),
-                            run_id=run_id,
-                            evidence=[node_artifact(y), node_artifact(x)],
-                            derived_by=INFO_BUILDER,
-                            attributes={
-                                "method": f"word-{SHINGLE}gram containment",
-                                "containment": round(containment, 3),
-                            },
-                        )
-                    )
+                )
     return _dedupe(rels)
+
+
+def _mediated(
+    y: str,
+    x: str,
+    contained: dict[str, dict[str, float]],
+    made_from: dict[tuple[str, str], list[int]],
+    x_pos: int,
+    sx: frozenset[str],
+    shingles_of: Callable[[str], frozenset[str]],
+    external: set[tuple[str | None, str]],
+    run_id: str | None,
+) -> bool:
+    """True when y's text in x is explained by an in-system intermediate m that carries all
+    of the shared text and that y demonstrably flows into before x appears — either m contains y
+    (a content edge y→m; ``contained`` only relates earlier to later artifacts) or m was
+    produced, before x, by an event that consumed y. The direct y→x edge is then a transitive
+    shortcut; the path through m remains, so dropping it preserves reachability."""
+    shared = shingles_of(y) & sx
+    for m in contained[x]:
+        if m == y or (run_id, m) in external:
+            continue
+        flows = y in contained.get(m, {}) or any(p < x_pos for p in made_from.get((m, y), ()))
+        # m must carry all of the shared text: whatever x shares with y that m lacks reached x
+        # some other way, possibly directly from y
+        if flows and shared <= shingles_of(m):
+            return True
+    return False
 
 
 def _dedupe(rels: list[dict[str, Any]]) -> list[dict[str, Any]]:

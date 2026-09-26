@@ -193,10 +193,12 @@ def test_hyperedge_traversal_and_causal_view_rules():
 def test_retry_and_repeat_motifs(ws):
     inst = ws.derived("motif_instance", run_by(ws, 1))
     ids = {m["motif_id"] for m in inst}
-    assert ids == {"M001", "M002"}
+    # M006: both retrieved docs reach the report only through the summary (information bottleneck
+    # by definition; hidden before content shortcuts were reduced, graph.information@5)
+    assert ids == {"M001", "M002", "M006"}
     retry = next(m for m in inst if m["motif_id"] == "M001")
     assert retry["measures"]["attempts"] == 3 and retry["measures"]["recovered"] is True
-    assert not ws.derived("motif_instance", run_by(ws, 0))
+    assert {m["motif_id"] for m in ws.derived("motif_instance", run_by(ws, 0))} == {"M006"}
 
 
 def test_every_motif_has_a_definition_and_is_experimental():
@@ -503,3 +505,63 @@ def test_identical_retrievals_are_matches_not_derivations(engine, sink):
         )
     }
     assert f"event:{retrievals[1]['event_id']}" not in down
+
+
+def test_content_shortcuts_through_an_intermediate_are_reduced(engine, sink):
+    """Regression (held-out AWBench, hybrid_rag_cache): a report built from a model answer that
+    quotes retrieved text also contains that text. The direct item→report containment is a
+    shortcut of item→answer→report; keeping it hid the answer as an information bottleneck."""
+
+    @aw.retriever("idx")
+    def search(q):
+        return DOCS
+
+    @aw.model("m", actor="agent:a")
+    def answer(p):
+        return "Answer: " + " ".join(d["text"] for d in DOCS)
+
+    def body():
+        docs = search("solar")
+        out = answer("Context:\n" + "\n".join(d["text"] for d in docs))
+        aw.artifact("report.md", out + " Estimate: 42.")
+
+    m = _motif_run(engine, sink, body)
+    assert "M006" in m
+    ws = Workspace(engine)
+    run = ws.resolve_run("latest")["run_id"]
+    report = next(e for e in ws.events(run) if "artifact_creation" in e["facets"])
+    report_node = f"artifact:{report['outputs'][0]['artifact_id']}"
+    into_report = [
+        r for r in ws.relations(run) if r["type"] == "DERIVES_FROM" and report_node in r["head"]
+    ]
+    assert len(into_report) == 1  # only the answer; item shortcuts reduced
+    # reachability is preserved: the retrieval still reaches the report
+    retrieval = ws.events(run, kind="RETRIEVAL")[0]
+    g = ws.graph(run)
+    assert report_node in {
+        s.node
+        for s in g.descendants(
+            f"event:{retrieval['event_id']}",
+            types=["PRODUCES", "CONSUMES", "DERIVES_FROM", "CONTAINS_ITEM", "TRANSFERS"],
+        )
+    }
+
+
+def test_carried_forward_history_is_not_reduced_through_a_partial_intermediate(engine, sink):
+    """The previous turn's history is contained in the next one; an answer that quotes only
+    part of it does not explain the whole carry-over, so the direct edge stays (M005)."""
+
+    @aw.model("m", actor="agent:a")
+    def answer(p):
+        return p.splitlines()[-1]
+
+    def body():
+        ctx = "History:"
+        for turn in range(3):
+            ctx += (
+                f"\nturn {turn} the user asks about solar storage and grid batteries again {turn}"
+            )
+            ctx += "\nplus notes " + " ".join(f"n{turn}w{k}" for k in range(8 * (turn + 1)))
+            answer(ctx)
+
+    assert "M005" in _motif_run(engine, sink, body)

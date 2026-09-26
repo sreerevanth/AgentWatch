@@ -39,6 +39,12 @@ changelog:
       affected metrics. Held-out results are reported per architecture, no longer pooled.
       AgentWatch code is not to be changed in response to hybrid_rag_cache results before
       they are recorded.
+  - date: 2026-09-26
+    note: >
+      hybrid_rag_cache first run recorded unchanged (commit 0ae22dc). AgentWatch then changed
+      in response (content-containment shortcuts through an intermediate are reduced), so
+      hybrid_rag_cache is no longer held-out evidence for H2 information precision or H5.
+      A third held-out architecture is needed to validate that change.
 
 systems:
   tool_loop: single model-driven tool loop (native SDK; OTel variant for H1)
@@ -62,7 +68,9 @@ held_out_notes:
     traversal; MATCHES_CONTENT). Its information-precision and motif-precision numbers are
     development evidence, not held-out evidence.
   hybrid_rag_cache: >
-    Committed before its first run, after all changes above. Its results are held-out evidence.
+    Its first run (results/awbench-20260926T104846Z.json, commit 1cf3886) is the held-out
+    evidence: information precision 0.53 and motif recall 0.55 failed. It then informed the
+    content-shortcut reduction (graph.information@5); later numbers are development evidence.
 
 tasks:
   h1_normalization:
