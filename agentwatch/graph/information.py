@@ -402,6 +402,27 @@ class _Run:
         # 1. declared references
         declared = [self._ref_node(s) for s in ref.sources]
         found = list(dict.fromkeys(n for n in declared if n))
+        if not cid:
+            # a reference-only input: the sensor named its sources but captured no content
+            for src in found:
+                self._consume(
+                    ev, src, InfoEvidence.DECLARED_REFERENCE, {**base, "reference_only": True}
+                )
+            if len(found) < len(declared):
+                self.rel(
+                    RelType.CONSUMES,
+                    node_instance(ev.event_id, f"in{k}"),
+                    node_event(ev.event_id),
+                    InfoEvidence.DECLARED_INPUT,
+                    basis=Basis.DECLARED,
+                    attributes={
+                        **base,
+                        "resolution": "UNRESOLVED",
+                        "reference_only": True,
+                        "unresolved_references": len(declared) - len(found),
+                    },
+                )
+            return
         if found:
             if len(found) == 1 and self._content(found[0]) == cid:
                 self._consume(ev, found[0], InfoEvidence.DECLARED_REFERENCE, base)

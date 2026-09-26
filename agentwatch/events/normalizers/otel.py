@@ -18,6 +18,7 @@ that distinction visible.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 
@@ -43,6 +44,22 @@ MODEL_OPS = {"chat", "text_completion", "generate_content", "embeddings", "compl
 READ_DB_OPS = {"select", "get", "find", "query", "search", "read", "mget", "hget", "scan"}
 
 
+# AgentWatch OpenTelemetry extension attributes (ADR-0018). These are AgentWatch's own
+# convention, namespaced to say so; they are not part of the OpenTelemetry specification.
+AW_ARTIFACT_OPERATION = "agentwatch.artifact.operation"  # create | write | update | delete | read
+AW_ARTIFACT_ID = "agentwatch.artifact.id"  # the artifact's name or path
+AW_ARTIFACT_CONTENT = "agentwatch.artifact.content"  # content written or read (optional)
+AW_ARTIFACT_PARENT = "agentwatch.artifact.parent"  # the artifact this one derives from
+AW_INSTANCE_ID = "agentwatch.information.instance_id"  # id(s) of the value(s) this span produced
+AW_SOURCE = "agentwatch.information.source"  # instance id(s) this span's input was built from
+
+
+def _as_list(v: Any) -> list[Any]:
+    if v is None:
+        return []
+    return list(v) if isinstance(v, (list, tuple)) else [v]
+
+
 def _ns(v: Any) -> datetime | None:
     if v in (None, "", "0", 0):
         return None
@@ -51,7 +68,7 @@ def _ns(v: Any) -> datetime | None:
 
 class OTelNormalizer(Normalizer):
     name = "otel"
-    version = "1"
+    version = "2"  # 2: AgentWatch OTel extension attributes (ADR-0018)
     source_kinds = frozenset({"otel.span"})
     maturity = "EXPERIMENTAL"
 
@@ -146,6 +163,28 @@ class OTelNormalizer(Normalizer):
             b.kind = EventKind.OPERATION
             b.operation = name
 
+        # AgentWatch extension (ADR-0018; NOT an OpenTelemetry convention): artifact operations
+        art_op = str(a.get(AW_ARTIFACT_OPERATION) or "").lower()
+        if art_op:
+            art_id = str(a.get(AW_ARTIFACT_ID) or name)
+            b.object = EntityRef("file", art_id)
+            if art_op in ("create", "write", "update", "delete"):
+                b.kind = EventKind.STATE_MUTATION
+                b.operation = f"{art_op}:{art_id}"
+                if art_op != "delete":
+                    b.facets.append("artifact_creation")
+                b.effects.append(Effect(EffectKind.WRITE, b.object.canonical))
+                if a.get(AW_ARTIFACT_CONTENT) is not None:
+                    b.output(a[AW_ARTIFACT_CONTENT], role="artifact", label=art_id)
+            elif art_op == "read":
+                b.kind = EventKind.EXTERNAL_IO
+                b.operation = f"read:{art_id}"
+                b.effects.append(Effect(EffectKind.READ, b.object.canonical))
+                if a.get(AW_ARTIFACT_CONTENT) is not None:
+                    b.output(a[AW_ARTIFACT_CONTENT], role="content", label=art_id)
+            if a.get(AW_ARTIFACT_PARENT):
+                b.attributes["artifact.parent"] = a[AW_ARTIFACT_PARENT]
+
         # GenAI content (attribute and span-event conventions)
         if a.get("gen_ai.prompt") is not None:
             b.input(a["gen_ai.prompt"], role="prompt")
@@ -214,6 +253,16 @@ class OTelNormalizer(Normalizer):
             b.attributes["service.name"] = service
         if res.get("service.version"):
             b.attributes["code_version"] = res.get("service.version")
+        # AgentWatch extension: declared information identity of outputs and sources of inputs
+        instance_ids = _as_list(a.get(AW_INSTANCE_ID))
+        for k, iid in enumerate(instance_ids[: len(b.outputs)]):
+            b.outputs[k] = replace(b.outputs[k], instance=str(iid))
+        sources = [str(x) for x in _as_list(a.get(AW_SOURCE))]
+        if sources:
+            if b.inputs:
+                b.inputs[0] = replace(b.inputs[0], sources=tuple(sources))
+            else:
+                b.reference(sources)
         b.source_ids = [("otel.span", f"{trace}/{sp.get('span_id')}")]
         if sp.get("parent_span_id"):
             b.parents.append(DeclaredLink("parent", "otel.span", f"{trace}/{sp['parent_span_id']}"))
@@ -234,8 +283,6 @@ class OTelNormalizer(Normalizer):
         )
         ev_out = b.build()
         if not sp.get("parent_span_id"):
-            from dataclasses import replace
-
             ev_out = replace(
                 ev_out,
                 missing=tuple(m for m in ev_out.missing if m != "parent"),

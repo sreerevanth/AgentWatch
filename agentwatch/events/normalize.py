@@ -197,6 +197,13 @@ class EventBuilder:
         self.inputs.append(ref)
         return ref
 
+    def reference(self, sources: Sequence[str], role: str = "reference") -> ArtifactRef:
+        """An input declared only by reference (the sensor names the produced value it used
+        but did not capture its content). ``artifact_id`` is empty: there is no content."""
+        ref = ArtifactRef(artifact_id="", role=role, sources=tuple(sources))
+        self.inputs.append(ref)
+        return ref
+
     def output(
         self,
         value: Any,
