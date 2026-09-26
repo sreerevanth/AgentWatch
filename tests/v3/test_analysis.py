@@ -245,18 +245,34 @@ def test_retrieval_echo(engine, sink):
 
 
 def test_context_expansion(engine, sink):
-    @aw.model("m")
+    @aw.model("m", actor="agent:a")
     def gen(p):
         return "ok"
 
     def body():
-        ctx = "x"
-        for _ in range(4):
-            ctx = ctx * 3
+        ctx = "the agent keeps the whole conversation history in its working context"
+        for turn in range(4):
+            ctx = ctx + f" turn {turn} adds another observation to the growing context window"
             gen(ctx)
 
     m = _motif_run(engine, sink, body)
     assert "M005" in m and m["M005"]["measures"]["growth"] >= 1.5
+
+
+def test_context_expansion_ignores_independent_actors(engine, sink):
+    """Regression (held-out AWBench): v1 fired when different workers called one model with
+    successively larger but unrelated prompts."""
+
+    def body():
+        for i, words in enumerate([12, 20, 35, 60]):
+
+            @aw.model("m", actor=f"agent:worker{i}")
+            def gen(p):
+                return "ok"
+
+            gen(" ".join(f"w{i}x{k}" for k in range(words)))
+
+    assert "M005" not in _motif_run(engine, sink, body)
 
 
 def test_hypothesis_evidence_class_is_computed(ws):
@@ -430,3 +446,31 @@ def test_traversal_respects_time_through_shared_artifacts():
     assert "event:late" not in {s.node for s in g.ancestors("event:early")}
     untimed = Graph(rels)
     assert "event:early" in {s.node for s in untimed.descendants("event:late")}
+
+
+def test_most_recent_producer_disambiguates_identical_content():
+    """Regression (held-out AWBench, fan-out): two workers retrieve the same document; the
+    second worker's model call must trace to its own retrieval, not the earlier identical one."""
+
+    def rel(t, tail, head):
+        return make_relation(
+            View.INFORMATION, t, [tail], [head], basis=Basis.DECLARED, run_id=None, derived_by="t"
+        )
+
+    rels = [
+        rel(RelType.PRODUCES, "event:r0", "artifact:list0"),
+        rel(RelType.CONTAINS_ITEM, "artifact:list0", "artifact:doc"),
+        rel(RelType.PRODUCES, "event:r1", "artifact:list1"),
+        rel(RelType.CONTAINS_ITEM, "artifact:list1", "artifact:doc"),
+        rel(RelType.CONSUMES, "artifact:doc", "event:m0"),
+        rel(RelType.CONSUMES, "artifact:doc", "event:m1"),
+    ]
+    g = Graph(rels, times={"event:r0": 1.0, "event:m0": 2.0, "event:r1": 3.0, "event:m1": 4.0})
+    assert {s.node for s in g.descendants("event:r0") if s.node.startswith("event:")} == {
+        "event:m0"
+    }
+    assert {s.node for s in g.descendants("event:r1") if s.node.startswith("event:")} == {
+        "event:m1"
+    }
+    assert {s.node for s in g.ancestors("event:m1") if s.node.startswith("event:")} == {"event:r1"}
+    assert {s.node for s in g.ancestors("event:m0") if s.node.startswith("event:")} == {"event:r0"}

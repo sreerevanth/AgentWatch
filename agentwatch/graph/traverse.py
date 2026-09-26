@@ -43,6 +43,27 @@ class Graph:
         content-addressed artifact)."""
         self.relations = {r["rel_id"]: r for r in relations}
         self.times = times or {}
+        # artifact -> sorted times of the events that produced that content (directly, or by
+        # producing a list that contains it). Used for "most recent producer" semantics: a
+        # content-identical value produced again later supersedes the earlier production.
+        self.producer_times: dict[str, list[float]] = {}
+        if self.times:
+            direct: dict[str, list[float]] = defaultdict(list)
+            for r in relations:
+                if r["type"] == "PRODUCES":
+                    for t in r["tail"]:
+                        if t in self.times:
+                            for h in r["head"]:
+                                direct[h].append(self.times[t])
+            merged: dict[str, list[float]] = defaultdict(
+                list, {k: list(v) for k, v in direct.items()}
+            )
+            for r in relations:
+                if r["type"] == "CONTAINS_ITEM":
+                    for t in r["tail"]:
+                        for h in r["head"]:
+                            merged[h].extend(direct.get(t, []))
+            self.producer_times = {k: sorted(v) for k, v in merged.items() if v}
         self.out: dict[str, list[tuple[str, str]]] = defaultdict(
             list
         )  # node -> [(rel_id, neighbour)]
@@ -93,9 +114,15 @@ class Graph:
         skip = tuple(f"{k}:" for k in skip_kinds)
         seen = {start}
         out: list[Step] = []
-        q: deque[tuple[str, int, float | None]] = deque([(start, 0, self.times.get(start))])
+        eps = 1e-6
+        # state: node, depth, t (time of the last event on the path), bound. Going forward,
+        # bound = time after which the carried value was re-produced by another event; going
+        # backward, bound = earliest acceptable producer time (latest production before use).
+        q: deque[tuple[str, int, float | None, float | None]] = deque(
+            [(start, 0, self.times.get(start), None)]
+        )
         while q:
-            node, depth, t = q.popleft()
+            node, depth, t, bound = q.popleft()
             if depth >= max_depth:
                 continue
             for rel_id, nb in adj.get(node, []):
@@ -105,11 +132,28 @@ class Graph:
                 if not self._ok(rel, vset, tset, min_confidence, min_evidence):
                     continue
                 tn = self.times.get(nb)
-                if t is not None and tn is not None and (tn - t) * direction < -1e-6:
+                if t is not None and tn is not None and (tn - t) * direction < -eps:
                     continue  # would reach an event on the wrong side of time
+                nb_bound = bound
+                if tn is not None:  # reaching an event
+                    if bound is not None and (
+                        (direction > 0 and tn > bound + eps) or (direction < 0 and tn < bound - eps)
+                    ):
+                        continue  # the value was superseded by a more recent production
+                    nb_bound = None
+                elif t is not None and nb in self.producer_times:
+                    prods = self.producer_times[nb]
+                    if direction > 0:
+                        later = [p for p in prods if p > t + eps]
+                        if later:
+                            nb_bound = min(later) if bound is None else min(bound, min(later))
+                    else:
+                        earlier = [p for p in prods if p <= t + eps]
+                        if earlier:
+                            nb_bound = max(earlier) if bound is None else max(bound, max(earlier))
                 seen.add(nb)
                 out.append(Step(nb, depth + 1, rel_id, rel["type"], node))
-                q.append((nb, depth + 1, tn if tn is not None else t))
+                q.append((nb, depth + 1, tn if tn is not None else t, nb_bound))
         return out
 
     def ancestors(

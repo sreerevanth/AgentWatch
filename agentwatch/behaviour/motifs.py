@@ -335,10 +335,12 @@ def detect_retrieval_echo(
     MotifDefinition(
         "M005",
         "context_expansion",
-        "1",
-        "RULE",
-        "≥3 successive MODEL_INVOCATIONs of the same model in a run whose input size (tokens_in when declared, else "
-        "prompt artifact bytes) strictly increases each call, with last/first ≥ 1.5.",
+        "2",
+        "GRAPH_QUERY",
+        "≥3 successive MODEL_INVOCATIONs of the same model by the same actor in a run, where each call's input "
+        "carries the previous call's input forward (identical artifact or a DERIVES_FROM content link) and the input "
+        "size (tokens_in when declared, else input artifact bytes) strictly increases, with last/first ≥ 1.5. "
+        "v2 (after held-out AWBench): v1 fired on independent actors calling one model.",
         parameters={"min_calls": 3, "min_growth": 1.5},
     )
 )
@@ -351,7 +353,20 @@ def detect_context_expansion(
     by_model: dict[str, list[ComputationalEvent]] = defaultdict(list)
     for e in event_order(events):
         if e.kind == EventKind.MODEL_INVOCATION and e.object:
-            by_model[e.object.canonical].append(e)
+            actor = e.actor.canonical if e.actor else "(no actor)"
+            by_model[f"{e.object.canonical} by {actor}"].append(e)
+    derives = {
+        (r["tail"][0][9:], r["head"][0][9:])
+        for r in relations
+        if r["type"] == "DERIVES_FROM"
+        and r["tail"][0].startswith("artifact:")
+        and r["head"][0].startswith("artifact:")
+    }
+
+    def carried_forward(prev: ComputationalEvent, nxt: ComputationalEvent) -> bool:
+        a = {x.artifact_id for x in prev.inputs}
+        b = {x.artifact_id for x in nxt.inputs}
+        return bool(a & b) or any((x, y) in derives for x in a for y in b)
 
     def size(e: ComputationalEvent) -> tuple[float, str]:
         t = e.resources.get("tokens_in")
@@ -391,7 +406,7 @@ def detect_context_expansion(
         run_: list[tuple[ComputationalEvent, float]] = []
         for e in evs:
             s_, _ = size(e)
-            if run_ and s_ <= run_[-1][1]:
+            if run_ and (s_ <= run_[-1][1] or not carried_forward(run_[-1][0], e)):
                 flush(run_, model)
                 run_ = []
             run_.append((e, s_))
@@ -526,7 +541,7 @@ def detect_strategy_change(
 
 class MotifAnalyzer(Analyzer):
     name = "motifs"
-    version = "1"
+    version = "2"  # 2: M005 v2
     maturity = Maturity.EXPERIMENTAL
     record_type = "motif_instance"
 

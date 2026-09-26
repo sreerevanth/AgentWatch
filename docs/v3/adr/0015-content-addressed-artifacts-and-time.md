@@ -22,3 +22,15 @@ Early AWBench runs showed information "flowing" backwards in time through such s
 
 - Identical content produced by several events stays genuinely ambiguous. AWBench H2 precision reports it rather than hiding it.
 - Traversal marks nodes as seen on first visit, so a node first reached by a path at the wrong time is not revisited by a later valid path. This is a documented approximation.
+
+## Amendment (2026-09-26): most-recent-producer semantics
+
+The held-out AWBench architecture (map_reduce) showed that time-respecting traversal is not enough in fan-out systems. When several workers independently retrieve the same document, the content-identical item node linked every worker's retrieval to every later consumer; information precision was 0.37.
+
+Traversal now follows **most-recent-producer** semantics, the equivalent of reaching definitions in dataflow analysis:
+
+- **Forward:** a value carried from a producer *expires* once another event produces the same content. Consumers after that point are not reached from the earlier producer.
+- **Backward:** from a consumer, only the latest production before the consumption is accepted.
+- **Lists:** an item's producers include the producers of the lists that contain it.
+
+**Caveat:** this rule was designed after seeing held-out results, so its effect on that architecture is **not** held-out evidence. A second held-out architecture is needed to validate it.
