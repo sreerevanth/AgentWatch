@@ -1032,6 +1032,168 @@ def arch_async_event_pipeline() -> None:
             GT.data["expected_motifs"].append("M002")  # >=3 identical lookup calls
 
 
+def arch_code_review_pipeline() -> None:
+    """FOURTH HELD-OUT architecture (designed after the async_event_pipeline fixes; committed
+    before its first scored run).
+
+    A code-review pipeline instrumented at HIGH FIDELITY: produced values are passed on as the
+    very objects the producing call returned, so the SDK declares their sources (runtime
+    identity). Only per-file patches, taken out of the diff list, reach their consumers by
+    content.
+
+        change diff (external input) + review guidelines (retrieval)
+        per file: lint tool (file b retries) -> model review over (patch, lint, guidelines)
+        dedupe of the three reviews -> polish draft (DISCARDED)
+        review cache: write, then read back as a deserialized copy
+        test run over the diff
+        report written from the cached review and the test result (declared inputs)
+    """
+    review_model = summarize_v2 if SCEN == "model_substitution" else summarize_v1
+    model_name = "stub/reviewer-v2" if SCEN == "model_substitution" else "stub/reviewer-v1"
+    first_model = {"done": False}
+    diff = [
+        {"file": f, "patch": f"--- {f}\n+++ {f}\n" + CORPUS[d]}
+        for f, d in (("a.py", "D1"), ("b.py", "D3"), ("c.py", "D4"))
+    ]
+    lint_state = {"b.py": 4 if SCEN == "tool_timeout" else 1}
+
+    def lint(patch: dict[str, str]) -> list[str]:
+        if lint_state.get(patch["file"], 0) > 0:
+            lint_state[patch["file"]] -= 1
+            raise TimeoutError("linter timed out")
+        return [f"{patch['file']}: line length", f"{patch['file']}: missing docstring"]
+
+    def review(parts: list[Any]) -> str:
+        patch, findings, guidelines = parts
+        prompt = f"Review {patch['file']}\n" + "\n".join(
+            [f"- {patch['patch'].splitlines()[-1]}", *(f"- {x}" for x in findings)]
+            + [f"- {g['text']}" for g in guidelines]
+        )
+        return review_model(prompt)
+
+    def model(label: str, fn: Any, arg: Any, actor: str) -> tuple[Any, str]:
+        out, nid = call("MODEL_INVOCATION", label, fn, arg, obj=model_name, actor=actor)
+        if SCEN == "model_substitution" and not first_model["done"]:
+            GT.data["root_cause"] = nid
+        first_model["done"] = True
+        return out, nid
+
+    with op("OPERATION", "review_change", actor="agent:reviewer"):
+        with op("EXTERNAL_INPUT", "receive_change", actor="agent:reviewer") as (rs, rc):
+            rs.output(diff, role="diff")
+        guidelines, gl = call(
+            "RETRIEVAL",
+            "fetch_guidelines",
+            retrieve_docs,
+            "coding guidelines",
+            obj="guidelines_index",
+            actor="agent:reviewer",
+        )
+        if SCEN in ("bad_retrieval", "corrupted_retrieval"):
+            GT.data["root_cause"] = gl
+        reviews: list[str] = []
+        review_nodes: list[str] = []
+        for patch in diff:
+            f = patch["file"]
+            with op("OPERATION", f"file:{f}", actor="agent:reviewer"):
+                findings, lt = None, None
+                for _ in range(6):
+                    try:
+                        findings, lt = call(
+                            "TOOL_INVOCATION",
+                            f"lint:{f}",
+                            lint,
+                            patch,
+                            obj="linter",
+                            actor="agent:reviewer",
+                        )
+                        break
+                    except TimeoutError:
+                        continue
+                for k in range(1, GT.counts[f"lint:{f}"] + 1):
+                    GT.flow(rc, f"lint:{f}#{k}")  # every attempt consumed the patch
+                text, rv = model(
+                    f"review:{f}", review, [patch, findings, guidelines], "agent:reviewer"
+                )
+                GT.flow(rc, rv)
+                GT.flow(lt, rv)
+                GT.flow(gl, rv)
+                reviews.append(text)
+                review_nodes.append(rv)
+        GT.data["expected_motifs"].append("M001")  # lint:b.py retries in every scenario
+        if SCEN == "tool_timeout":
+            GT.data["expected_motifs"].append("M002")  # >=3 identical lint:b.py calls
+            GT.data["root_cause"] = "lint:b.py#2"  # #1 fails in the baseline too
+
+        def dedupe(items: list[str]) -> str:
+            seen: list[str] = []
+            for x in items:
+                if x not in seen:
+                    seen.append(x)
+            return "\n".join(seen)
+
+        combined, dd = call(
+            "TOOL_INVOCATION", "dedupe", dedupe, reviews, obj="deduper", actor="agent:reviewer"
+        )
+        for n in review_nodes:
+            GT.flow(n, dd)
+        _polished, pl = model("polish", summarize_v1, "- " + combined, "agent:editor")
+        GT.flow(dd, pl)  # a draft nobody uses
+        with op(
+            "MEMORY_ACCESS",
+            "write:review_cache",
+            object="memory:review_cache",
+            actor="agent:reviewer",
+            facets=["write"],
+        ) as (ws, cw):
+            ws.input(combined, role="value", label="review").set(key="review", access="write")
+            GT.flow(dd, cw)
+        stale = SCEN == "stale_memory"
+        cached_value = (
+            "Cached review from last week: approve, no findings on the previous revision."
+            if stale
+            else "".join(list(combined))  # deserialized: equal content, a new object
+        )
+        with op(
+            "MEMORY_ACCESS",
+            "read:review_cache",
+            object="memory:review_cache",
+            actor="agent:reporter",
+            facets=["read"],
+        ) as (rs2, cr):
+            rs2.set(key="review", access="read").output(cached_value, role="value", label="review")
+            if stale:
+                GT.data["root_cause"] = cr
+            else:
+                GT.flow(cw, cr)
+
+        def run_tests(change: list[dict[str, str]]) -> str:
+            n = len(change) * 4
+            return f"{n * 10 if SCEN == 'incorrect_tool_result' else n} tests passed"
+
+        test_result, ts = call(
+            "TOOL_INVOCATION", "run_tests", run_tests, diff, obj="test_runner", actor="agent:ci"
+        )
+        GT.flow(rc, ts)
+        if SCEN == "incorrect_tool_result":
+            GT.data["root_cause"] = ts
+        with op(
+            "STATE_MUTATION",
+            "write_report",
+            actor="agent:reporter",
+            facets=["artifact_creation"],
+        ) as (fs, fw):
+            fs.input(cached_value, role="review").input(test_result, role="tests")
+            fs.output(
+                f"# Review report\n\n{cached_value}\n\nTests: {test_result}\n",
+                role="artifact",
+                label="report.md",
+            )
+            GT.flow(cr, fw)
+            GT.flow(ts, fw)
+            GT.data["final_output"] = fw
+
+
 def main() -> None:
     global GT, RNG, SCEN
     ap = argparse.ArgumentParser()
@@ -1044,6 +1206,7 @@ def main() -> None:
             "map_reduce",
             "hybrid_rag_cache",
             "async_event_pipeline",
+            "code_review_pipeline",
         ],
         default="tool_loop",
     )
@@ -1075,6 +1238,7 @@ def main() -> None:
                 "map_reduce": arch_map_reduce,
                 "hybrid_rag_cache": arch_hybrid_rag_cache,
                 "async_event_pipeline": arch_async_event_pipeline,
+                "code_review_pipeline": arch_code_review_pipeline,
             }[args.arch]()
     Path(args.gt).write_text(json.dumps(GT.data, indent=1), encoding="utf-8")
 
