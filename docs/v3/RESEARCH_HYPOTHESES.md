@@ -296,10 +296,10 @@ These are machine-generated values from `benchmarks/awbench/results/latest.json`
 
    These results therefore do not count as held-out validation. No analytic capability is promoted beyond EXPERIMENTAL on their basis.
 2. **Stub systems.** Deterministic stub models make ground truth exact but unrealistically clean (section 5, synthetic-to-real gap). There are no results with real models yet.
-3. **One seed.** Variance across seeds is not yet reported.
+3. **One seed.** Variance across seeds is not yet reported. *(Later: three seeds with per-seed ranges from §6.1 on.)*
 4. **Evaluator definitions** are in `benchmarks/awbench/tasks.py`. Their docstrings and notes state what each metric does and does not measure.
 
-Before any VALIDATED claim, the next steps are held-out architectures, real-model runs, and multiple seeds.
+Before any VALIDATED claim, the next steps are held-out architectures, real-model runs, and multiple seeds. *(Later: held-out architectures in §6.2–6.4; real-model runs still pending credentials.)*
 
 
 ### 6.1 Three-seed run (2026-09-26)
