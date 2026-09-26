@@ -76,6 +76,10 @@ changelog:
       precision 1.0 (met) / recall 0.64. Afterwards AgentWatch changed in response (retry
       alignment in compare; declared structure outranks content for outputs, b2af8bb), so the
       architecture is FORMER_HELD_OUT for later runs. No threshold or ground truth was changed.
+  - date: 2026-09-27
+    note: >
+      Pre-registered the fourth held-out architecture code_review_pipeline (architecture commit
+      250edad): high-fidelity instrumentation; see architecture_status.code_review_pipeline.
 
 systems:
   tool_loop: single model-driven tool loop (native SDK; OTel variant for H1)
@@ -83,6 +87,7 @@ systems:
   multi_agent: planner delegating to researcher/analyst/critic, synthesizer join
   map_reduce: HELD-OUT; planner fans out to 3 workers, reducer joins (multi-parent), critic model
   hybrid_rag_cache: HELD-OUT; vector+keyword retrieval, dedupe, answerer over growing history, cache read-back
+  code_review_pipeline: HELD-OUT; high-fidelity (declared-source) instrumentation, retrying linter, per-file reviews, dedupe, discarded polish, cache read-back, tests, report
   async_event_pipeline: HELD-OUT; asyncio workers completing out of order, at-least-once queue, discarded draft, glossary cache hit, db read-back
 
 # Evidence status of each architecture. The runner COMPUTES the effective status:
@@ -130,6 +135,31 @@ architecture_status:
         node names is allowed before the run only if it does not change what is counted, and
         is logged in the changelog. Run with --first-scored-run async_event_pipeline --seeds 3
         on a clean tree; results are committed exactly as generated before any diagnosis.
+  code_review_pipeline:
+    declared: HELD_OUT
+    # PRE-REGISTRATION (2026-09-27), recorded before any scored run. Tests the information
+    # model with HIGH-FIDELITY instrumentation and the post-held-out fixes of b2af8bb
+    # (retry-aware divergence; declared structure outranks content for outputs).
+    preregistration:
+      architecture_commit: 250edad
+      scenarios: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, model_substitution, stale_memory, incorrect_tool_result]
+      seeds: 3
+      sensor: native; produced values passed on as the objects returned (runtime-identity declared sources); per-file patches (list elements) by content
+      tasks: [h2_structure, h3_lineage, h4_divergence, h5_motifs, replay_fidelity, counterfactual_quality, explanation_faithfulness]
+      thresholds: same as the tasks section of this registry (not to be changed after the run)
+      expected_structure: >
+        receive_change (diff) and fetch_guidelines (retrieval) -> per file: lint (b.py fails
+        once in every scenario; 4 times in tool_timeout) -> review over (patch, lint findings,
+        guidelines) -> dedupe of the three reviews -> polish (discarded, no outgoing flow) and
+        cache write -> cache read (deserialized copy) ; run_tests over the diff -> report from
+        the cache read and the test result. Root causes: bad/corrupted_retrieval
+        fetch_guidelines#1; tool_timeout lint:b.py#2; model_substitution review:a.py#1;
+        stale_memory read:review_cache#1; incorrect_tool_result run_tests#1. Motifs: M001
+        always, M002 in tool_timeout, M006 derived from ground-truth flow.
+      evaluation: >
+        tasks.py semantics at this commit, unchanged. Run with --first-scored-run
+        code_review_pipeline --seeds 3 on a clean tree; results committed exactly as generated
+        before any diagnosis.
 
 scenarios:
   tool_loop: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, tool_error, incorrect_tool_result, context_pressure, model_substitution, latency_injection, retry_loop]
@@ -140,6 +170,7 @@ held_out:
   map_reduce: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, model_substitution, message_loss, latency_injection]
   hybrid_rag_cache: [normal, bad_retrieval, corrupted_retrieval, stale_memory, duplicate_memory, model_substitution, tool_timeout]
   async_event_pipeline: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, model_substitution, message_loss, stale_memory]
+  code_review_pipeline: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, model_substitution, stale_memory, incorrect_tool_result]
 
 held_out_notes:
   map_reduce: >
