@@ -13,7 +13,7 @@ Branch `architecture/v3` · assessed 2026-09-26 · proposed release: **0.3.0 (pr
 | Crypto-shredding | ✓ (opt-in) | `test_erasure.py`; invariant: erased data cannot be reconstructed from the graph |
 | Incremental processing | ✓ | `test_incremental.py`; incremental == full rebuild over seeded random programs |
 | Execution graph | ✓ **VALIDATED** | H2 execution F1 1.0 on development and on the first run of all three held-out architectures |
-| Information graph behaves conservatively | ✓ | ADR-0017; held-out precision 0.95; ambiguity preserved; adversarial and invariant tests |
+| Information graph behaves conservatively | ✓ | ADR-0017; held-out precision 0.95 (best-effort) and 1.0 (high-fidelity); ambiguity preserved; adversarial and invariant tests |
 | Causal evidence classes | ✓ | CAUSAL relations need an evidence class; hypotheses become SUPPORTED only through interventions; an LLM cannot self-verify |
 | Provenance | ✓ (EXPERIMENTAL) | lineage with evidence type, strength and ambiguous candidates |
 | Motifs | ✓ (EXPERIMENTAL) | 7 detectors; held-out precision 1.0, recall 0.64 |
@@ -23,7 +23,7 @@ Branch `architecture/v3` · assessed 2026-09-26 · proposed release: **0.3.0 (pr
 | CLI | ✓ | `test_lab_cli.py::test_cli_full_surface_on_persisted_data`; CLI surface golden |
 | Frontend consumes canonical data | ✓ | Jest; type-check; build; the production build was checked against a live API and store (MAP information view, evidence summary, ambiguous values, value panel, COMPARE, LAB, TIMELINE) |
 | AWBench reproducible | ✓ | seeded; registry with pre-registered thresholds and changelog; computed evidence status; `results/` |
-| Held-out validation exists | ✓ | three held-out architectures, each first run recorded unchanged (section 3) |
+| Held-out validation exists | ✓ | four held-out architectures, each first run recorded unchanged; the fourth met every threshold (section 3) |
 | Limitations documented | ✓ | section 6, IMPLEMENTATION_STATE, RESEARCH_HYPOTHESES §6 |
 | Tests and CI green | ✓ | section 2 |
 
@@ -61,7 +61,8 @@ All AWBench results come from deterministic stub systems. Real-model mode exists
 |---|---|---|---|---|---|
 | map_reduce (content-addressed model) | 0.37 | — | — | — | 0.28 / — |
 | hybrid_rag_cache (content-addressed model) | 0.53 | 0.92 | 0.96 | 1.0 | 1.0 / 0.55 |
-| **async_event_pipeline (information instances, ADR-0017)** | **0.95** | 0.51 | 0.33 | 0.89 | 1.0 / 0.64 |
+| **async_event_pipeline (information instances, best-effort telemetry)** | **0.95** | 0.51 | 0.33 | 0.89 | 1.0 / 0.64 |
+| **code_review_pipeline (information instances, high-fidelity telemetry)** | **1.0** | **0.92** | **0.91** | **1.0** | **1.0 / 0.89** (24/24 after a logged ground-truth correction) |
 
 **Current results (development evidence).** The most recent full run is at `7916690`, `results/awbench-20260926T172315Z.json`. Commits after it (`ef40ae6`, `a268d2d`) changed only the capability registry, mypy typing, formatting and docs, with no change in behaviour.
 
@@ -111,7 +112,7 @@ The failed recall metrics are the deliberate trade-off of ADR-0017. Content that
   - Declared inputs, runtime identity or the OTel extension make lineage exact.
   - Short or templated texts that differ by fewer shingles than one seam cannot be separated.
 - **Stub models only.** No real-model AWBench run yet. The OpenAI key present in this environment is rejected by the provider (401 `account_deactivated`); no Anthropic key is set.
-- **No untouched held-out architecture remains.** All three have informed fixes; the next one should test declared (high-fidelity) instrumentation.
+- **Held-out evidence is spent.** `code_review_pipeline` met every threshold on its first run. It becomes FORMER_HELD_OUT on the next AgentWatch code change, so later changes need a fifth held-out architecture.
 - **Privacy.** Crypto-shredding is opt-in (`AGENTWATCH_ENCRYPT_PAYLOADS=1`); declared ids are not encrypted; PII redaction is opt-in.
 - **Replay** mocks only instrumented calls. Real models are not deterministic, so replay differences can come from the model alone.
 - **Entity resolution** is exact-key only.
@@ -146,4 +147,4 @@ The failed recall metrics are the deliberate trade-off of ADR-0017. Content that
 
 - (a) **Merge now, packaging split later.** The default install stays as today; the split is announced for 0.4.
 - (b) **Merge with the packaging split** (ADR-0008). This is a breaking change to what `pip install agentwatch-ai` installs.
-- (c) **Hold** until a real-model AWBench run and a fourth, declared-instrumentation held-out architecture are available.
+- (c) **Hold** until a real-model AWBench run is available. The declared-instrumentation held-out run is done (section 3): it met every threshold.

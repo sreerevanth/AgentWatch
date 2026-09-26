@@ -107,6 +107,16 @@ def _define() -> None:
             ("tests/v3/test_information_lineage.py", "tests/v3/test_graph_invariants.py"),
         ),
         (
+            "graph.information.high_fidelity",
+            "1",
+            V,
+            "information graph and lineage when producers' values are passed on as declared "
+            "sources (runtime identity, source=, OTel agentwatch.information.*): held-out "
+            "information P/R 1.0/0.92, lineage F1 0.91 (stub systems)",
+            # first scored run of the held-out code_review_pipeline, all thresholds met
+            ("benchmarks/awbench/results/awbench-20260926T184322Z.json",),
+        ),
+        (
             "provenance.ambiguity",
             "1",
             E,

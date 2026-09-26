@@ -13,7 +13,7 @@ Branch: `architecture/v3` · Updated 2026-09-26 · Release readiness: [RELEASE_R
 | Engine: versioned, deterministic rebuild; incremental per correlation group (with cross-run memory context); every observation → event or diagnostic | `agentwatch/runtime` | tested; incremental == full over random programs |
 | Runs from declared ids only; exact-key entities | `agentwatch/runs`, `agentwatch/entities` | tested |
 | Execution graph | `agentwatch/graph/build.py` | **VALIDATED**: AWBench H2 F1 1.0 on development and on the first run of all three held-out architectures |
-| Information graph over information instances, with an evidence hierarchy and preserved ambiguity (ADR-0017) | `agentwatch/graph/information.py` | adversarial + invariant tests; AWBench H2 (EXPERIMENTAL) |
+| Information graph over information instances, with an evidence hierarchy and preserved ambiguity (ADR-0017) | `agentwatch/graph/information.py` | high-fidelity mode **VALIDATED** (held-out code_review_pipeline: information P/R 1.0/0.92, lineage F1 0.91); best-effort mode EXPERIMENTAL |
 | Provenance with ambiguity records and per-run evidence summaries | `agentwatch/provenance` | tested; API/CLI parity |
 | Run comparison (retry-aware earliest divergence) | `agentwatch/compare` | tested + AWBench H4 |
 | Motifs (7), profiles, genome, drift with power check | `agentwatch/behaviour` | tested + AWBench H5/H7 |
@@ -24,7 +24,7 @@ Branch: `architecture/v3` · Updated 2026-09-26 · Release readiness: [RELEASE_R
 | API `/api/v3` + `/v1/traces` + legacy tee | `agentwatch/api/v3.py` | tested; parity with read model and CLI |
 | CLI (v3 commands + `evidence` group; `doctor` checks the v3 store) | `agentwatch/cli/v3.py` | full-surface test on a store written by `observe` |
 | Frontend: LIVE, MAP, TIMELINE, LAB, GENOME, COMPARE, QUERY (values, evidence strength, ambiguity, erased state) | `frontend/` | Jest, type-check, build; production build verified against live data |
-| AWBench: 3 development + 3 held-out architectures, computed evidence status, pre-registration, opt-in real-model mode | `benchmarks/awbench` | results committed |
+| AWBench: 3 development + 4 held-out architectures, computed evidence status, pre-registration, opt-in real-model mode | `benchmarks/awbench` | results committed |
 | Performance benchmark (with comparison to the previous run) | `benchmarks/perf` | results committed |
 | Docker images (API, frontend) | `Dockerfile.api`, `frontend/Dockerfile` | built in CI on every push |
 
@@ -41,7 +41,7 @@ Branch: `architecture/v3` · Updated 2026-09-26 · Release readiness: [RELEASE_R
 - **M006 (information bottleneck)** fires only when a bottleneck is certain, so recall is low with extractive intermediates.
 - **Content matching has a resolution limit.** Candidates that differ by fewer shingles than one concatenation seam (4) cannot be separated.
 - **AWBench uses stub models.** Real-model runs are implemented (`--real-model`) but have not been run: no usable credential was available. The OpenAI key in this environment is rejected by the provider (401, `account_deactivated`).
-- **All three held-out architectures have informed fixes** and are now FORMER_HELD_OUT. A fourth is needed to validate the post-held-out fixes (retry alignment, output-explanation rule).
+- **Held-out status.** Three held-out architectures have informed fixes and are FORMER_HELD_OUT. The fourth (`code_review_pipeline`, high-fidelity) met every threshold on its first run. It becomes FORMER_HELD_OUT on the next AgentWatch code change, so a fifth is needed for any later change.
 - **Privacy.**
   - Crypto-shredding is opt-in (`AGENTWATCH_ENCRYPT_PAYLOADS=1`), and declared ids are not encrypted (ADR-0011).
   - PII redaction is opt-in.
@@ -55,4 +55,4 @@ Branch: `architecture/v3` · Updated 2026-09-26 · Release readiness: [RELEASE_R
 
 1. Owner decision: merge to `main` (with or without the packaging split). See RELEASE_READINESS.md.
 2. Run AWBench `--real-model` with a working credential, and the `external` test marker.
-3. A fourth held-out architecture, preferably with declared (high-fidelity) instrumentation, to validate the post-held-out fixes and measure high-fidelity lineage.
+3. A fifth held-out architecture before claiming anything about later changes; a real-model held-out run would test best-effort lineage on abstractive outputs.

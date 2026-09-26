@@ -388,3 +388,29 @@ Both earlier held-out architectures had shown the same failure: identical or ove
 **Not yet tested.** The ambiguity is a property of value-level telemetry combined with extractive models.
 - Real models are abstractive, and declared inputs remove the ambiguity.
 - Neither case has been measured by a held-out run yet: real-model runs need a working credential, and a declared-instrumentation held-out architecture is the next benchmark to build.
+
+### 6.4 Fourth held-out architecture: high-fidelity instrumentation (2026-09-27)
+
+`code_review_pipeline` was designed after the `async_event_pipeline` fixes and committed before its only scored run (architecture `250edad`, pre-registration `e802336`). Its instrumentation passes produced values on as the objects the producing calls returned, so the SDK declares their sources. Per-file patches taken out of the diff list still reach consumers by content only, and the retrieved guidelines overlap the patches' text.
+
+**First scored run** (clean tree, 3 seeds, `awbench-20260926T184322Z.json`, recorded unchanged in `703aab0`): every pre-registered threshold was met.
+
+| task | metric | result | threshold |
+|---|---|---|---|
+| H2 | execution F1 | 1.0 | 0.9 |
+| H2 | information precision / recall | **1.0 / 0.92** | 0.75 / 0.75 |
+| H3 | lineage F1 | **0.91** (precision 1.0, recall 0.84) | 0.8 |
+| H4 | top-1 / root at or upstream | 1.0 / 1.0 (`tool_timeout` 3/3) | 0.7 / 0.9 |
+| H5 | motif precision / recall | 1.0 / 0.89 | 0.9 / 0.8 |
+| lab, faithfulness | replay, counterfactual, faithfulness | 1.0 | met |
+
+**What it shows.**
+- **Declared sources fix recall.** The information model is precise in both modes. Its best-effort recall is limited by what content can prove (§6.3); with declared sources, recall and lineage reach their thresholds on an unseen system.
+- **The retry fix generalized.** The retry-aware divergence fix (`b2af8bb`) located the root cause in all 3 `tool_timeout` runs of an architecture it was not designed on.
+
+**Ground-truth correction** (benchmark only, logged in REGISTRY):
+- All three M006 misses were `stale_memory` runs. There the report's only origin is the single diff value, and M006 requires ≥2 origin values, so AgentWatch was right not to fire.
+- The benchmark's derivation had counted every external input as two values; it now counts one.
+- With the correction, this run's motif recall is 24/24. The recorded file is kept as generated.
+
+**Status.** The architecture is now scored, so it becomes FORMER_HELD_OUT as soon as AgentWatch code changes. Capability `graph.information.high_fidelity` is VALIDATED on this evidence. It covers stub systems only, and best-effort lineage stays EXPERIMENTAL.
