@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { edgeStyle, edgesOf, layeredLayout } from '../../lib/v3/graph';
-import type { NodeDesc, Relation } from '../../lib/v3/types';
+import type { InfoEvidenceAttrs, NodeDesc, Relation } from '../../lib/v3/types';
 
 interface Props {
   nodes: NodeDesc[];
@@ -10,6 +10,19 @@ interface Props {
   highlight?: Set<string> | null;
   onSelect?: (node: string) => void;
   height?: number;
+}
+
+function edgeTitle(rel: Relation): string {
+  const a = rel.attributes as InfoEvidenceAttrs;
+  const base = `${rel.view} ${rel.type} · ${rel.basis}${rel.evidence_class ? ` · ${rel.evidence_class}` : ''}`;
+  if (!a?.evidence_type) return `${base} · confidence ${rel.confidence}`;
+  const amb =
+    a.resolution === 'AMBIGUOUS'
+      ? ' · AMBIGUOUS candidate (not an information flow)'
+      : a.strength === 'NONE'
+        ? ' · similarity only (not an information flow)'
+        : '';
+  return `${base} · ${a.evidence_type} · ${a.strength} · ${a.mode ?? ''}${amb}`;
 }
 
 const STATUS_STROKE: Record<string, string> = {
@@ -143,7 +156,7 @@ export function GraphView({
                   strokeDasharray={st.dash}
                   markerEnd="url(#arrow)"
                 >
-                  <title>{`${e.rel.view} ${e.rel.type} · ${e.rel.basis}${e.rel.evidence_class ? ` · ${e.rel.evidence_class}` : ''} · confidence ${e.rel.confidence}`}</title>
+                  <title>{edgeTitle(e.rel)}</title>
                 </path>
               </g>
             );
@@ -152,11 +165,14 @@ export function GraphView({
             const p = layout.get(n.node);
             if (!p) return null;
             const isSel = selected === n.node;
+            const isValue = n.type === 'instance' || n.type === 'artifact';
             const stroke =
               n.type === 'event'
                 ? (STATUS_STROKE[n.status ?? 'UNKNOWN'] ?? '#71717a')
-                : n.type === 'artifact'
-                  ? '#0ea5e9'
+                : isValue
+                  ? n.erased
+                    ? '#f43f5e'
+                    : '#0ea5e9'
                   : '#a78bfa';
             return (
               <g
@@ -182,14 +198,18 @@ export function GraphView({
                     y={-15}
                     width={150}
                     height={30}
-                    rx={n.type === 'artifact' ? 10 : 3}
-                    fill={n.type === 'artifact' ? '#0c1a24' : '#18181b'}
+                    rx={isValue ? 10 : 3}
+                    fill={isValue ? '#0c1a24' : '#18181b'}
                     stroke={isSel ? '#fafafa' : stroke}
                     strokeWidth={isSel ? 2 : 1}
                   />
                 )}
                 <text x={8} y={-2} fontSize={9} fill="#71717a" fontFamily="ui-monospace, monospace">
-                  {n.type === 'event' ? String(n.label).split(' ')[0].toLowerCase() : n.type}
+                  {n.type === 'event'
+                    ? String(n.label).split(' ')[0].toLowerCase()
+                    : isValue
+                      ? `value${n.role ? ` · ${n.role}` : ''}${n.erased ? ' · erased' : ''}`
+                      : n.type}
                 </text>
                 <text
                   x={8}
@@ -203,7 +223,11 @@ export function GraphView({
                     : String(n.label)
                   ).slice(0, 22)}
                 </text>
-                <title>{`${n.label}\n${n.node}${n.actor ? `\nactor ${n.actor}` : ''}`}</title>
+                <title>{`${n.label}\n${n.node}${n.actor ? `\nactor ${n.actor}` : ''}${
+                  (n.same_content_instances ?? 0) > 1
+                    ? `\nsame bytes as ${(n.same_content_instances ?? 1) - 1} other value(s) — still a distinct value`
+                    : ''
+                }`}</title>
               </g>
             );
           })}

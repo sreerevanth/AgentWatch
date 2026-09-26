@@ -1,4 +1,11 @@
-import { cone, edgeStyle, edgesOf, layeredLayout } from '../lib/v3/graph';
+import {
+  cone,
+  edgeStyle,
+  edgesOf,
+  isNonFlow,
+  layeredLayout,
+  STRENGTH_OPACITY,
+} from '../lib/v3/graph';
 import type { Relation } from '../lib/v3/types';
 
 const rel = (tail: string[], head: string[], extra: Partial<Relation> = {}): Relation => ({
@@ -64,6 +71,20 @@ describe('edgeStyle', () => {
     expect(inferred.dash).toBeDefined();
     expect(inferred.opacity).toBeCloseTo(0.25 + 0.75 * 0.6);
     expect(edgeStyle(rel(['a'], ['b'])).dash).toBeUndefined();
+  });
+  it('encodes information evidence strength and draws ambiguity as non-flow', () => {
+    const info = (attributes: Record<string, unknown>) =>
+      rel(['a'], ['b'], { view: 'INFORMATION', type: 'DERIVES_FROM', attributes });
+    const strong = edgeStyle(info({ evidence_type: 'DECLARED_REFERENCE', strength: 'STRONG' }));
+    expect(strong.dash).toBeUndefined();
+    expect(strong.opacity).toBe(STRENGTH_OPACITY.STRONG);
+    const weak = edgeStyle(info({ evidence_type: 'CONTENT_CONTAINMENT', strength: 'WEAK' }));
+    expect(weak.dash).toBe('5 4');
+    const cand = info({ strength: 'WEAK', resolution: 'AMBIGUOUS', evidence_type: 'X' });
+    expect(isNonFlow(cand)).toBe(true);
+    expect(edgeStyle(cand).dash).toBe('1 4');
+    expect(isNonFlow(info({ strength: 'NONE', evidence_type: 'CONTENT_MATCH_ONLY' }))).toBe(true);
+    expect(isNonFlow(info({ strength: 'MEDIUM', resolution: 'RESOLVED' }))).toBe(false);
   });
   it('colours causal relations by evidence class', () => {
     expect(

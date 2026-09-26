@@ -26,9 +26,14 @@ export interface Confidence {
 }
 
 export interface ArtifactRef {
+  /** content identity (equal bytes, equal id); not information identity (ADR-0017) */
   artifact_id: string;
   role: string;
   label: string | null;
+  /** sensor-declared instance id of a produced value */
+  instance?: string;
+  /** sensor-declared sources of a consumed value */
+  sources?: string[];
 }
 
 export interface CEvent {
@@ -106,8 +111,16 @@ export interface Relation {
 
 export interface NodeDesc {
   node: string;
-  type: 'event' | 'artifact' | 'entity';
+  /** 'instance': an information instance (inst:<event>/o<k>, /o<k>/i<j>, /in<k>) */
+  type: 'event' | 'instance' | 'artifact' | 'entity';
   label: string;
+  content_id?: string | null;
+  /** how many instances in the run carry the same bytes (they are still distinct values) */
+  same_content_instances?: number;
+  producer_event?: string | null;
+  consumer_event?: string | null;
+  role?: string | null;
+  erased?: boolean;
   actor?: string | null;
   status?: string;
   start?: string | null;
@@ -151,6 +164,7 @@ export interface RunDetail {
   tree: { depth: number; event_id: string }[];
   motif_instances: MotifInstance[];
   profile: { features: Record<string, number>; motif_counts: Record<string, number> } | null;
+  information_evidence?: InformationEvidence | null;
 }
 
 export interface ObservationDoc {
@@ -163,7 +177,51 @@ export interface ObservationDoc {
   declared_ids: Record<string, string>;
   redaction: Record<string, unknown> | null;
   segment_id: string | null;
+  /** 'erased': the data subject was crypto-shredded; the payload is gone for good */
+  encoding?: 'plain' | 'aes-gcm' | 'erased';
   payload: unknown;
+}
+
+/** Attributes every INFORMATION relation carries (ADR-0017). */
+export interface InfoEvidenceAttrs {
+  evidence_type?: string;
+  strength?: 'STRONG' | 'MEDIUM' | 'WEAK' | 'NONE';
+  mode?: 'HIGH_FIDELITY' | 'BEST_EFFORT';
+  resolution?: 'RESOLVED' | 'AMBIGUOUS' | 'UNRESOLVED';
+  alternatives?: string[][];
+  certain?: string[];
+  source_event?: string;
+  target_event?: string;
+}
+
+export interface AmbiguousProvenance {
+  record_id: string;
+  target: string;
+  target_event: string;
+  resolution_status: 'AMBIGUOUS';
+  candidates: {
+    node: string;
+    source_event: string | null;
+    evidence_type: string | null;
+    containment: number | null;
+    alternatives: string[][];
+  }[];
+  certain_sources: string[];
+}
+
+export interface InformationEvidence {
+  relations_by_evidence_type: Record<string, number>;
+  relations_by_strength: Record<string, number>;
+  links_by_mode: Record<string, number>;
+  high_fidelity_share: number | null;
+  consumed_values: Record<string, number>;
+  ambiguous_values: number;
+}
+
+export interface ProvenanceEvidence {
+  run_id: string;
+  summary: InformationEvidence | null;
+  ambiguous: AmbiguousProvenance[];
 }
 
 export interface EventDetail {

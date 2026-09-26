@@ -1,6 +1,7 @@
 import { useState } from 'react';
 
 import { useEvent, useProvenance } from '../../lib/v3/client';
+import type { InfoEvidenceAttrs } from '../../lib/v3/types';
 import { ErrorBox, Json, Label, Maturity, Mono, Panel, Status, fmtMs, short } from './ui';
 
 /** Everything known about one event: normalized form, raw evidence, relations, provenance, motifs. */
@@ -115,6 +116,14 @@ export function EventInspector({
                 {o.obs_id} · {o.source_kind} · sha256 {o.payload_sha256.slice(0, 12)} · segment{' '}
                 {o.segment_id ?? 'unsealed'}
                 {o.redaction && <span className="ml-1 text-amber-400">redacted</span>}
+                {o.encoding === 'erased' && (
+                  <span
+                    className="ml-1 text-rose-400"
+                    title="the data subject was erased (crypto-shredded); this payload cannot be recovered"
+                  >
+                    erased
+                  </span>
+                )}
               </div>
               <Json
                 value={{
@@ -142,8 +151,20 @@ export function EventInspector({
                 {r.type}
               </Label>
               <span className="text-zinc-500">
-                {r.basis.toLowerCase()}
-                {r.basis !== 'DECLARED' ? ` ${r.confidence}` : ''}
+                {(r.attributes as InfoEvidenceAttrs)?.evidence_type ? (
+                  <>
+                    {String((r.attributes as InfoEvidenceAttrs).evidence_type).toLowerCase()} ·{' '}
+                    {(r.attributes as InfoEvidenceAttrs).strength}
+                    {(r.attributes as InfoEvidenceAttrs).resolution === 'AMBIGUOUS' && (
+                      <span className="ml-1 text-amber-400">ambiguous</span>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {r.basis.toLowerCase()}
+                    {r.basis !== 'DECLARED' ? ` ${r.confidence}` : ''}
+                  </>
+                )}
               </span>
               <button
                 className="truncate text-left text-zinc-200 hover:underline"
