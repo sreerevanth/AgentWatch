@@ -1,6 +1,6 @@
 # AgentWatch v3 — Implementation State
 
-Branch: `architecture/v3` · Updated 2026-09-26 · Release readiness: [RELEASE_READINESS.md](RELEASE_READINESS.md)
+Branch: `main` (v3 merged 2026-09-27, `17d667d`) · Updated 2026-09-27 · Release readiness: [RELEASE_READINESS.md](RELEASE_READINESS.md)
 
 ## Completed
 
@@ -53,6 +53,6 @@ Branch: `architecture/v3` · Updated 2026-09-26 · Release readiness: [RELEASE_R
 
 ## Next exact tasks
 
-1. Owner decision: merge to `main` (with or without the packaging split). See RELEASE_READINESS.md.
+1. Owner decision: the packaging split (ADR-0008) and a release tag. v3 is merged into `main`.
 2. Run AWBench `--real-model` with a working credential, and the `external` test marker.
 3. A fifth held-out architecture before claiming anything about later changes; a real-model held-out run would test best-effort lineage on abstractive outputs.

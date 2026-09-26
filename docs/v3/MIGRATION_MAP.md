@@ -1,6 +1,6 @@
 # AgentWatch v0.2 → v3 Migration Map
 
-Status: stages M0-M1 done, M3 largely done (see section 4); M2 and M4-M5 pending
+Status: M0-M2 done, M3 done for the UI, M4 merged (packaging split and release tag pending), M5 pending (see section 4)
 
 Classification key:
 
@@ -201,7 +201,7 @@ git add docs/v3 && git commit -m "docs(v3): Phase 0 architecture audit, target a
 
 ---
 
-## 4. Migration status (2026-09-25)
+## 4. Migration status (2026-09-27)
 
 | Stage | Status | Notes |
 |---|---|---|
@@ -209,7 +209,7 @@ git add docs/v3 && git commit -m "docs(v3): Phase 0 architecture audit, target a
 | M1 Parallel core | **done** | v3 packages, `/api/v3`, the OTLP receiver, and the legacy `/api/v1/events` tee (`AGENTWATCH_V3_TEE`). |
 | M2 Quarantine | **done (logical)** | Enforced by `tests/v3/test_architecture_contracts.py` in CI; the physical move is replaced by deletion at M5 (ADR-0016). Packaging split moved to M4. |
 | M3 Read cut-over | **done for the UI** | The frontend reads only `/api/v3`. v0.2 dashboard pages are removed; the v0.2 API remains. |
-| M4 Merge to main | pending | Needs review of `architecture/v3`. |
+| M4 Merge to main | **merged** (2026-09-27) | `architecture/v3` merged into `main` with `--no-ff` (17d667d), keeping its individual commits. Not yet done: the packaging split (ADR-0008; needs owner approval, the default `pip install agentwatch-ai` is unchanged) and a release tag/version bump (tags publish to PyPI). |
 | M5 Retire | pending | After a deprecation window. |
 
 CLI changes: v3 commands are canonical, and the v0.2 `compare` moved to `agentwatch legacy compare`. v0.2 data in Postgres `agent_events` can be exported as JSONL and imported with `agentwatch ingest file.jsonl`. It goes through `LegacyTranslator` with loss reporting.

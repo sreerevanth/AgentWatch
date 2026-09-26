@@ -2,7 +2,7 @@
 
 Branch `architecture/v3` · assessed 2026-09-26 · proposed release: **0.3.0 (pre-1.0)**, per MIGRATION_MAP stage M4.
 
-**Recommendation:** the branch meets the release quality bar for a pre-1.0 release in which the analytic layers are labelled EXPERIMENTAL. One decision remains with the owner: whether to merge to `main` now, and whether to do the packaging split (ADR-0008) as part of that merge (section 7). Nothing has been merged.
+**Status (2026-09-27):** merged into `main` with `--no-ff` (merge commit `17d667d`), keeping every v3 commit. Development continues directly on `main`. Still open: the packaging split (ADR-0008) — the default `pip install agentwatch-ai` is deliberately unchanged until the owner approves it — and a release tag (tags publish to PyPI; none has been created).
 
 ## 1. Quality bar
 
@@ -141,10 +141,8 @@ The failed recall metrics are the deliberate trade-off of ADR-0017. Content that
 - **Encrypted payloads.** If payload encryption was enabled, keep the key table (`aw3_data_keys`): observations encrypted under it are unreadable without it.
 - **Clients.** v0.2 clients never depended on v3 endpoints. v3-only clients (frontend v3 views, `/api/v3` users) must be pointed back to the v0.2 dashboard.
 
-## 9. Decision needed
+## 9. Decisions
 
-**Merge `architecture/v3` to `main` as 0.3.0?** Choose one:
-
-- (a) **Merge now, packaging split later.** The default install stays as today; the split is announced for 0.4.
-- (b) **Merge with the packaging split** (ADR-0008). This is a breaking change to what `pip install agentwatch-ai` installs.
-- (c) **Hold** until a real-model AWBench run is available. The declared-instrumentation held-out run is done (section 3): it met every threshold.
+- **Merge to `main`**: done (option a — merged now, packaging split later), 2026-09-27, `17d667d`.
+- **Packaging split** (ADR-0008): pending the owner's explicit approval; it will be its own sequence of commits.
+- **Release tag / version bump**: not created. Pushing a `v*` tag publishes to PyPI.
