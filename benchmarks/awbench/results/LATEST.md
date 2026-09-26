@@ -1,7 +1,7 @@
 # AWBench results (machine-generated — do not edit)
 
-- generated: 2026-09-26T08:06:54.961101+00:00
-- git: `223b13aea0389356930ab327c61ebd75de086c3f` · registry sha256 `496fd25eab35`
+- generated: 2026-09-26T10:48:46.818299+00:00
+- git: `1cf38867df1961266297aac9ca6cd52545a159e6` · registry sha256 `4098e99d6e5c`
 - runs: 108 · seeds: 3 · models: deterministic stubs (no real LLMs)
 - python 3.14.2 on Windows-11-10.0.26200-SP0
 
@@ -13,8 +13,8 @@
 | h2_structure | execution_recall | 1.0 | 1.0–1.0 (n=3) |  |  |
 | h2_structure | execution_f1 | 1.0 | 1.0–1.0 (n=3) | 0.9 | yes |
 | h2_structure | baseline_temporal_f1 | 0.2664 | 0.2689–0.2689 (n=3) |  |  |
-| h2_structure | information_recall | 0.845 | 0.8857–0.8857 (n=3) | 0.75 | yes |
-| h2_structure | information_precision | 0.7823 | 0.7266–0.8158 (n=3) | 0.75 | yes |
+| h2_structure | information_recall | 0.7907 | 0.819–0.819 (n=3) | 0.75 | yes |
+| h2_structure | information_precision | 0.7846 | 0.7288–0.8113 (n=3) | 0.75 | yes |
 | h3_lineage | lineage_membership_precision | 0.9431 | 0.9286–0.9398 (n=3) |  |  |
 | h3_lineage | lineage_membership_recall | 0.8319 | 0.8764–0.8764 (n=3) |  |  |
 | h3_lineage | lineage_membership_f1 | 0.884 | 0.9017–0.907 (n=3) | 0.8 | yes |
@@ -34,7 +34,10 @@
 | explanation_faithfulness | evidence_resolves | 1.0 | 1.0–1.0 (n=3) | 1.0 | yes |
 | explanation_faithfulness | numbers_grounded | 1.0 | 1.0–1.0 (n=3) | 0.95 | yes |
 
-## Held-out architecture (map_reduce; not used during development)
+## Held-out architecture: map_reduce
+
+Informed fixes after its first runs (ground-truth corrections; M005 v2; most-recent-producer traversal; MATCHES_CONTENT). Its information-precision and motif-precision numbers are development evidence, not held-out evidence.
+
 
 | task | metric | measured | threshold | met |
 |---|---|---|---|---|
@@ -43,7 +46,7 @@
 | h2_structure | execution_f1 | 1.0 | 0.9 | yes |
 | h2_structure | baseline_temporal_f1 | 0.2834 |  |  |
 | h2_structure | information_recall | 0.9205 | 0.75 | yes |
-| h2_structure | information_precision | 0.403 | 0.75 | **no** |
+| h2_structure | information_precision | 0.4332 | 0.75 | **no** |
 | h3_lineage | lineage_membership_precision | 0.8738 |  |  |
 | h3_lineage | lineage_membership_recall | 0.8955 |  |  |
 | h3_lineage | lineage_membership_f1 | 0.8845 | 0.8 | yes |
@@ -52,6 +55,33 @@
 | h4_divergence | baseline_index_aligned_top1 | 1.0 |  |  |
 | h5_motifs | micro_precision | 1.0 | 0.9 | yes |
 | h5_motifs | micro_recall | 1.0 | 0.8 | yes |
+| replay_fidelity | l1_consistency | 1.0 | 1.0 | yes |
+| replay_fidelity | l2_mean_reproduction | 1.0 | 0.99 | yes |
+| counterfactual_quality | simulated_outcome_accuracy | 1.0 | 0.8 | yes |
+| explanation_faithfulness | evidence_resolves | 1.0 | 1.0 | yes |
+| explanation_faithfulness | numbers_grounded | 1.0 | 0.95 | yes |
+
+## Held-out architecture: hybrid_rag_cache
+
+Committed before its first run, after all changes above. Its results are held-out evidence.
+
+
+| task | metric | measured | threshold | met |
+|---|---|---|---|---|
+| h2_structure | execution_precision | 1.0 |  |  |
+| h2_structure | execution_recall | 1.0 |  |  |
+| h2_structure | execution_f1 | 1.0 | 0.9 | yes |
+| h2_structure | baseline_temporal_f1 | 0.1931 |  |  |
+| h2_structure | information_recall | 0.9235 | 0.75 | yes |
+| h2_structure | information_precision | 0.5312 | 0.75 | **no** |
+| h3_lineage | lineage_membership_precision | 0.9897 |  |  |
+| h3_lineage | lineage_membership_recall | 0.932 |  |  |
+| h3_lineage | lineage_membership_f1 | 0.96 | 0.8 | yes |
+| h4_divergence | top1_localization | 1.0 | 0.7 | yes |
+| h4_divergence | root_at_or_upstream | 1.0 | 0.9 | yes |
+| h4_divergence | baseline_index_aligned_top1 | 1.0 |  |  |
+| h5_motifs | micro_precision | 1.0 | 0.9 | yes |
+| h5_motifs | micro_recall | 0.5532 | 0.8 | **no** |
 | replay_fidelity | l1_consistency | 1.0 | 1.0 | yes |
 | replay_fidelity | l2_mean_reproduction | 1.0 | 0.99 | yes |
 | counterfactual_quality | simulated_outcome_accuracy | 1.0 | 0.8 | yes |
