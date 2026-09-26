@@ -11,15 +11,191 @@ changelog:
       of the reported divergence" instead of the top-3 metric sketched in
       RESEARCH_HYPOTHESES.md, because the v3 comparator reports a single earliest divergence.
 
+  - date: 2026-09-26
+    note: >
+      Added held-out architecture map_reduce (fan-out workers, multi-parent reducer, critic).
+      It was designed after AgentWatch development and is scored separately with the same
+      thresholds. AgentWatch code is not to be changed in response to its results before they
+      are recorded.
+  - date: 2026-09-26
+    note: >
+      Ground-truth corrections to map_reduce after its first run (results of that run are kept
+      in results/): retrieval perturbations now hit only worker 1 as the ground truth states
+      (they previously hit all workers), the message_loss root cause is the missing message,
+      and lab tasks intervene on the ground-truth root-cause retrieval instead of the first
+      retrieval. No AgentWatch code was changed.
+  - date: 2026-09-26
+    note: >
+      Information-flow reachability (H2) follows flow relations only (PRODUCES, CONSUMES,
+      DERIVES_FROM, CONTAINS_ITEM, TRANSFERS), matching provenance. AgentWatch added a
+      non-flow MATCHES_CONTENT relation (content similarity into externally sourced artifacts).
+  - date: 2026-09-26
+    note: >
+      Added a second held-out architecture, hybrid_rag_cache (vector + keyword retrieval,
+      dedupe tool, answerer over a growing multi-turn history, cache write/read-back). It was
+      designed after the most-recent-producer traversal, MATCHES_CONTENT and M005 v2 changes
+      and is committed before its first run, so its results are held-out evidence for them.
+      map_reduce informed those changes and is now reported as "used for development" for the
+      affected metrics. Held-out results are reported per architecture, no longer pooled.
+      AgentWatch code is not to be changed in response to hybrid_rag_cache results before
+      they are recorded.
+  - date: 2026-09-26
+    note: >
+      hybrid_rag_cache first run recorded unchanged (commit 0ae22dc). AgentWatch then changed
+      in response (content-containment shortcuts through an intermediate are reduced), so
+      hybrid_rag_cache is no longer held-out evidence for H2 information precision or H5.
+      A third held-out architecture is needed to validate that change.
+  - date: 2026-09-26
+    note: >
+      Ground-truth correction (benchmark, not AgentWatch): M006 (information bottleneck) is a
+      structural property of a run, not an injected fault, but only hybrid_rag_cache declared
+      it. Its expectation is now derived for every run from the ground-truth data flow using
+      the motif's definition (tasks.true_bottleneck). Made after seeing M006 fire on the
+      development set once content shortcuts were reduced; both the scenario-declared and the
+      derived scoring can be reproduced from the recorded ground truth.
+  - date: 2026-09-26
+    note: >
+      Pre-registered the third held-out architecture async_event_pipeline (architecture commit
+      88f46a9); see architecture_status.async_event_pipeline.preregistration. Added computed
+      architecture status (DEVELOPMENT / HELD_OUT / FORMER_HELD_OUT).
+  - date: 2026-09-26
+    note: >
+      Evaluator adaptation to information instances (ADR-0017), before the async_event_pipeline
+      run and without changing what is counted: H2 attributes an information node to the event
+      that produced it by parsing inst:<event>/o.. (previously by content id); H3 asks lineage
+      of the exact value the final operation produced (inst:<event>/o<k>) instead of its content
+      id. H2 additionally REPORTS (no threshold) information precision/recall if ambiguous
+      candidates were followed as flow. H1 adds an otel_enriched sensor run (AgentWatch OTel
+      extension, ADR-0018) reported as cross_source_kind_f1_enriched with NO threshold; the
+      thresholded cross_source_kind_f1 remains OTel-only.
+  - date: 2026-09-26
+    note: >
+      async_event_pipeline first scored run recorded unchanged (commit a00dac2; run at 9f7e97c).
+      Held-out result: information precision 0.95 (met), recall 0.51, lineage F1 0.33
+      (precision 1.0, recall 0.20), H4 top-1 0.89 (met) / root-at-or-upstream 0.89, motif
+      precision 1.0 (met) / recall 0.64. Afterwards AgentWatch changed in response (retry
+      alignment in compare; declared structure outranks content for outputs, b2af8bb), so the
+      architecture is FORMER_HELD_OUT for later runs. No threshold or ground truth was changed.
+  - date: 2026-09-27
+    note: >
+      Pre-registered the fourth held-out architecture code_review_pipeline (architecture commit
+      250edad): high-fidelity instrumentation; see architecture_status.code_review_pipeline.
+  - date: 2026-09-27
+    note: >
+      code_review_pipeline first scored run recorded unchanged (703aab0): every pre-registered
+      threshold met (information P/R 1.0/0.92, lineage F1 0.91, H4 1.0/1.0, motif P/R
+      1.0/0.89). Ground-truth correction, benchmark only (no AgentWatch change): the derived
+      M006 expectation counted an external input as >= 2 origin values; M006 requires >= 2
+      distinct origin values and an external input consumed whole is one. The three M006
+      misses of that run were all stale_memory runs whose only origin is the single diff, so
+      with the corrected derivation its motif recall is 24/24 (the recorded file is kept as
+      generated). Later runs use the corrected derivation.
+
 systems:
   tool_loop: single model-driven tool loop (native SDK; OTel variant for H1)
   rag_memory: retrieval, summarization, memory write/read, second retrieval round
   multi_agent: planner delegating to researcher/analyst/critic, synthesizer join
+  map_reduce: HELD-OUT; planner fans out to 3 workers, reducer joins (multi-parent), critic model
+  hybrid_rag_cache: HELD-OUT; vector+keyword retrieval, dedupe, answerer over growing history, cache read-back
+  code_review_pipeline: HELD-OUT; high-fidelity (declared-source) instrumentation, retrying linter, per-file reviews, dedupe, discarded polish, cache read-back, tests, report
+  async_event_pipeline: HELD-OUT; asyncio workers completing out of order, at-least-once queue, discarded draft, glossary cache hit, db read-back
+
+# Evidence status of each architecture. The runner COMPUTES the effective status:
+#   DEVELOPMENT      used while building AgentWatch
+#   HELD_OUT         declared held-out and AgentWatch (agentwatch/) is unchanged since its first
+#                    scored run, or it has not been scored yet
+#   FORMER_HELD_OUT  declared held-out, but agentwatch/ changed after its first scored run: its
+#                    later numbers can have been shaped by it and are development evidence
+# first_scored_run records the commit and results file of the first scored run.
+architecture_status:
+  tool_loop: {declared: DEVELOPMENT}
+  rag_memory: {declared: DEVELOPMENT}
+  multi_agent: {declared: DEVELOPMENT}
+  map_reduce:
+    declared: HELD_OUT
+    first_scored_run: {commit: bc93ce5, results: awbench-20260926T074623Z.json}
+  hybrid_rag_cache:
+    declared: HELD_OUT
+    first_scored_run: {commit: 1cf3886, results: awbench-20260926T104846Z.json}
+  async_event_pipeline:
+    declared: HELD_OUT
+    first_scored_run: {commit: 9f7e97c, results: awbench-20260926T145401Z.json}
+    # PRE-REGISTRATION (2026-09-26), recorded before any scored run and before the
+    # information-instance / provenance-hierarchy changes it is meant to test.
+    preregistration:
+      architecture_commit: 88f46a9
+      scenarios: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, model_substitution, message_loss, stale_memory]
+      seeds: 3
+      sensor: native, value-level spans only (no explicit instance references)
+      tasks: [h2_structure, h3_lineage, h4_divergence, h5_motifs, replay_fidelity, counterfactual_quality, explanation_faithfulness]
+      thresholds: same as the tasks section of this registry (not to be changed after the run)
+      expected_structure: >
+        request -> shared evidence retrieval -> 3 task messages -> workers (A: own retrieval;
+        B: discarded draft + analysis with identical text; C: lookup retries) -> results queue
+        (A delivered twice; the aggregator uses the first delivery of each worker) -> merge ->
+        glossary cache (2 misses with define+write, 1 hit whose value equals define#1's output)
+        -> enrich -> db write -> db read -> report. Information flows are the ground-truth
+        data_edges written by workbench.py; the draft and the second delivery of A have no
+        outgoing flow. Root causes: bad_retrieval fetch_evidence#1; corrupted_retrieval
+        retrieve:A#1; tool_timeout lookup:C#2; model_substitution the first model call to
+        execute; message_loss deliver:C#1; stale_memory read:db#1. Motifs: M001 always, M002
+        in tool_timeout, M006 derived from ground-truth flow.
+      evaluation: >
+        tasks.py semantics at this commit. Mechanical adaptation of the evaluator to new graph
+        node names is allowed before the run only if it does not change what is counted, and
+        is logged in the changelog. Run with --first-scored-run async_event_pipeline --seeds 3
+        on a clean tree; results are committed exactly as generated before any diagnosis.
+  code_review_pipeline:
+    declared: HELD_OUT
+    first_scored_run: {commit: e802336, results: awbench-20260926T184322Z.json}
+    # PRE-REGISTRATION (2026-09-27), recorded before any scored run. Tests the information
+    # model with HIGH-FIDELITY instrumentation and the post-held-out fixes of b2af8bb
+    # (retry-aware divergence; declared structure outranks content for outputs).
+    preregistration:
+      architecture_commit: 250edad
+      scenarios: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, model_substitution, stale_memory, incorrect_tool_result]
+      seeds: 3
+      sensor: native; produced values passed on as the objects returned (runtime-identity declared sources); per-file patches (list elements) by content
+      tasks: [h2_structure, h3_lineage, h4_divergence, h5_motifs, replay_fidelity, counterfactual_quality, explanation_faithfulness]
+      thresholds: same as the tasks section of this registry (not to be changed after the run)
+      expected_structure: >
+        receive_change (diff) and fetch_guidelines (retrieval) -> per file: lint (b.py fails
+        once in every scenario; 4 times in tool_timeout) -> review over (patch, lint findings,
+        guidelines) -> dedupe of the three reviews -> polish (discarded, no outgoing flow) and
+        cache write -> cache read (deserialized copy) ; run_tests over the diff -> report from
+        the cache read and the test result. Root causes: bad/corrupted_retrieval
+        fetch_guidelines#1; tool_timeout lint:b.py#2; model_substitution review:a.py#1;
+        stale_memory read:review_cache#1; incorrect_tool_result run_tests#1. Motifs: M001
+        always, M002 in tool_timeout, M006 derived from ground-truth flow.
+      evaluation: >
+        tasks.py semantics at this commit, unchanged. Run with --first-scored-run
+        code_review_pipeline --seeds 3 on a clean tree; results committed exactly as generated
+        before any diagnosis.
 
 scenarios:
   tool_loop: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, tool_error, incorrect_tool_result, context_pressure, model_substitution, latency_injection, retry_loop]
   rag_memory: [normal, bad_retrieval, corrupted_retrieval, stale_memory, duplicate_memory, model_substitution, latency_injection]
   multi_agent: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, message_duplication, message_loss, model_substitution, delegation_loop, resource_contention, retry_loop]
+
+held_out:
+  map_reduce: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, model_substitution, message_loss, latency_injection]
+  hybrid_rag_cache: [normal, bad_retrieval, corrupted_retrieval, stale_memory, duplicate_memory, model_substitution, tool_timeout]
+  async_event_pipeline: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, model_substitution, message_loss, stale_memory]
+  code_review_pipeline: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, model_substitution, stale_memory, incorrect_tool_result]
+
+held_out_notes:
+  map_reduce: >
+    Informed fixes after its first runs (ground-truth corrections; M005 v2; most-recent-producer
+    traversal; MATCHES_CONTENT). Its information-precision and motif-precision numbers are
+    development evidence, not held-out evidence.
+  async_event_pipeline: >
+    Its first run (results/awbench-20260926T145401Z.json, commit 9f7e97c) is the held-out
+    evidence for the information-instance / provenance-hierarchy model (ADR-0017). It then
+    informed two fixes (b2af8bb); later numbers are development evidence.
+  hybrid_rag_cache: >
+    Its first run (results/awbench-20260926T104846Z.json, commit 1cf3886) is the held-out
+    evidence: information precision 0.53 and motif recall 0.55 failed. It then informed the
+    content-shortcut reduction (graph.information@5); later numbers are development evidence.
 
 tasks:
   h1_normalization:

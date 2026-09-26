@@ -47,3 +47,72 @@ def test_motif_explanation_does_not_claim_none_when_motifs_exist():
     )
     assert lines == ["- M001 retry_loop: x"]
     assert explain({"type": "motifs", "result": []}) == ["No motifs detected."]
+
+
+def test_compare_blames_the_first_differing_retry_not_an_identical_one(engine, sink):
+    """Regression (held-out AWBench async_event_pipeline, tool_timeout): with retries the
+    earliest divergence is the first attempt whose outcome differs, not an attempt that
+    failed identically in both runs."""
+    from agentwatch import instrument as aw
+    from agentwatch.compare.runs import compare
+    from agentwatch.query.workspace import Workspace
+
+    def run(fails: int) -> None:
+        state = {"n": fails}
+
+        @aw.tool("lookup")
+        def lookup(x: str) -> str:
+            if state["n"]:
+                state["n"] -= 1
+                raise TimeoutError("slow")
+            return "value"
+
+        with aw.run("lookup-job"):  # same program, same run name
+            for _ in range(6):
+                try:
+                    lookup("k")
+                    break
+                except TimeoutError:
+                    continue
+
+    run(1)
+    run(3)
+    engine.ingest(sink.drafts)
+    ws = Workspace(engine)
+    base, perturbed = (r["run_id"] for r in sorted(ws.runs(), key=lambda r: r["started_at"]))
+    runs = {"perturbed": perturbed}
+    d = compare(ws, base, perturbed)["earliest_divergence"]
+    attempts = [
+        e["event_id"]
+        for e in sorted(
+            ws.events(runs["perturbed"], kind="TOOL_INVOCATION"),
+            key=lambda e: e["time"]["start"],
+        )
+    ]
+    assert d["b_event"]["event_id"] == attempts[1]  # the 2nd attempt: OK in base, ERROR here
+    assert "status OK → ERROR" in d["reasons"]
+
+
+def test_memory_read_value_is_explained_by_the_write_not_by_content(engine, sink):
+    """Regression (held-out AWBench): declared structure outranks content — a memory read that
+    returned the written value gets its lineage from the write, not from similar text."""
+    from agentwatch import instrument as aw
+    from agentwatch.query.workspace import Workspace
+
+    text = "the enriched record lists the solar and storage findings for the report"
+
+    @aw.tool("other")
+    def other() -> str:
+        return "".join(list(text))  # identical text from an unrelated producer
+
+    with aw.run("mem"):
+        other()
+        aw.memory_write("db", "record", "".join(list(text)))
+        aw.memory_read("db", "record", "".join(list(text)))
+    engine.ingest(sink.drafts)
+    ws = Workspace(engine)
+    rid = ws.resolve_run("mem")["run_id"]
+    read = next(e for e in ws.events(rid) if e["operation"] == "read:db")
+    into = [r for r in ws.relations(rid) if r["head"] == [f"inst:{read['event_id']}/o0"]]
+    assert [r["type"] for r in into] == ["PRODUCES"]  # no content-inferred parents
+    assert any(r["type"] == "TRANSFERS" for r in ws.relations(rid))

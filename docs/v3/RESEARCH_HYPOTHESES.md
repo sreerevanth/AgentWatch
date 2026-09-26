@@ -300,3 +300,117 @@ These are machine-generated values from `benchmarks/awbench/results/latest.json`
 4. **Evaluator definitions** are in `benchmarks/awbench/tasks.py`. Their docstrings and notes state what each metric does and does not measure.
 
 Before any VALIDATED claim, the next steps are held-out architectures, real-model runs, and multiple seeds.
+
+
+### 6.1 Three-seed run (2026-09-26)
+
+With seeded variability (seeds now change the retrieved documents, tool-failure counts and latency jitter), 3 seeds × 3 architectures × 16 scenarios, plus drift sets (108 runs, clean tree `a3fa5c1`):
+
+- **Not met:**
+  - **H1 cross-source kind F1 0.80** (unchanged cause: no OTel convention for artifact writes).
+  - **H2 information precision 0.747** pooled; 0.69–0.77 per seed; threshold 0.75. With varied documents, identical content produced by several events makes content-addressed flow ambiguous more often (ADR-0015). The evaluator counts every such ambiguous pair as a false positive.
+- **Met:**
+  - H2 execution F1 1.0
+  - information recall 0.85 (0.90 per seed)
+  - H3 lineage F1 0.88 (0.90–0.91)
+  - H4 top-1 0.96 (baseline 0.91)
+  - H5 precision/recall 0.94/0.94
+  - H7 drift detected with a clean control
+  - replay, counterfactual, hypotheses and faithfulness all at 1.0
+
+"Pooled" values also include the extra drift-set runs. The per-seed ranges use only each seed's matrix runs. Variance across seeds is small because the systems are stubs; it is not an estimate of real-world variance.
+
+### 6.2 Held-out architectures (2026-09-26)
+
+Held-out architectures are added after AgentWatch development, committed before their first run, and scored separately (per architecture) with the same thresholds. Once an architecture's results have led to a change in AgentWatch, it stops being held-out evidence for the affected metrics. The registry changelog records each such step.
+
+**map_reduce** (planner → 3 workers → reducer join, critic model):
+
+| step | information precision | motif precision | note |
+|---|---|---|---|
+| first run | 0.37 | 0.28 | held-out evidence; also exposed ground-truth bugs, fixed and logged |
+| after M005 v2 + most-recent-producer traversal + MATCHES_CONTENT | 0.40–0.43 | 1.0 | development evidence |
+| after content-shortcut reduction (graph.information@5) | 0.47 | 0.19 | development evidence; M006 false positive in every run (below) |
+
+**hybrid_rag_cache** (vector + keyword retrieval, dedupe tool, answerer over a growing multi-turn history, cache write and read-back). It was committed at `1cf3886`, before its first run.
+
+- **First run: held-out evidence for the fixes above.** Results file `results/awbench-20260926T104846Z.json`, commit `1cf3886`.
+  - Met: execution F1 1.0, information recall 0.92, lineage F1 0.96, H4 top-1 1.0, motif precision 1.0 (M005 v2 correct in 21/21 runs), replay, counterfactual and faithfulness.
+  - **Not met: information precision 0.53** (threshold 0.75). **Not met: motif recall 0.55**, because M006 was detected in 0/21 runs.
+  - So most-recent-producer traversal and MATCHES_CONTENT did **not** generalize enough to bring information precision to threshold on a new architecture. M005 v2 did generalize.
+- **Diagnosis of M006 and the change made.** The answerer quotes retrieved text, so the report contained that text, and every retrieved item got a direct DERIVES_FROM edge to the report, bypassing the answer. The builder now drops a direct content edge y→x when an in-system intermediate m carries *all* the text x shares with y, and y demonstrably reaches m before x exists. "Demonstrably" means either a content edge y→m, or m being produced by an event that consumed y. This is a transitive reduction, so reachability is preserved.
+- **After the change: development evidence only.** Motif precision/recall 1.0 / 0.96, information precision 0.51.
+- **A benchmark ground-truth correction was made at the same time.** M006 is structural, so its expectation is now derived from the true data flow for every run rather than declared per scenario.
+
+**What the change costs.** In map_reduce, a critic model reproduces all three worker summaries in a draft that is then discarded, and the report is assembled from the worker messages. Content cannot distinguish that unused draft from a real intermediate. The reduction therefore explains the report through the draft and reports a false bottleneck, which gives 21 M006 false positives. This is a form of the known common-source limitation (no "explaining away"): when an unused artifact reproduces the same text, content matching picks the wrong explanation. Only declared inputs on the report-writing operation could settle it, and neither stub system declares them.
+
+**Open:**
+- Information precision on both labelled architectures (0.47, 0.51). The main cause is identical content produced by several events (ADR-0015), which remains ambiguous.
+- The M006 false positive described above.
+- A third held-out architecture is needed to test the reduction.
+
+
+### 6.3 Information instances and the third held-out architecture (2026-09-26)
+
+Both earlier held-out architectures had shown the same failure: identical or overlapping content was treated as information flow. The information model was rebuilt around information instances, an evidence hierarchy and preserved ambiguity (ADR-0017), rather than patched per architecture.
+
+**Pre-registration.** `async_event_pipeline` was designed and committed before those changes were tested (architecture `88f46a9`, pre-registration `bfc68cb`). It features asyncio workers completing out of order, an at-least-once queue, a discarded draft identical to the published result, shared evidence overlapping a worker's own retrieval, retries, a glossary cache hit and a database read-back.
+
+**First scored run.** Clean tree, 3 seeds, commit `9f7e97c`, results `awbench-20260926T145401Z.json`, recorded unchanged in `a00dac2`.
+
+| task | metric | held-out result | threshold |
+|---|---|---|---|
+| H2 | execution F1 | 1.0 | 0.9 ✓ |
+| H2 | information precision | **0.95** | 0.75 ✓ |
+| H2 | information recall | 0.51 | 0.75 ✗ |
+| H3 | lineage F1 | 0.33 (precision 1.0, recall 0.20) | 0.8 ✗ |
+| H4 | top-1 / root at or upstream | 0.89 / 0.89 | 0.7 ✓ / 0.9 ✗ |
+| H5 | motif precision / recall | 1.0 / 0.64 | 0.9 ✓ / 0.8 ✗ |
+| lab, faithfulness | replay, counterfactual, faithfulness | 1.0 | ✓ |
+
+**Reading of the held-out result.**
+- **Precision generalized.** Precision is 0.95 on the unseen architecture, against 0.53 and 0.47 on first contact with the previous two held-out architectures.
+- **The cost is recall.** When content fits several producers, AgentWatch now lists candidates instead of choosing one, as ADR-0017 intends.
+  - The stub models are extractive, so every intermediate (analysis, merge, enrich, db record) is explainable from its sources. The certain lineage of the report therefore reaches the retrieved evidence and glossary definitions, not the operations in between.
+  - Following candidates too gives recall 0.58 at precision 0.36.
+
+**Diagnosis and fixes after recording (`b2af8bb`; the architecture is FORMER_HELD_OUT since).**
+1. **H4 `tool_timeout` localized in 1 of 3 seeds.** The comparator aligned steps by signature only. Extra retries were "inserted" before the first attempt, so it blamed an attempt that failed identically in both runs. The fix aligns on (signature, status) with gaps right-normalized past identical steps. After the fix, H4 is 1.0/1.0.
+2. **A hierarchy violation.** A memory read's value got content-inferred parents although the transfer from its write explains it. Declared structure now outranks content for outputs too.
+
+**Development set, after the changes** (`awbench-20260926T172315Z.json`; development evidence only):
+- information precision 0.94, recall of certain links 0.49 (0.80 with candidates);
+- lineage F1 0.42 (precision 1.0);
+- motif precision 0.94, recall 0.36 (M006: 0/81 — bottlenecks through extractive intermediates are not certain);
+- H4 0.96;
+- H1 OTel-only 0.80; with the AgentWatch extension 1.0 (unthresholded, AgentWatch's own mapping, ADR-0018).
+
+**Not yet tested.** The ambiguity is a property of value-level telemetry combined with extractive models.
+- Real models are abstractive, and declared inputs remove the ambiguity.
+- Neither case has been measured by a held-out run yet: real-model runs need a working credential, and a declared-instrumentation held-out architecture is the next benchmark to build.
+
+### 6.4 Fourth held-out architecture: high-fidelity instrumentation (2026-09-27)
+
+`code_review_pipeline` was designed after the `async_event_pipeline` fixes and committed before its only scored run (architecture `250edad`, pre-registration `e802336`). Its instrumentation passes produced values on as the objects the producing calls returned, so the SDK declares their sources. Per-file patches taken out of the diff list still reach consumers by content only, and the retrieved guidelines overlap the patches' text.
+
+**First scored run** (clean tree, 3 seeds, `awbench-20260926T184322Z.json`, recorded unchanged in `703aab0`): every pre-registered threshold was met.
+
+| task | metric | result | threshold |
+|---|---|---|---|
+| H2 | execution F1 | 1.0 | 0.9 |
+| H2 | information precision / recall | **1.0 / 0.92** | 0.75 / 0.75 |
+| H3 | lineage F1 | **0.91** (precision 1.0, recall 0.84) | 0.8 |
+| H4 | top-1 / root at or upstream | 1.0 / 1.0 (`tool_timeout` 3/3) | 0.7 / 0.9 |
+| H5 | motif precision / recall | 1.0 / 0.89 | 0.9 / 0.8 |
+| lab, faithfulness | replay, counterfactual, faithfulness | 1.0 | met |
+
+**What it shows.**
+- **Declared sources fix recall.** The information model is precise in both modes. Its best-effort recall is limited by what content can prove (§6.3); with declared sources, recall and lineage reach their thresholds on an unseen system.
+- **The retry fix generalized.** The retry-aware divergence fix (`b2af8bb`) located the root cause in all 3 `tool_timeout` runs of an architecture it was not designed on.
+
+**Ground-truth correction** (benchmark only, logged in REGISTRY):
+- All three M006 misses were `stale_memory` runs. There the report's only origin is the single diff value, and M006 requires ≥2 origin values, so AgentWatch was right not to fire.
+- The benchmark's derivation had counted every external input as two values; it now counts one.
+- With the correction, this run's motif recall is 24/24. The recorded file is kept as generated.
+
+**Status.** The architecture is now scored, so it becomes FORMER_HELD_OUT as soon as AgentWatch code changes. Capability `graph.information.high_fidelity` is VALIDATED on this evidence. It covers stub systems only, and best-effort lineage stays EXPERIMENTAL.

@@ -12,7 +12,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from agentwatch.graph.model import EVIDENCE_RANK, EvidenceClass
+from agentwatch.graph.model import EVIDENCE_RANK, STRENGTH_RANK, EvidenceClass
 
 
 @dataclass(frozen=True)
@@ -39,8 +39,11 @@ class Graph:
     ) -> None:
         """``times`` maps event nodes to start timestamps (epoch seconds). When given, traversal
         is time-respecting: a path may not reach an event that started before the event it
-        came from (information cannot flow backwards in time, even through a shared,
-        content-addressed artifact)."""
+        came from. Information nodes are instances (ADR-0017), so content-identical values
+        produced by different events are different nodes and need no further disambiguation.
+
+        Ambiguous provenance (``CANDIDATE_SOURCE``, resolution AMBIGUOUS) is not an information
+        flow and is skipped unless a traversal asks for it with ``include_ambiguous``."""
         self.relations = {r["rel_id"]: r for r in relations}
         self.times = times or {}
         self.out: dict[str, list[tuple[str, str]]] = defaultdict(
@@ -62,7 +65,17 @@ class Graph:
         types: set[str] | None,
         min_confidence: float,
         min_evidence: EvidenceClass | None,
+        include_ambiguous: bool = False,
+        min_strength: str | None = None,
     ) -> bool:
+        attrs = rel.get("attributes") or {}
+        if not include_ambiguous and (
+            attrs.get("resolution") == "AMBIGUOUS" or attrs.get("strength") == "NONE"
+        ):
+            return False  # a candidate or a similarity, not an information flow
+        if min_strength is not None and "strength" in attrs:
+            if STRENGTH_RANK[attrs["strength"]] < STRENGTH_RANK[min_strength]:
+                return False
         if views and rel["view"] not in views:
             return False
         if types and rel["type"] not in types:
@@ -87,12 +100,16 @@ class Graph:
         min_evidence: EvidenceClass | None,
         skip_kinds: Iterable[str] = (),
         direction: int = 1,
+        include_ambiguous: bool = False,
+        min_strength: str | None = None,
     ) -> list[Step]:
         vset = set(views) if views else None
         tset = set(types) if types else None
         skip = tuple(f"{k}:" for k in skip_kinds)
         seen = {start}
         out: list[Step] = []
+        eps = 1e-6
+        # state: node, depth, t (start time of the last event on the path)
         q: deque[tuple[str, int, float | None]] = deque([(start, 0, self.times.get(start))])
         while q:
             node, depth, t = q.popleft()
@@ -102,10 +119,12 @@ class Graph:
                 if nb in seen or (skip and nb.startswith(skip)):
                     continue
                 rel = self.relations[rel_id]
-                if not self._ok(rel, vset, tset, min_confidence, min_evidence):
+                if not self._ok(
+                    rel, vset, tset, min_confidence, min_evidence, include_ambiguous, min_strength
+                ):
                     continue
                 tn = self.times.get(nb)
-                if t is not None and tn is not None and (tn - t) * direction < -1e-6:
+                if t is not None and tn is not None and (tn - t) * direction < -eps:
                     continue  # would reach an event on the wrong side of time
                 seen.add(nb)
                 out.append(Step(nb, depth + 1, rel_id, rel["type"], node))
@@ -122,6 +141,8 @@ class Graph:
         min_confidence: float = 0.0,
         min_evidence: EvidenceClass | None = None,
         skip_kinds: Iterable[str] = (),
+        include_ambiguous: bool = False,
+        min_strength: str | None = None,
     ) -> list[Step]:
         return self._walk(
             node,
@@ -133,6 +154,8 @@ class Graph:
             min_confidence=min_confidence,
             min_evidence=min_evidence,
             skip_kinds=skip_kinds,
+            include_ambiguous=include_ambiguous,
+            min_strength=min_strength,
         )
 
     def descendants(
@@ -145,6 +168,8 @@ class Graph:
         min_confidence: float = 0.0,
         min_evidence: EvidenceClass | None = None,
         skip_kinds: Iterable[str] = (),
+        include_ambiguous: bool = False,
+        min_strength: str | None = None,
     ) -> list[Step]:
         return self._walk(
             node,
@@ -155,6 +180,8 @@ class Graph:
             min_confidence=min_confidence,
             min_evidence=min_evidence,
             skip_kinds=skip_kinds,
+            include_ambiguous=include_ambiguous,
+            min_strength=min_strength,
         )
 
     def parents(self, node: str, *, types: Iterable[str] = ("CONTAINS",)) -> list[str]:

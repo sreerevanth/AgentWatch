@@ -1,7 +1,7 @@
 // Pure graph utilities for the MAP view: layered layout and cone/path computation.
 // Kept free of React so they can be unit-tested.
 
-import type { Relation } from './types';
+import type { InfoEvidenceAttrs, Relation } from './types';
 
 export interface Edge {
   from: string;
@@ -152,7 +152,25 @@ export const VIEW_COLOR: Record<string, string> = {
   CAUSAL: '#f59e0b',
 };
 
-/** Opacity encodes confidence; undeclared (inferred) relations are dashed. */
+/** Categorical evidence strength of an INFORMATION relation (ADR-0017), not a probability. */
+export const STRENGTH_OPACITY: Record<string, number> = {
+  STRONG: 1,
+  MEDIUM: 0.8,
+  WEAK: 0.55,
+  NONE: 0.35,
+};
+
+/** An ambiguous candidate source or a content similarity: shown, but not an information flow. */
+export function isNonFlow(rel: Relation): boolean {
+  const a = rel.attributes as InfoEvidenceAttrs;
+  return a?.resolution === 'AMBIGUOUS' || a?.strength === 'NONE';
+}
+
+/**
+ * Information relations: opacity encodes evidence strength; inferred (best-effort) relations are
+ * dashed; ambiguous candidates and similarities are dotted. Other views: opacity encodes
+ * confidence and undeclared relations are dashed.
+ */
 export function edgeStyle(rel: Relation): {
   stroke: string;
   opacity: number;
@@ -162,6 +180,14 @@ export function edgeStyle(rel: Relation): {
     rel.view === 'CAUSAL' && rel.evidence_class
       ? (EVIDENCE_COLOR[rel.evidence_class] ?? VIEW_COLOR.CAUSAL)
       : (VIEW_COLOR[rel.view] ?? '#94a3b8');
+  const a = rel.attributes as InfoEvidenceAttrs;
+  if (a?.strength) {
+    return {
+      stroke,
+      opacity: isNonFlow(rel) ? STRENGTH_OPACITY.NONE : (STRENGTH_OPACITY[a.strength] ?? 0.5),
+      dash: isNonFlow(rel) ? '1 4' : a.strength === 'STRONG' ? undefined : '5 4',
+    };
+  }
   return {
     stroke,
     opacity: 0.25 + 0.75 * Math.max(0, Math.min(1, rel.confidence)),

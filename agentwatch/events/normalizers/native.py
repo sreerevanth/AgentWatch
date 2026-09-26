@@ -45,7 +45,7 @@ def event_kind(value: Any) -> EventKind:
 
 class NativeNormalizer(Normalizer):
     name = "native"
-    version = "1"
+    version = "2"  # 2: input sources (declared / runtime-identity references)
     source_kinds = frozenset(
         {
             "native.span.start",
@@ -56,6 +56,9 @@ class NativeNormalizer(Normalizer):
         }
     )
     maturity = "VALIDATED"
+
+    def correlation_key(self, obs: RawObservation) -> tuple[str, str] | None:
+        return self._declared_key(obs, "run_id")
 
     def normalize(
         self, observations: Sequence[RawObservation], ctx: NormalizeContext
@@ -187,7 +190,12 @@ class NativeNormalizer(Normalizer):
             if (extra.get("role"), str(extra.get("value"))) not in seen_inputs:
                 inputs.append(extra)
         for item in inputs:
-            b.input(item.get("value"), role=item.get("role") or "input", label=item.get("label"))
+            b.input(
+                item.get("value"),
+                role=item.get("role") or "input",
+                label=item.get("label"),
+                sources=tuple(item.get("sources") or ()),
+            )
         for item in ep.get("outputs") or []:
             b.output(item.get("value"), role=item.get("role") or "output", label=item.get("label"))
         unfaithful = [

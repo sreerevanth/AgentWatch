@@ -65,7 +65,7 @@ agentwatch observe python examples/research_system.py --variant flaky_tool
 
 | Source | How |
 |---|---|
-| OpenTelemetry (incl. GenAI conventions) | Send OTLP/HTTP to `POST /v1/traces`, add `AgentWatchSpanProcessor(sink)` to your SDK, or run `agentwatch ingest spans.json` |
+| OpenTelemetry (incl. GenAI conventions) | Send OTLP/HTTP to `POST /v1/traces`, add `AgentWatchSpanProcessor(sink)` to your SDK, or run `agentwatch ingest spans.json`. Optional `agentwatch.*` attributes (ADR-0018) declare artifact writes and information identity. |
 | LangChain / LangGraph | `callbacks=[AgentWatchLangChainSensor(sink)]` (keeps `run_id` / `parent_run_id`) |
 | Claude Code | `agentwatch ingest transcript.jsonl` (stream-json or transcript files) |
 | OpenAI / Anthropic SDK | `instrument_openai(client, sink)`, `instrument_anthropic(client, sink)` |
@@ -93,14 +93,47 @@ agentwatch query "why did latest take longer than latest~1?"
 
 Run references can be full ids, prefixes, run names, `latest` or `latest~N`.
 
+**Information lineage: values, evidence, ambiguity (ADR-0017)**
+
+The information graph is made of *values* (information instances), not content:
+
+- Two values with the same bytes are still two values. `report.md` written twice is two instances.
+- `inst:<event>/o<k>` is a value an event produced; `inst:<event>/in<k>` is a value an event consumed that no observed event produced as such.
+
+Every link says what supports it:
+
+| strength | evidence | mode |
+|---|---|---|
+| STRONG | the sensor declared it: an input/output, `source=`, a declared instance id, or the very object an earlier call returned | high-fidelity |
+| MEDIUM | a correlated parent span; a message on the same channel; a memory read returning the written value | best-effort |
+| WEAK | identical or contained text | best-effort |
+| NONE | similarity into retrieved/external content (`MATCHES_CONTENT`) — never a flow | — |
+
+**When several producers fit the evidence equally well, none is chosen.** For example, the report's text equals both a summary and the documents the summary copied. In that case:
+
+- the sources that are certain under every explanation get links;
+- the others are listed as *ambiguous candidates* (`CANDIDATE_SOURCE`): `provenance` prints them as "POSSIBLY from", MAP draws them dotted, and `GET /api/v3/runs/{ref}/provenance-evidence` lists them.
+
+To make lineage exact, declare what a step consumed:
+
+```python
+with aw.span("STATE_MUTATION", "write_report", facets=["artifact_creation"]) as s:
+    s.input(answer)                     # the object the model call returned: a declared reference
+    s.input(text, source=answer_span)   # or name the producing span explicitly
+    s.output(report, role="artifact", label="report.md")
+```
+
+`agentwatch inspect` reports each run's share of declared (high-fidelity) links, and how many consumed values are resolved, ambiguous or of unknown origin.
+
 **What the outputs mean**
 
 - **Missing facts stay missing.** If the source didn't declare an actor, parent, run or timestamp, the event lists it under `missing`. AgentWatch never invents these.
 - **Relation basis.**
   - `DECLARED`: the source said so.
-  - `CONTENT_MATCH`: identical content, or text containment (with a confidence).
+  - `CONTENT_MATCH`: identical content, or text containment (with the measured containment).
   - `KEY_MATCH`: same memory key, content unverified.
   - `HEURISTIC`: for example retries; labelled as such.
+  - Information relations also carry `evidence_type`, `strength` and `mode` (see above).
 - **Dependency is not causation.** `compare` reports a *dependency cone*. `causes` keeps four sections separate:
   - dependency (OBSERVATIONAL);
   - cross-run correlation (CORRELATIONAL);
@@ -156,6 +189,14 @@ agentwatch evidence show <obs_id>                            # raw observation +
 agentwatch evidence purge --older-than-days 90 --reason "retention" --yes
 agentwatch reprocess                                         # rebuild the interpretation from evidence
 ```
+
+**Per-subject erasure (crypto-shredding).** Set `AGENTWATCH_ENCRYPT_PAYLOADS=1` and declare the data subject when recording (`with aw.run("intake", subject_id="customer-42"):`). Then:
+
+```bash
+agentwatch evidence erase-subject customer-42 --reason "GDPR art. 17" --yes
+```
+
+This destroys the subject's key, purges every derived copy and rebuilds. The raw evidence chain still verifies.
 
 Raw observations cannot be updated or deleted. Database triggers reject both. Retention removes whole sealed segments, and the purge authorization is recorded. Secrets are redacted before storage, and a redaction manifest is kept.
 

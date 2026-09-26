@@ -50,6 +50,9 @@ class ClaudeCodeNormalizer(Normalizer):
     )
     maturity = "EXPERIMENTAL"
 
+    def correlation_key(self, obs: RawObservation) -> tuple[str, str] | None:
+        return self._declared_key(obs, "session_id")
+
     def normalize(
         self, observations: Sequence[RawObservation], ctx: NormalizeContext
     ) -> NormalizeResult:

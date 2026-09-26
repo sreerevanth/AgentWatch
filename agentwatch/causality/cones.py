@@ -34,9 +34,9 @@ def _cone(ws: Workspace, event_id: str, direction: str, max_depth: int) -> list[
         # the content an event produced may derive from earlier content even when the
         # event declared no inputs: walk back from its outputs too
         seen = {s.node for s in steps} | {node}
-        for o in ev["outputs"]:
+        for k in range(len(ev["outputs"])):
             for s in g.ancestors(
-                f"artifact:{o['artifact_id']}",
+                f"inst:{ev['event_id']}/o{k}",
                 types=DEP_TYPES,
                 max_depth=max_depth,
                 skip_kinds=["entity"],

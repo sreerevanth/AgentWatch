@@ -18,6 +18,19 @@ from agentwatch.query.engine import ask
 from agentwatch.query.workspace import Workspace
 from agentwatch.runtime.engine import Engine
 
+# information-flow relations (MATCHES_CONTENT is similarity, not flow; CANDIDATE_SOURCE is an
+# ambiguous candidate, not flow — both excluded, as in AgentWatch's own default traversal)
+FLOW_TYPES = ["PRODUCES", "CONSUMES", "DERIVES_FROM", "CONTAINS_ITEM", "TRANSFERS"]
+
+
+def _produced_by(node: str) -> str | None:
+    """Event that produced an information node: ``inst:<event>/o..`` (an output or an item of
+    one). Constructed-input nodes (``/in``) belong to their consumer, reached as an event."""
+    if node.startswith("inst:") and "/in" not in node:
+        return node[5:].split("/", 1)[0]
+    return None
+
+
 LEAF = {
     "TOOL_INVOCATION",
     "MODEL_INVOCATION",
@@ -88,6 +101,20 @@ def evaluate_all(
     return out
 
 
+def evaluate_held_out(ws: Workspace, engine: Engine, records: list[Any]) -> dict[str, Any]:
+    """Tasks that apply to the held-out architecture (no drift or cross-source sets)."""
+    native = [r for r in records if r.sensor == "native"]
+    return {
+        "h2_structure": h2(ws, native),
+        "h3_lineage": h3(ws, native),
+        "h4_divergence": h4(ws, native),
+        "h5_motifs": h5(ws, native),
+        "replay_fidelity": replay_fidelity(ws, engine, native),
+        "counterfactual_quality": counterfactual_quality(engine, native),
+        "explanation_faithfulness": faithfulness(ws, native),
+    }
+
+
 def _primary(records: list[Any]) -> int:
     """Lowest seed present: the seed used by the expensive lab/faithfulness tasks."""
     return min((r.seed for r in records), default=0)
@@ -115,9 +142,9 @@ def h1(ws: Workspace, records: list[Any]) -> dict[str, Any]:
                 continue
             total += 1
             unknown += e["kind"] == "UNKNOWN"
-    pairs = []
+    pairs: dict[str, list[float]] = {"otel": [], "otel_enriched": []}
     for r in records:
-        if r.sensor != "otel":
+        if r.sensor not in pairs:
             continue
         nat = _baseline(
             [x for x in records if x.sensor == "native"],
@@ -127,14 +154,26 @@ def h1(ws: Workspace, records: list[Any]) -> dict[str, Any]:
             continue
         a = {(i, e["kind"]) for i, e in id_map(ws, nat.run_id).items()}
         b = {(i, e["kind"]) for i, e in id_map(ws, r.run_id).items()}
-        pairs.append(prf(len(a & b), len(b - a), len(a - b))[2])
+        pairs[r.sensor].append(prf(len(a & b), len(b - a), len(a - b))[2])
+
+    def mean(xs: list[float]) -> float | None:
+        return round(sum(xs) / len(xs), 4) if xs else None
+
     return {
         "metrics": {
             "kind_coverage": round(1 - unknown / total, 4) if total else None,
-            "cross_source_kind_f1": round(sum(pairs) / len(pairs), 4) if pairs else None,
+            "cross_source_kind_f1": mean(pairs["otel"]),
+            "cross_source_kind_f1_enriched": mean(pairs["otel_enriched"]),
         },
-        "n": {"events": total, "cross_source_pairs": len(pairs)},
-        "notes": "cross-source compares the same program instrumented natively vs via OpenTelemetry GenAI spans",
+        "n": {
+            "events": total,
+            "cross_source_pairs": len(pairs["otel"]),
+            "enriched_pairs": len(pairs["otel_enriched"]),
+        },
+        "notes": "cross-source compares the same program instrumented natively vs via OpenTelemetry "
+        "GenAI spans (OTel-only, thresholded) and vs OpenTelemetry plus AgentWatch's own extension "
+        "attributes (ADR-0018; reported, not thresholded — the extension is AgentWatch's convention, "
+        "so its score measures AgentWatch's mapping, not interoperability with OTel as specified)",
     }
 
 
@@ -142,6 +181,7 @@ def h2(ws: Workspace, records: list[Any]) -> dict[str, Any]:
     tp = fp = fn = 0
     btp = bfp = bfn = 0
     itp = ifp = ifn = 0
+    ctp = cfp = cfn = 0
     for r in records:
         ids = id_map(ws, r.run_id)
         by_event = {e["event_id"]: i for i, e in ids.items()}
@@ -167,32 +207,40 @@ def h2(ws: Workspace, records: list[Any]) -> dict[str, Any]:
         # information flow: GT producer→consumer must be reachable in the INFORMATION view
         gt_info = {tuple(x) for x in r.gt["data_edges"] if x[0] in ids and x[1] in ids}
         gt_info_closure = {p for p in closure(r.gt["data_edges"]) if p[0] in ids and p[1] in ids}
-        # A's information reached B if B's event, or an artifact B produced, is an INFORMATION-view
+
+        # A's information reached B if B's event, or a value B produced, is an INFORMATION-view
         # descendant of A (B may declare no inputs while its output contains A's data).
-        produced_by: dict[str, set[str]] = defaultdict(set)
-        for i, e in ids.items():
-            for o in e["outputs"]:
-                produced_by[f"artifact:{o['artifact_id']}"].add(i)
-        info_reach: set[tuple[str, str]] = set()
-        for a, e in ids.items():
-            desc = g.descendants(
-                f"event:{e['event_id']}", views=["INFORMATION"], skip_kinds=["entity"], max_depth=12
-            )
-            own = {f"artifact:{o['artifact_id']}" for o in e["outputs"]}
-            for s in desc:
-                targets = (
-                    {by_event.get(s.node[6:])}
-                    if s.node.startswith("event:")
-                    else (produced_by.get(s.node, set()) if s.node not in own else set())
+        def reach(include_candidates: bool) -> set[tuple[str, str]]:
+            out: set[tuple[str, str]] = set()
+            for a, e in ids.items():
+                desc = g.descendants(
+                    f"event:{e['event_id']}",
+                    views=["INFORMATION"],
+                    types=[*FLOW_TYPES, "CANDIDATE_SOURCE"] if include_candidates else FLOW_TYPES,
+                    skip_kinds=["entity"],
+                    max_depth=12,
+                    include_ambiguous=include_candidates,
                 )
-                for b in targets - {None, a}:
-                    info_reach.add((a, b))
+                for s in desc:
+                    eid = s.node[6:] if s.node.startswith("event:") else _produced_by(s.node)
+                    b = by_event.get(eid or "")
+                    if b and b != a:
+                        out.add((a, b))
+            return out
+
+        exec_pairs = {(x[0], x[1]) for x in r.gt["exec_edges"]}
+        info_reach = reach(False)
         itp += len(gt_info & info_reach)
         ifn += len(gt_info - info_reach)
-        ifp += len(info_reach - gt_info_closure - {(x[0], x[1]) for x in r.gt["exec_edges"]})
+        ifp += len(info_reach - gt_info_closure - exec_pairs)
+        cand_reach = reach(True)
+        ctp += len(gt_info & cand_reach)
+        cfn += len(gt_info - cand_reach)
+        cfp += len(cand_reach - gt_info_closure - exec_pairs)
     p, rcl, f = prf(tp, fp, fn)
     bp, br, bf = prf(btp, bfp, bfn)
     ip, ir, _ = prf(itp, ifp, ifn)
+    cp, cr, _ = prf(ctp, cfp, cfn)
     return {
         "metrics": {
             "execution_precision": p,
@@ -201,6 +249,9 @@ def h2(ws: Workspace, records: list[Any]) -> dict[str, Any]:
             "baseline_temporal_f1": bf,
             "information_recall": ir,
             "information_precision": ip,
+            # not thresholded: the same measure if ambiguous candidates were followed as flow
+            "information_recall_with_candidates": cr,
+            "information_precision_with_candidates": cp,
         },
         "n": {"runs": len(records), "gt_exec_edges": tp + fn, "gt_info_edges": itp + ifn},
         "notes": "execution edges from DECLARED relations only; information precision counts reachable pairs not in the transitive closure of true data flow",
@@ -220,8 +271,9 @@ def h3(ws: Workspace, records: list[Any]) -> dict[str, Any]:
         outputs = ids[final]["outputs"]
         if not outputs:
             continue
-        # provenance is asked of the produced artifact ("where did report.md come from?")
-        res = lineage(ws, f"artifact:{outputs[-1]['artifact_id']}", run_id=r.run_id)
+        # provenance is asked of the produced artifact ("where did report.md come from?"):
+        # the exact value the final operation produced
+        res = lineage(ws, f"inst:{ids[final]['event_id']}/o{len(outputs) - 1}", run_id=r.run_id)
         by_event = {e["event_id"]: i for i, e in ids.items()}
         found: set[str] = set()
 
@@ -307,10 +359,46 @@ def h4(ws: Workspace, records: list[Any]) -> dict[str, Any]:
     }
 
 
+ORIGIN_KINDS = ("RETRIEVAL", "EXTERNAL_INPUT")
+
+
+def true_bottleneck(gt: dict[str, Any]) -> bool:
+    """M006 from the ground-truth data flow, by the motif's definition: some intermediate
+    operation lies on every true path from the origins (retrievals / external inputs; every
+    stub retrieval returns >= 2 documents) to the final output. M006 is structural, not an
+    injected fault, so it is derived here rather than declared per scenario."""
+    final = gt.get("final_output")
+    edges = gt["data_edges"]
+    kinds = {n: v["kind"] for n, v in gt["nodes"].items()}
+    anc = {a for a, b in closure(edges) if b == final}
+    origins = {n for n in anc if kinds.get(n) in ORIGIN_KINDS}
+    # M006 needs >= 2 distinct origin values: every stub retrieval returns >= 2 documents, an
+    # external input is one value (correction 2026-09-27, see REGISTRY changelog)
+    n_values = sum(2 if kinds.get(n) == "RETRIEVAL" else 1 for n in origins)
+    if not final or n_values < 2:
+        return False
+    inc: dict[str, list[str]] = defaultdict(list)
+    for a, b in edges:
+        inc[b].append(a)
+
+    def reached(banned: str) -> set[str]:
+        seen, stack = set(), [final]
+        while stack:
+            for p in inc.get(stack.pop(), ()):
+                if p != banned and p not in seen:
+                    seen.add(p)
+                    stack.append(p)
+        return seen
+
+    return any(not (reached(x) & origins) for x in anc - origins)
+
+
 def h5(ws: Workspace, records: list[Any]) -> dict[str, Any]:
     stats: dict[str, list[int]] = defaultdict(lambda: [0, 0, 0])  # tp, fp, fn
     for r in records:
-        expected = set(r.gt.get("expected_motifs", []))
+        expected = set(r.gt.get("expected_motifs", [])) - {"M006"}
+        if true_bottleneck(r.gt):
+            expected.add("M006")
         detected = {m["motif_id"] for m in ws.derived("motif_instance", r.run_id)}
         for m in expected | detected:
             s = stats[m]
@@ -333,7 +421,7 @@ def h5(ws: Workspace, records: list[Any]) -> dict[str, Any]:
         "metrics": {"micro_precision": p, "micro_recall": rcl},
         "n": {"runs": len(records)},
         "per_motif": per,
-        "notes": "expected motifs come from the injected scenario; motifs not injected but detected count as false positives",
+        "notes": "expected motifs come from the injected scenario (M006: derived from ground-truth data flow); motifs not expected but detected count as false positives",
     }
 
 
@@ -401,8 +489,10 @@ def _final_artifact(ws: Workspace, run_id: str) -> str | None:
     return outs[-1] if outs else None
 
 
-def _retrieval_output(ws: Workspace, run_id: str) -> Any:
-    ev = ws.events(run_id, kind="RETRIEVAL")[0]
+def _retrieval_output(ws: Workspace, run_id: str, awbench: str | None = None) -> Any:
+    """The retrieval with the given awbench id (the injected root cause), else the first."""
+    evs = ws.events(run_id, kind="RETRIEVAL")
+    ev = next((e for e in evs if awbench and awb_id(e) == awbench), evs[0])
     out = next(o for o in ev["outputs"] if o["role"] == "documents")
     return ev, ws.store.artifact(ws.tenant_id, out["artifact_id"])["content"]
 
@@ -416,8 +506,9 @@ def counterfactual_quality(engine: Engine, records: list[Any]) -> dict[str, Any]
             continue
         base = _baseline(records, r)
         ws = Workspace(engine)
-        _, clean_docs = _retrieval_output(ws, base.run_id)
-        bad_ev, _ = _retrieval_output(ws, r.run_id)
+        root = r.gt.get("root_cause")
+        _, clean_docs = _retrieval_output(ws, base.run_id, root)
+        bad_ev, _ = _retrieval_output(ws, r.run_id, root)
         res = counterfactual(ws, r.run_id, bad_ev["event_id"], clean_docs, level="L3")
         ws2 = Workspace(engine)
         branch_run = (
@@ -451,8 +542,9 @@ def causal_hypotheses(engine: Engine, records: list[Any]) -> dict[str, Any]:
             continue
         base = _baseline(records, r)
         ws = Workspace(engine)
-        _, clean_docs = _retrieval_output(ws, base.run_id)
-        bad_ev, _ = _retrieval_output(ws, r.run_id)
+        root = r.gt.get("root_cause")
+        _, clean_docs = _retrieval_output(ws, base.run_id, root)
+        bad_ev, _ = _retrieval_output(ws, r.run_id, root)
         n += 1
         h = propose(
             ws,

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import difflib
 from collections import Counter
+from collections.abc import Sequence
 from typing import Any
 
 from agentwatch.graph.traverse import Graph
@@ -110,12 +111,65 @@ def tree(
     return out
 
 
+def _right_shift_gaps(
+    ops: Sequence[tuple[str, int, int, int, int]], ka: list[str], kb: list[str]
+) -> list[tuple[str, int, int, int, int]]:
+    """Normalize insertions/deletions to the right past identical elements.
+
+    With repeated identical steps (retries) every placement of the extra steps is an equally
+    minimal alignment; the earliest *divergence* is where the shared prefix ends, so a gap is
+    shifted right while the element after it equals the gap's first element."""
+    out = list(ops)
+    for n, (tag, i1, i2, j1, j2) in enumerate(out):
+        if tag == "insert":
+            while j2 < len(kb) and i1 < len(ka) and kb[j1] == kb[j2] == ka[i1]:
+                i1, i2, j1, j2 = i1 + 1, i2 + 1, j1 + 1, j2 + 1
+            out[n] = (tag, i1, i2, j1, j2)
+        elif tag == "delete":
+            while i2 < len(ka) and j1 < len(kb) and ka[i1] == ka[i2] == kb[j1]:
+                i1, i2, j1, j2 = i1 + 1, i2 + 1, j1 + 1, j2 + 1
+            out[n] = (tag, i1, i2, j1, j2)
+    return out
+
+
+def _same_step(ea: list[dict[str, Any]], eb: list[dict[str, Any]], i: int, j: int) -> bool:
+    return i < len(ea) and j < len(eb) and signature(ea[i]) == signature(eb[j])
+
+
+def _content_divergence(x: dict[str, Any], y: dict[str, Any]) -> dict[str, Any]:
+    reasons = []
+    if x["status"] != y["status"]:
+        reasons.append(f"status {x['status']} → {y['status']}")
+    if sorted(o["artifact_id"] for o in x["outputs"]) != sorted(
+        o["artifact_id"] for o in y["outputs"]
+    ):
+        reasons.append("different output content")
+    if sorted(o["artifact_id"] for o in x["inputs"]) != sorted(
+        o["artifact_id"] for o in y["inputs"]
+    ):
+        reasons.append("different input content")
+    return {
+        "type": "content",
+        "operation": "equal-signature",
+        "a_event": _brief(x),
+        "b_event": _brief(y),
+        "reasons": reasons,
+    }
+
+
 def compare(ws: Workspace, ref_a: str, ref_b: str) -> dict[str, Any]:
     a, b = summarize(ws, ref_a), summarize(ws, ref_b)
     ea, eb = a["events"], b["events"]
     sa, sb = [signature(e) for e in ea], [signature(e) for e in eb]
     sm = difflib.SequenceMatcher(a=sa, b=sb, autojunk=False)
-    ops = sm.get_opcodes()
+    # the earliest divergence is located on (signature, status): with repeated identical calls
+    # (retries), aligning on the signature alone lets extra attempts be 'inserted' before the
+    # first one, blaming an attempt that behaved identically in both runs
+    ka = [f"{s}|{e['status']}" for s, e in zip(sa, ea, strict=True)]
+    kb = [f"{s}|{e['status']}" for s, e in zip(sb, eb, strict=True)]
+    ops = _right_shift_gaps(
+        difflib.SequenceMatcher(a=ka, b=kb, autojunk=False).get_opcodes(), ka, kb
+    )
     divergence: dict[str, Any] | None = None
     aligned: list[tuple[int, int]] = []
     for tag, i1, i2, j1, j2 in ops:
@@ -140,6 +194,11 @@ def compare(ws: Workspace, ref_a: str, ref_b: str) -> dict[str, Any]:
             first_content = (i, j, reasons)
             break
     candidates = []
+    if first_struct and _same_step(ea, eb, first_struct[0], first_struct[1]):
+        # the diverging step exists in both runs and only its status/content differs
+        i, j, _tag = first_struct
+        candidates.append((j, _content_divergence(ea[i], eb[j])))
+        first_struct = None
     if first_struct:
         i, j, tag = first_struct
         candidates.append(

@@ -8,5 +8,6 @@ from agentwatch.analysis.base import Analyzer
 def builtin_analyzers() -> list[Analyzer]:
     from agentwatch.behaviour.motifs import MotifAnalyzer
     from agentwatch.behaviour.profile import ProfileAnalyzer
+    from agentwatch.provenance.ambiguity import ProvenanceEvidenceAnalyzer
 
-    return [MotifAnalyzer(), ProfileAnalyzer()]
+    return [MotifAnalyzer(), ProfileAnalyzer(), ProvenanceEvidenceAnalyzer()]

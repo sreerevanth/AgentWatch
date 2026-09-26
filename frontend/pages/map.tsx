@@ -5,8 +5,8 @@ import { EventInspector } from '../components/v3/EventInspector';
 import { GraphView } from '../components/v3/GraphView';
 import { Shell } from '../components/v3/Shell';
 import { Empty, ErrorBox, Label, Mono, Panel } from '../components/v3/ui';
-import { useGraph, useProvenance } from '../lib/v3/client';
-import { cone, edgesOf, EVIDENCE_COLOR, VIEW_COLOR } from '../lib/v3/graph';
+import { useGraph, useProvenance, useProvenanceEvidence } from '../lib/v3/client';
+import { cone, edgesOf, EVIDENCE_COLOR, isNonFlow, VIEW_COLOR } from '../lib/v3/graph';
 
 type Focus = 'none' | 'ancestors' | 'descendants' | 'cone' | 'provenance';
 
@@ -17,22 +17,30 @@ export default function MapView() {
   const [view, setView] = useState<'execution' | 'information' | 'causal' | 'all'>('execution');
   const [kinds, setKinds] = useState({
     event: true,
-    artifact: view !== 'execution',
+    instance: view !== 'execution',
     entity: false,
   });
+  const [showCandidates, setShowCandidates] = useState(true);
   const [selected, setSelected] = useState<string | null>(null);
   const [focus, setFocus] = useState<Focus>('none');
   const g = useGraph(run, view);
   const prov = useProvenance(focus === 'provenance' ? selected : null, run);
+  const pe = useProvenanceEvidence(view === 'information' || view === 'all' ? run : undefined);
 
-  const nodes = useMemo(() => (g.data?.nodes ?? []).filter((n) => kinds[n.type]), [g.data, kinds]);
+  const nodes = useMemo(
+    () => (g.data?.nodes ?? []).filter((n) => kinds[n.type === 'artifact' ? 'instance' : n.type]),
+    [g.data, kinds],
+  );
   const visible = useMemo(() => new Set(nodes.map((n) => n.node)), [nodes]);
   const relations = useMemo(
     () =>
       (g.data?.relations ?? []).filter(
-        (r) => r.tail.some((t) => visible.has(t)) && r.head.some((h) => visible.has(h)),
+        (r) =>
+          (showCandidates || !isNonFlow(r)) &&
+          r.tail.some((t) => visible.has(t)) &&
+          r.head.some((h) => visible.has(h)),
       ),
-    [g.data, visible],
+    [g.data, visible, showCandidates],
   );
   const edges = useMemo(() => edgesOf(relations), [relations]);
   const highlight = useMemo(() => {
@@ -69,7 +77,7 @@ export default function MapView() {
                   key={v}
                   onClick={() => {
                     setView(v);
-                    setKinds({ event: true, artifact: v !== 'execution', entity: false });
+                    setKinds({ event: true, instance: v !== 'execution', entity: false });
                   }}
                   className={`rounded border px-2 py-0.5 ${view === v ? 'border-zinc-400 text-zinc-100' : 'border-zinc-700 text-zinc-500'}`}
                 >
@@ -77,16 +85,24 @@ export default function MapView() {
                 </button>
               ))}
               <span className="mx-2 text-zinc-600">|</span>
-              {(['event', 'artifact', 'entity'] as const).map((k) => (
+              {(['event', 'instance', 'entity'] as const).map((k) => (
                 <label key={k} className="flex items-center gap-1 text-zinc-400">
                   <input
                     type="checkbox"
                     checked={kinds[k]}
                     onChange={(e) => setKinds({ ...kinds, [k]: e.target.checked })}
                   />{' '}
-                  {k}s
+                  {k === 'instance' ? 'values' : k === 'entity' ? 'entities' : 'events'}
                 </label>
               ))}
+              <label className="flex items-center gap-1 text-zinc-400">
+                <input
+                  type="checkbox"
+                  checked={showCandidates}
+                  onChange={(e) => setShowCandidates(e.target.checked)}
+                />{' '}
+                ambiguous candidates
+              </label>
               <span className="mx-2 text-zinc-600">|</span>
               {(['none', 'ancestors', 'descendants', 'cone', 'provenance'] as const).map((f) => (
                 <button
@@ -131,7 +147,10 @@ export default function MapView() {
                   <span style={{ color: c }}>━</span> {k.toLowerCase()}
                 </span>
               ))}
-              <span>╌ inferred (non-declared) · opacity = confidence</span>
+              <span>
+                ━ declared · ╌ inferred (best-effort) · ┈ ambiguous candidate / similarity (not a
+                flow) · opacity = evidence strength
+              </span>
               {Object.entries(EVIDENCE_COLOR).map(([k, c]) => (
                 <span key={k}>
                   <span style={{ color: c }}>━</span> {k.toLowerCase()}
@@ -157,6 +176,48 @@ export default function MapView() {
                 </div>
               )}
             </Panel>
+            {pe.data?.summary && (
+              <Panel title="information evidence">
+                <div className="space-y-1 font-mono text-[11px] text-zinc-400">
+                  <div>
+                    declared (high-fidelity) share{' '}
+                    {pe.data.summary.high_fidelity_share === null
+                      ? 'n/a'
+                      : `${Math.round(pe.data.summary.high_fidelity_share * 100)}%`}
+                  </div>
+                  <div>
+                    consumed values:{' '}
+                    {Object.entries(pe.data.summary.consumed_values)
+                      .map(([k, v]) => `${k.toLowerCase()} ${v}`)
+                      .join(' · ')}
+                  </div>
+                  <div>
+                    by strength:{' '}
+                    {Object.entries(pe.data.summary.relations_by_strength)
+                      .map(([k, v]) => `${k.toLowerCase()} ${v}`)
+                      .join(' · ')}
+                  </div>
+                </div>
+                {pe.data.ambiguous.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-[11px] text-amber-300/90">
+                      {pe.data.ambiguous.length} value(s) with ambiguous sources: the evidence fits
+                      several producers, so none is chosen. Declaring inputs removes the ambiguity.
+                    </p>
+                    {pe.data.ambiguous.slice(0, 12).map((a) => (
+                      <button
+                        key={a.record_id}
+                        onClick={() => setSelected(a.target)}
+                        className="block w-full truncate text-left font-mono text-[10px] text-zinc-300 hover:underline"
+                      >
+                        {a.target.slice(0, 18)}… ← {a.candidates.length} candidates
+                        {a.certain_sources.length > 0 && ` · ${a.certain_sources.length} certain`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </Panel>
+            )}
             {selectedEvent ? (
               <EventInspector
                 eventId={selectedEvent}
@@ -165,11 +226,46 @@ export default function MapView() {
               />
             ) : (
               selected && (
-                <Panel title="node">
-                  <Mono>{g.data?.nodes.find((n) => n.node === selected)?.label}</Mono>
-                  <p className="mt-1 break-all text-[11px] text-zinc-500">
-                    {g.data?.nodes.find((n) => n.node === selected)?.preview}
-                  </p>
+                <Panel title="value">
+                  {(() => {
+                    const n = g.data?.nodes.find((x) => x.node === selected);
+                    if (!n) return null;
+                    return (
+                      <div className="space-y-1">
+                        <Mono>{n.label}</Mono>
+                        {n.erased ? (
+                          <p className="text-[11px] text-rose-400">
+                            erased: the data subject was crypto-shredded
+                          </p>
+                        ) : (
+                          <p className="break-all text-[11px] text-zinc-500">{n.preview}</p>
+                        )}
+                        {n.content_id && (
+                          <p className="font-mono text-[10px] text-zinc-500">
+                            content {n.content_id.slice(0, 12)}
+                            {(n.same_content_instances ?? 0) > 1 &&
+                              ` · same bytes as ${(n.same_content_instances ?? 1) - 1} other value(s) — a distinct value all the same`}
+                          </p>
+                        )}
+                        {n.producer_event && (
+                          <button
+                            className="font-mono text-[10px] text-sky-300 hover:underline"
+                            onClick={() => setSelected(`event:${n.producer_event}`)}
+                          >
+                            produced by {n.producer_event.slice(0, 8)}
+                          </button>
+                        )}
+                        {n.consumer_event && (
+                          <button
+                            className="font-mono text-[10px] text-sky-300 hover:underline"
+                            onClick={() => setSelected(`event:${n.consumer_event}`)}
+                          >
+                            consumed by {n.consumer_event.slice(0, 8)} (no observed producer)
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </Panel>
               )
             )}

@@ -91,6 +91,11 @@ class EvidenceRequest(BaseModel):
     reproduction_confidence: float | None = None
 
 
+class EraseRequest(BaseModel):
+    subject: str
+    reason: str
+
+
 class QueryRequest(BaseModel):
     text: str
 
@@ -172,6 +177,15 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
         eng.store.seal_all(tenant_id)
         return eng.store.verify(tenant_id).to_dict()
 
+    @router.post("/api/v3/evidence/erase", tags=["v3 evidence"])
+    def erase(req: EraseRequest, tenant_id: str = Depends(tenant)) -> dict[str, Any]:
+        """Crypto-shred a data subject (irreversible)."""
+        return get_engine().erase_subject(tenant_id, req.subject, reason=req.reason, actor="api")
+
+    @router.get("/api/v3/evidence/erasures", tags=["v3 evidence"])
+    def erasures(tenant_id: str = Depends(tenant)) -> list[dict[str, Any]]:
+        return get_engine().store.erasures(tenant_id)
+
     @router.get("/api/v3/observations/{obs_id}", tags=["v3 evidence"])
     def observation(obs_id: str, tenant_id: str = Depends(tenant)) -> dict[str, Any]:
         eng = get_engine()
@@ -197,6 +211,7 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
             "observations": w.store.count_observations(w.tenant_id),
             "capabilities": [c.to_dict() for c in all_capabilities()],
             "reexecution_enabled": _reexecution_allowed(),
+            "payload_encryption": w.store.encrypt_payloads,
         }
 
     @router.get("/api/v3/live", tags=["v3"])
@@ -244,6 +259,9 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
             ]
             s["motif_instances"] = w.derived("motif_instance", s["run"]["run_id"])
             s["profile"] = next(iter(w.derived("behaviour_profile", s["run"]["run_id"])), None)
+            s["information_evidence"] = next(
+                iter(w.derived("information_evidence", s["run"]["run_id"])), None
+            )
             return s
 
         return guard(go)
@@ -280,6 +298,43 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
                 "nodes": [w.describe_node(n) for n in nodes],
                 "relations": rels,
                 "stats": w.graph(rid).stats(),
+            }
+
+        return guard(go)
+
+    @router.get("/api/v3/runs/{ref}/provenance-evidence", tags=["v3 provenance"])
+    def run_provenance_evidence(ref: str, w: Workspace = Depends(ws)) -> dict[str, Any]:
+        """How the run's information flow is supported, and every value whose source is
+        AMBIGUOUS (candidates, evidence, alternatives, certain sources)."""
+
+        def go() -> dict[str, Any]:
+            rid = w.resolve_run(ref)["run_id"]
+            return {
+                "run_id": rid,
+                "summary": next(iter(w.derived("information_evidence", rid)), None),
+                "ambiguous": w.derived("ambiguous_provenance", rid),
+            }
+
+        return guard(go)
+
+    @router.get("/api/v3/instances/{node:path}", tags=["v3 provenance"])
+    def instance(node: str, w: Workspace = Depends(ws)) -> dict[str, Any]:
+        """One information instance: its content identity, producer/consumer, and every
+        relation touching it (with evidence type, strength, resolution)."""
+
+        def go() -> dict[str, Any]:
+            n = node if node.startswith("inst:") else f"inst:{node}"
+            desc = w.describe_node(n)
+            eid = desc.get("producer_event") or desc.get("consumer_event")
+            g = w.graph(w.event(eid).get("run_id") if eid else None)
+            return {
+                "instance": desc,
+                "incoming": [
+                    {**g.relations[r], "other": w.describe_node(o)} for r, o in g.inc.get(n, [])
+                ],
+                "outgoing": [
+                    {**g.relations[r], "other": w.describe_node(o)} for r, o in g.out.get(n, [])
+                ],
             }
 
         return guard(go)
@@ -481,6 +536,21 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
             }
 
         return guard(go)
+
+    @router.get("/api/v3/experiments/{record_id}", tags=["v3 lab"])
+    def experiment(record_id: str, w: Workspace = Depends(ws)) -> dict[str, Any]:
+        """A recorded lab experiment (branch, replay, counterfactual, intervention)."""
+        doc = w.store.experiment(record_id)
+        if doc is None or doc.get("tenant_id", w.tenant_id) != w.tenant_id:
+            raise HTTPException(404, f"no experiment {record_id!r}")
+        return doc
+
+    @router.get("/api/v3/experiments", tags=["v3 lab"])
+    def experiments(
+        record_type: str = Query("branch"), subject: str | None = None, w: Workspace = Depends(ws)
+    ) -> list[dict[str, Any]]:
+        """Recorded lab experiments of one type (e.g. branch), optionally for one run."""
+        return w.store.experiments(w.tenant_id, record_type, subject)
 
     @router.post("/api/v3/counterfactual", tags=["v3 lab"])
     def counterfactual(req: CounterfactualRequest, w: Workspace = Depends(ws)) -> dict[str, Any]:

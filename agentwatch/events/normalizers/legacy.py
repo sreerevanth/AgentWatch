@@ -60,6 +60,9 @@ class LegacyNormalizer(Normalizer):
     source_kinds = frozenset({"legacy.agent_event"})
     maturity = "VALIDATED"
 
+    def correlation_key(self, obs: RawObservation) -> tuple[str, str] | None:
+        return self._declared_key(obs, "session_id")
+
     def normalize(
         self, observations: Sequence[RawObservation], ctx: NormalizeContext
     ) -> NormalizeResult:

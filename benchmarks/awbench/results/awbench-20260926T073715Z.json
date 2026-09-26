@@ -1,0 +1,486 @@
+{
+  "awbench_version": 1,
+  "registry_sha256": "5231dd928fd7edb23190a1dadb2fbf2e52003563129a2179bf23ca2d83243173",
+  "git_sha": "a3fa5c1fbd0a7627c5eacf95265a18e71d72b2be",
+  "git_dirty": false,
+  "generated_at": "2026-09-26T07:37:15.021767+00:00",
+  "environment": {
+    "python": "3.14.2",
+    "platform": "Windows-11-10.0.26200-SP0"
+  },
+  "config": {
+    "seeds": 3,
+    "drift_n": 10,
+    "runs": 108,
+    "models": "deterministic stubs (no real LLMs)"
+  },
+  "timing_s": {
+    "system_runs": 183.75,
+    "evaluation": 143.58
+  },
+  "tasks": {
+    "h1_normalization": {
+      "hypothesis": "H1",
+      "capability": "events.normalization.*",
+      "thresholds": {
+        "kind_coverage": 0.95,
+        "cross_source_kind_f1": 0.9
+      },
+      "metrics": {
+        "kind_coverage": 1.0,
+        "cross_source_kind_f1": 0.8
+      },
+      "n": {
+        "events": 927,
+        "cross_source_pairs": 3
+      },
+      "notes": "cross-source compares the same program instrumented natively vs via OpenTelemetry GenAI spans",
+      "across_seeds": {
+        "cross_source_kind_f1": {
+          "mean": 0.8,
+          "min": 0.8,
+          "max": 0.8,
+          "n_seeds": 3
+        },
+        "kind_coverage": {
+          "mean": 1.0,
+          "min": 1.0,
+          "max": 1.0,
+          "n_seeds": 3
+        }
+      },
+      "meets_threshold": {
+        "kind_coverage": true,
+        "cross_source_kind_f1": false
+      },
+      "all_thresholds_met": false
+    },
+    "h2_structure": {
+      "hypothesis": "H2",
+      "capability": "graph.execution, graph.information",
+      "thresholds": {
+        "execution_f1": 0.9,
+        "information_recall": 0.75,
+        "information_precision": 0.75
+      },
+      "metrics": {
+        "execution_precision": 1.0,
+        "execution_recall": 1.0,
+        "execution_f1": 1.0,
+        "baseline_temporal_f1": 0.2664,
+        "information_recall": 0.8527,
+        "information_precision": 0.7466
+      },
+      "n": {
+        "runs": 105,
+        "gt_exec_edges": 762,
+        "gt_info_edges": 387
+      },
+      "notes": "execution edges from DECLARED relations only; information precision counts reachable pairs not in the transitive closure of true data flow",
+      "across_seeds": {
+        "baseline_temporal_f1": {
+          "mean": 0.2689,
+          "min": 0.2689,
+          "max": 0.2689,
+          "n_seeds": 3
+        },
+        "execution_f1": {
+          "mean": 1.0,
+          "min": 1.0,
+          "max": 1.0,
+          "n_seeds": 3
+        },
+        "execution_precision": {
+          "mean": 1.0,
+          "min": 1.0,
+          "max": 1.0,
+          "n_seeds": 3
+        },
+        "execution_recall": {
+          "mean": 1.0,
+          "min": 1.0,
+          "max": 1.0,
+          "n_seeds": 3
+        },
+        "information_precision": {
+          "mean": 0.7176,
+          "min": 0.6912,
+          "max": 0.7705,
+          "n_seeds": 3
+        },
+        "information_recall": {
+          "mean": 0.8952,
+          "min": 0.8952,
+          "max": 0.8952,
+          "n_seeds": 3
+        }
+      },
+      "meets_threshold": {
+        "execution_f1": true,
+        "information_recall": true,
+        "information_precision": false
+      },
+      "all_thresholds_met": false
+    },
+    "h3_lineage": {
+      "hypothesis": "H3",
+      "capability": "provenance.lineage",
+      "thresholds": {
+        "lineage_membership_f1": 0.8
+      },
+      "metrics": {
+        "lineage_membership_precision": 0.9431,
+        "lineage_membership_recall": 0.8319,
+        "lineage_membership_f1": 0.884
+      },
+      "n": {
+        "runs": 105
+      },
+      "notes": "does lineage(final output) contain exactly the operations whose data truly flowed into it",
+      "across_seeds": {
+        "lineage_membership_f1": {
+          "mean": 0.9035,
+          "min": 0.9017,
+          "max": 0.907,
+          "n_seeds": 3
+        },
+        "lineage_membership_precision": {
+          "mean": 0.9323,
+          "min": 0.9286,
+          "max": 0.9398,
+          "n_seeds": 3
+        },
+        "lineage_membership_recall": {
+          "mean": 0.8764,
+          "min": 0.8764,
+          "max": 0.8764,
+          "n_seeds": 3
+        }
+      },
+      "meets_threshold": {
+        "lineage_membership_f1": true
+      },
+      "all_thresholds_met": true
+    },
+    "h4_divergence": {
+      "hypothesis": "H4",
+      "capability": "compare.runs",
+      "thresholds": {
+        "top1_localization": 0.7,
+        "root_at_or_upstream": 0.9
+      },
+      "metrics": {
+        "top1_localization": 0.9571,
+        "root_at_or_upstream": 0.9571,
+        "baseline_index_aligned_top1": 0.9143
+      },
+      "n": {
+        "perturbed_runs": 70
+      },
+      "per_scenario_top1": {
+        "bad_retrieval": 1.0,
+        "context_pressure": 1.0,
+        "corrupted_retrieval": 1.0,
+        "delegation_loop": 1.0,
+        "incorrect_tool_result": 1.0,
+        "message_duplication": 1.0,
+        "message_loss": 1.0,
+        "model_substitution": 1.0,
+        "resource_contention": 0.0,
+        "retry_loop": 1.0,
+        "stale_memory": 1.0,
+        "tool_error": 1.0,
+        "tool_timeout": 1.0
+      },
+      "across_seeds": {
+        "baseline_index_aligned_top1": {
+          "mean": 0.9048,
+          "min": 0.9048,
+          "max": 0.9048,
+          "n_seeds": 3
+        },
+        "root_at_or_upstream": {
+          "mean": 0.9524,
+          "min": 0.9524,
+          "max": 0.9524,
+          "n_seeds": 3
+        },
+        "top1_localization": {
+          "mean": 0.9524,
+          "min": 0.9524,
+          "max": 0.9524,
+          "n_seeds": 3
+        }
+      },
+      "meets_threshold": {
+        "top1_localization": true,
+        "root_at_or_upstream": true
+      },
+      "all_thresholds_met": true
+    },
+    "h5_motifs": {
+      "hypothesis": "H5",
+      "capability": "behaviour.motifs",
+      "thresholds": {
+        "micro_precision": 0.9,
+        "micro_recall": 0.8
+      },
+      "metrics": {
+        "micro_precision": 0.9412,
+        "micro_recall": 0.9412
+      },
+      "n": {
+        "runs": 105
+      },
+      "per_motif": {
+        "M001": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tp": 12,
+          "fp": 0,
+          "fn": 0
+        },
+        "M002": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tp": 12,
+          "fp": 0,
+          "fn": 0
+        },
+        "M003": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "M004": {
+          "precision": 1.0,
+          "recall": 0.8571,
+          "f1": 0.9231,
+          "tp": 18,
+          "fp": 0,
+          "fn": 3
+        },
+        "M005": {
+          "precision": 1.0,
+          "recall": 1.0,
+          "f1": 1.0,
+          "tp": 3,
+          "fp": 0,
+          "fn": 0
+        },
+        "M007": {
+          "precision": 0.0,
+          "recall": 1.0,
+          "f1": 0.0,
+          "tp": 0,
+          "fp": 3,
+          "fn": 0
+        }
+      },
+      "notes": "expected motifs come from the injected scenario; motifs not injected but detected count as false positives",
+      "across_seeds": {
+        "micro_precision": {
+          "mean": 0.9412,
+          "min": 0.9412,
+          "max": 0.9412,
+          "n_seeds": 3
+        },
+        "micro_recall": {
+          "mean": 0.9412,
+          "min": 0.9412,
+          "max": 0.9412,
+          "n_seeds": 3
+        }
+      },
+      "meets_threshold": {
+        "micro_precision": true,
+        "micro_recall": true
+      },
+      "all_thresholds_met": true
+    },
+    "h7_drift": {
+      "hypothesis": "H7",
+      "capability": "behaviour.drift",
+      "thresholds": {
+        "detects_model_substitution": true,
+        "control_flagged_features_max": 0
+      },
+      "metrics": {
+        "detects_model_substitution": true,
+        "control_flagged_features_max": 0,
+        "candidate_flagged_features": 1
+      },
+      "n": {
+        "baseline": 10,
+        "candidate": 10,
+        "control": 10
+      },
+      "flagged": {
+        "model_substitution": [
+          "model_output_bytes_mean"
+        ],
+        "control": []
+      },
+      "notes": "tool_loop normal vs model_substitution; control = normal vs normal (different seeds)",
+      "meets_threshold": {
+        "detects_model_substitution": true,
+        "control_flagged_features_max": true
+      },
+      "all_thresholds_met": true
+    },
+    "replay_fidelity": {
+      "hypothesis": null,
+      "capability": "lab.replay",
+      "thresholds": {
+        "l1_consistency": 1.0,
+        "l2_mean_reproduction": 0.99
+      },
+      "metrics": {
+        "l1_consistency": 1.0,
+        "l2_mean_reproduction": 1.0
+      },
+      "n": {
+        "l1": 27,
+        "l2": 8
+      },
+      "across_seeds": {
+        "l1_consistency": {
+          "mean": 1.0,
+          "min": 1.0,
+          "max": 1.0,
+          "n_seeds": 3
+        },
+        "l2_mean_reproduction": {
+          "mean": 1.0,
+          "min": 1.0,
+          "max": 1.0,
+          "n_seeds": 3
+        }
+      },
+      "meets_threshold": {
+        "l1_consistency": true,
+        "l2_mean_reproduction": true
+      },
+      "all_thresholds_met": true
+    },
+    "counterfactual_quality": {
+      "hypothesis": "H10",
+      "capability": "lab.counterfactual",
+      "thresholds": {
+        "simulated_outcome_accuracy": 0.8
+      },
+      "metrics": {
+        "simulated_outcome_accuracy": 1.0
+      },
+      "n": {
+        "counterfactuals": 3
+      },
+      "details": [
+        {
+          "arch": "tool_loop",
+          "label": "SIMULATED",
+          "matches_actual_clean_run": true
+        },
+        {
+          "arch": "rag_memory",
+          "label": "SIMULATED",
+          "matches_actual_clean_run": true
+        },
+        {
+          "arch": "multi_agent",
+          "label": "SIMULATED",
+          "matches_actual_clean_run": true
+        }
+      ],
+      "notes": "substitute the clean retrieval result into a corrupted run; the simulated final report must equal the actually observed clean report",
+      "across_seeds": {
+        "simulated_outcome_accuracy": {
+          "mean": 1.0,
+          "min": 1.0,
+          "max": 1.0,
+          "n_seeds": 3
+        }
+      },
+      "meets_threshold": {
+        "simulated_outcome_accuracy": true
+      },
+      "all_thresholds_met": true
+    },
+    "causal_hypotheses": {
+      "hypothesis": "H8",
+      "capability": "causality.hypotheses",
+      "thresholds": {
+        "true_hypothesis_supported": 0.8,
+        "control_not_supported": 0.8
+      },
+      "metrics": {
+        "true_hypothesis_supported": 1.0,
+        "control_not_supported": 1.0
+      },
+      "n": {
+        "scenarios": 3
+      },
+      "notes": "hypotheses become SUPPORTED only through recorded interventions",
+      "across_seeds": {
+        "control_not_supported": {
+          "mean": 1.0,
+          "min": 1.0,
+          "max": 1.0,
+          "n_seeds": 3
+        },
+        "true_hypothesis_supported": {
+          "mean": 1.0,
+          "min": 1.0,
+          "max": 1.0,
+          "n_seeds": 3
+        }
+      },
+      "meets_threshold": {
+        "true_hypothesis_supported": true,
+        "control_not_supported": true
+      },
+      "all_thresholds_met": true
+    },
+    "explanation_faithfulness": {
+      "hypothesis": null,
+      "capability": "query.engine",
+      "thresholds": {
+        "evidence_resolves": 1.0,
+        "numbers_grounded": 0.95
+      },
+      "metrics": {
+        "evidence_resolves": 1.0,
+        "numbers_grounded": 1.0
+      },
+      "n": {
+        "answers": 24,
+        "numbers": 252
+      },
+      "notes": "every cited id must resolve; every number in the answer must appear in (or be a percentage of) the structured result",
+      "across_seeds": {
+        "evidence_resolves": {
+          "mean": 1.0,
+          "min": 1.0,
+          "max": 1.0,
+          "n_seeds": 3
+        },
+        "numbers_grounded": {
+          "mean": 1.0,
+          "min": 1.0,
+          "max": 1.0,
+          "n_seeds": 3
+        }
+      },
+      "meets_threshold": {
+        "evidence_resolves": true,
+        "numbers_grounded": true
+      },
+      "all_thresholds_met": true
+    }
+  }
+}

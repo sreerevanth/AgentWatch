@@ -87,16 +87,20 @@ def run_by(ws: Workspace, i: int) -> str:
     return sorted(ws.runs(), key=lambda r: r["started_at"])[i]["run_id"]
 
 
-def test_provenance_reaches_retrieved_documents_through_memory(ws):
+def test_provenance_reaches_retrieved_documents_and_exposes_ambiguity(ws):
+    """The report is written from a memory note whose text equals the summary, which (the stub
+    summarizer being extractive) is the retrieved text itself. Content cannot tell which of
+    documents / summary / note the writer used: the documents are certain (an ancestor under
+    every explanation), the note is shown as an ambiguous candidate, nothing is invented."""
     rid = run_by(ws, 0)
     res = lineage(ws, "report.md", run_id=rid)
     text = "\n".join(render(res))
     assert "RETRIEVAL kb" in text, text
-    assert "via memory from MEMORY_ACCESS write:notes" in text
-    assert "MODEL_INVOCATION stub/summarizer" in text
+    assert "POSSIBLY from (ambiguous)" in text
+    assert res["metrics"]["ambiguous_candidates"]
     assert res["metrics"]["provenance_depth"] >= 4
-    # every non-declared step reports its basis and confidence
-    assert "content_match" in text
+    # every non-declared step reports its evidence type and strength
+    assert "content_containment, WEAK" in text
 
 
 def test_dependents_of_retrieval_include_report(ws):
@@ -193,6 +197,8 @@ def test_hyperedge_traversal_and_causal_view_rules():
 def test_retry_and_repeat_motifs(ws):
     inst = ws.derived("motif_instance", run_by(ws, 1))
     ids = {m["motif_id"] for m in inst}
+    # no M006: the (extractive) summary is not established as the only route from the documents
+    # to the report — content cannot tell the report was not built from the documents directly
     assert ids == {"M001", "M002"}
     retry = next(m for m in inst if m["motif_id"] == "M001")
     assert retry["measures"]["attempts"] == 3 and retry["measures"]["recovered"] is True
@@ -245,18 +251,34 @@ def test_retrieval_echo(engine, sink):
 
 
 def test_context_expansion(engine, sink):
-    @aw.model("m")
+    @aw.model("m", actor="agent:a")
     def gen(p):
         return "ok"
 
     def body():
-        ctx = "x"
-        for _ in range(4):
-            ctx = ctx * 3
+        ctx = "the agent keeps the whole conversation history in its working context"
+        for turn in range(4):
+            ctx = ctx + f" turn {turn} adds another observation to the growing context window"
             gen(ctx)
 
     m = _motif_run(engine, sink, body)
     assert "M005" in m and m["M005"]["measures"]["growth"] >= 1.5
+
+
+def test_context_expansion_ignores_independent_actors(engine, sink):
+    """Regression (held-out AWBench): v1 fired when different workers called one model with
+    successively larger but unrelated prompts."""
+
+    def body():
+        for i, words in enumerate([12, 20, 35, 60]):
+
+            @aw.model("m", actor=f"agent:worker{i}")
+            def gen(p):
+                return "ok"
+
+            gen(" ".join(f"w{i}x{k}" for k in range(words)))
+
+    assert "M005" not in _motif_run(engine, sink, body)
 
 
 def test_hypothesis_evidence_class_is_computed(ws):
@@ -430,3 +452,133 @@ def test_traversal_respects_time_through_shared_artifacts():
     assert "event:late" not in {s.node for s in g.ancestors("event:early")}
     untimed = Graph(rels)
     assert "event:early" in {s.node for s in untimed.descendants("event:late")}
+
+
+def test_identical_documents_in_two_workers_resolve_by_declared_scope(engine, sink):
+    """Regression (held-out AWBench, fan-out; ADR-0017): two workers retrieve the same document.
+    Each worker's model call must trace to its own retrieval — the copy produced inside its own
+    declared scope — not to the earlier identical one."""
+
+    @aw.retriever("kb")
+    def search(q):
+        return DOCS
+
+    def body():
+        for w in range(2):
+            with aw.span("OPERATION", f"worker{w}", actor=f"agent:w{w}"):
+                docs = search(f"q{w}")
+
+                @aw.model("m", actor=f"agent:w{w}")
+                def gen(p):
+                    return f"worker {w} reply"
+
+                gen("Context:\n" + "\n".join(d["text"] for d in docs))
+
+    _motif_run(engine, sink, body)
+    ws = Workspace(engine)
+    run = ws.resolve_run("latest")["run_id"]
+    g = ws.graph(run)
+    retrievals = ws.events(run, kind="RETRIEVAL")
+    models = ws.events(run, kind="MODEL_INVOCATION")
+    for r, m in zip(retrievals, models, strict=True):
+        up = {
+            s.node
+            for s in g.ancestors(
+                f"event:{m['event_id']}",
+                types=["PRODUCES", "CONSUMES", "DERIVES_FROM", "CONTAINS_ITEM", "TRANSFERS"],
+            )
+        }
+        assert f"event:{r['event_id']}" in up
+        others = {f"event:{x['event_id']}" for x in retrievals} - {f"event:{r['event_id']}"}
+        assert not (up & others)
+
+
+def test_identical_retrievals_are_matches_not_derivations(engine, sink):
+    """Regression (held-out AWBench): content retrieved independently twice is a content
+    match, not information flow from the first retrieval to the second."""
+    text = "Solar photovoltaic panels convert sunlight into direct current electricity using silicon cells."
+
+    @aw.retriever("idx")
+    def search(q):
+        return [
+            {"id": "D1", "text": text},
+            {"id": "D2", "text": q + " is an unrelated second document about wind"},
+        ]
+
+    with aw.run("twice"):
+        search("first query words here")
+        search("second query words here")
+    engine.ingest(sink.drafts)
+    ws = Workspace(engine)
+    retrievals = ws.events(ws.resolve_run("latest")["run_id"], kind="RETRIEVAL")
+    g = ws.graph(ws.resolve_run("latest")["run_id"])
+    down = {
+        s.node
+        for s in g.descendants(
+            f"event:{retrievals[0]['event_id']}",
+            types=["PRODUCES", "CONSUMES", "DERIVES_FROM", "CONTAINS_ITEM", "TRANSFERS"],
+        )
+    }
+    assert f"event:{retrievals[1]['event_id']}" not in down
+
+
+def test_content_shortcuts_through_an_intermediate_are_reduced(engine, sink):
+    """Regression (held-out AWBench, hybrid_rag_cache): a report built from a model answer that
+    quotes retrieved text also contains that text. Every retrieved item must not also get its
+    own direct edge when an intermediate carries the text; and when content cannot prove the
+    answer (rather than the documents) was used, the answer is a candidate, not a source."""
+
+    @aw.retriever("idx")
+    def search(q):
+        return DOCS
+
+    @aw.model("m", actor="agent:a")
+    def answer(p):
+        return "Answer: " + " ".join(d["text"] for d in DOCS)
+
+    def body():
+        docs = search("solar")
+        out = answer("Context:\n" + "\n".join(d["text"] for d in docs))
+        aw.artifact("report.md", out + " Estimate: 42.")
+
+    _motif_run(engine, sink, body)
+    ws = Workspace(engine)
+    run = ws.resolve_run("latest")["run_id"]
+    report = next(e for e in ws.events(run) if "artifact_creation" in e["facets"])
+    report_node = f"inst:{report['event_id']}/o0"
+    into = [r for r in ws.relations(run) if report_node in r["head"]]
+    derived = {r["tail"][0] for r in into if r["type"] == "DERIVES_FROM"}
+    candidates = {r["tail"][0] for r in into if r["type"] == "CANDIDATE_SOURCE"}
+    model = ws.events(run, kind="MODEL_INVOCATION")[0]
+    assert f"inst:{model['event_id']}/o0" in candidates  # extractive answer: not provable
+    assert derived and all("/i" in n for n in derived)  # the documents, certain
+    # reachability is preserved: the retrieval still reaches the report
+    retrieval = ws.events(run, kind="RETRIEVAL")[0]
+    g = ws.graph(run)
+    assert report_node in {
+        s.node
+        for s in g.descendants(
+            f"event:{retrieval['event_id']}",
+            types=["PRODUCES", "CONSUMES", "DERIVES_FROM", "CONTAINS_ITEM", "TRANSFERS"],
+        )
+    }
+
+
+def test_carried_forward_history_is_not_reduced_through_a_partial_intermediate(engine, sink):
+    """The previous turn's history is contained in the next one; an answer that quotes only
+    part of it does not explain the whole carry-over, so the direct edge stays (M005)."""
+
+    @aw.model("m", actor="agent:a")
+    def answer(p):
+        return p.splitlines()[-1]
+
+    def body():
+        ctx = "History:"
+        for turn in range(3):
+            ctx += (
+                f"\nturn {turn} the user asks about solar storage and grid batteries again {turn}"
+            )
+            ctx += "\nplus notes " + " ".join(f"n{turn}w{k}" for k in range(8 * (turn + 1)))
+            answer(ctx)
+
+    assert "M005" in _motif_run(engine, sink, body)

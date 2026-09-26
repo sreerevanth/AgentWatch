@@ -29,3 +29,21 @@ Tenancy uses HMAC-keyed artifact ids per tenant, which prevents cross-tenant con
 
 - Key management becomes critical infrastructure. Loss of a tenant key means loss of that tenant's payloads. Backup procedures are documented in Phase 1.
 - Full-text search over payloads requires decryption at query time, or a separately governed index (later, opt-in).
+
+## As built (2026-09-26)
+
+- **Opt-in encryption.** Enabled with `Store(..., encrypt_payloads=True)` or `AGENTWATCH_ENCRYPT_PAYLOADS=1`; requires `cryptography`.
+  - Each (tenant, subject) pair gets its own AES-256-GCM key in `aw3_data_keys`.
+  - The subject is the declared id `subject_id`, e.g. `aw.run(..., subject_id=...)`. Observations without one use the tenant default key.
+- **What is hashed.** Stored payloads are ciphertext (`enc:v1:<key_id>:…`), and the segment chain hashes the ciphertext. The dedup key is an HMAC under the subject key, so no plaintext hash survives erasure.
+- **Erasure.** `Engine.erase_subject` / `agentwatch evidence erase-subject` / `POST /api/v3/evidence/erase`:
+  1. destroys the key;
+  2. deletes every derived row of the tenant (all interpretations, and all artifacts), plus experiment records about the affected runs;
+  3. logs the erasure in `aw3_erasures`;
+  4. rebuilds. Erased observations become `payload_erased` diagnostics.
+
+  The evidence chain still verifies afterwards. New payloads for an erased subject are refused.
+- **Limitations:**
+  - Plaintext that reached systems outside AgentWatch (logs, exports, backups) is out of scope.
+  - Declared ids themselves (for example `subject_id`) are not encrypted.
+  - A process that decrypted a payload before erasure may still hold it in memory.

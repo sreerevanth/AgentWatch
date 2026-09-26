@@ -171,3 +171,59 @@ def test_cli_ingest_legacy_jsonl(tmp_path, monkeypatch, store):
     assert out["format"] == "legacy-jsonl"
     assert out["translation"]["statuses"] == {"ACCEPTED_WITH_LOSS": 2, "REJECTED": 1}
     assert out["translation"]["lost_fields"]["parent"] == 2
+
+
+def test_cli_full_surface_on_persisted_data(tmp_path, monkeypatch):
+    """Every major command against a store written by `agentwatch observe` (release gate)."""
+    from agentwatch.storage.store import Store
+
+    url = f"sqlite:///{(tmp_path / 'cli.db').as_posix()}"
+    monkeypatch.setenv("AGENTWATCH_STORE", url)
+    monkeypatch.setenv("AGENTWATCH_ENCRYPT_PAYLOADS", "1")
+    monkeypatch.setenv("COLUMNS", "250")
+    runner = CliRunner()
+
+    def run(*args: str) -> str:
+        r = runner.invoke(app, list(args))
+        assert r.exit_code == 0, (args, r.output)
+        return r.output
+
+    run("observe", "python", EXAMPLE)
+    run("observe", "python", EXAMPLE, "--variant", "flaky_tool")
+    ws = Workspace(Store(url))
+    normal, flaky = (r["run_id"] for r in sorted(ws.runs(), key=lambda r: r["started_at"]))
+    assert normal[:8] in run("runs")
+    assert "execution" in run("inspect", normal[:8]) and "information lineage" in run(
+        "inspect", normal[:8]
+    )
+    events = json.loads(run("events", normal[:8], "--json"))
+    assert events
+    tool = next(e for e in events if e["kind"] == "TOOL_INVOCATION")
+    assert tool["event_id"][:8] in run("show", tool["event_id"][:10])
+    for view in ("execution", "information", "causal", "all"):
+        for fmt in ("text", "dot", "json"):
+            run("graph", normal[:8], "--view", view, "--format", fmt)
+    assert "ambiguous candidates" in run("provenance", "report.md", "--run", normal[:8])
+    assert json.loads(run("provenance", "report.md", "--run", normal[:8], "--json"))["root"]
+    run("dependents", tool["event_id"][:10])
+    assert "Earliest divergence" in run("compare", normal[:8], flaky[:8])
+    run("motifs", flaky[:8])
+    run("motifs")
+    run("causes", tool["event_id"][:10])
+    run("effects", tool["event_id"][:10])
+    for level in ("L0", "L1", "L2"):
+        assert "reproduction confidence" in run("replay", normal[:8], "--level", level)
+    out = run("branch", normal[:8], "--at", tool["event_id"][:10], "--substitute", "42")
+    assert "branch" in out.lower()
+    assert ":= 42" in run("branches", normal[:8])
+    run("genome")
+    run("states")
+    run("forecast", normal[:8])
+    assert "store" in run("status")
+    assert json.loads(run("evidence", "verify"))["ok"] is True
+    doctor = run("doctor")
+    assert "v3 store" in doctor and "v3 evidence chain" in doctor
+    refused = runner.invoke(app, ["evidence", "erase-subject", "nobody", "--reason", "test"])
+    assert refused.exit_code == 1 and "--yes" in refused.output
+    erased = json.loads(run("evidence", "erase-subject", "nobody", "--reason", "test", "--yes"))
+    assert "subject" in json.dumps(erased)

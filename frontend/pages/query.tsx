@@ -85,8 +85,8 @@ export default function Query() {
           >
             <div className="flex max-h-60 flex-wrap gap-1 overflow-auto">
               {(a.evidence as string[]).map((ev) => {
-                const id = ev.replace(/^(event|artifact):/, '');
-                return ev.startsWith('artifact:') ? (
+                const id = ev.replace(/^(event|artifact|inst):/, '');
+                return ev.startsWith('artifact:') || ev.startsWith('inst:') ? (
                   <Label key={ev} tone="sky">
                     {ev.slice(0, 20)}
                   </Label>

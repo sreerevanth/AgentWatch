@@ -8,7 +8,7 @@ AgentWatch v3 is an instrument that reconstructs, explains, compares, replays an
 2. [V3_ARCHITECTURE.md](V3_ARCHITECTURE.md): planes, domain model, data architecture, query engine, frontend information architecture, repository restructure.
 3. [MIGRATION_MAP.md](MIGRATION_MAP.md): KEEP / ADAPT / REWRITE / DEPRECATE / REMOVE for every package; strangler migration stages M0–M5; branch procedure.
 4. [RESEARCH_HYPOTHESES.md](RESEARCH_HYPOTHESES.md): hypotheses H1–H11 with pre-registered thresholds, AWBench design, research roadmap (engineering / research / experimental), threats to validity.
-5. [adr/](adr/): architecture decision records 0001–0015.
+5. [adr/](adr/): architecture decision records 0001–0016.
 6. [PHASE1_PLAN.md](PHASE1_PLAN.md): the observation-core implementation plan, with work packages, tests and exit criteria.
 7. [USER_GUIDE.md](USER_GUIDE.md): how to use what exists.
 8. [API.md](API.md): the `/api/v3` reference.
@@ -34,6 +34,7 @@ AgentWatch v3 is an instrument that reconstructs, explains, compares, replays an
 | [0013](adr/0013-awbench-gates-claims.md) | AWBench gates every analytic claim |
 | [0014](adr/0014-reexecution-off-by-default.md) | Server-side re-execution is off by default |
 | [0015](adr/0015-content-addressed-artifacts-and-time.md) | Content-addressed artifacts: per-run relations, time-respecting traversal |
+| [0016](adr/0016-logical-legacy-quarantine.md) | Legacy quarantine is enforced logically until retirement |
 
 ## Status
 

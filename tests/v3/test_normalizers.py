@@ -355,3 +355,77 @@ def test_mcp_tap_pairs_by_jsonrpc_id(engine):
         and evs[0]["object"] == "tool:mcp/github/search_issues"
     )
     assert evs[0]["status"] == "OK"
+
+
+def _otlp_span(span_id: str, name: str, attrs: dict, parent: str | None = None, t: int = 0) -> dict:
+    def val(v):
+        return {"stringValue": v} if isinstance(v, str) else {"intValue": str(v)}
+
+    return {
+        "traceId": "b" * 32,
+        "spanId": span_id * 16,
+        **({"parentSpanId": parent * 16} if parent else {}),
+        "name": name,
+        "kind": 1,
+        "startTimeUnixNano": str(1700000000000000000 + t * 1_000_000_000),
+        "endTimeUnixNano": str(1700000000500000000 + t * 1_000_000_000),
+        "attributes": [{"key": k, "value": val(v)} for k, v in attrs.items()],
+        "status": {},
+    }
+
+
+def test_otel_agentwatch_extension_declares_artifacts_and_lineage(engine):
+    """ADR-0018: the agentwatch.* attributes (AgentWatch's own convention, not an OTel standard)
+    turn an otherwise opaque span into an artifact write whose input is a declared instance."""
+    spans = [
+        _otlp_span("1", "agent", {"gen_ai.operation.name": "invoke_agent"}),
+        _otlp_span(
+            "2",
+            "chat m",
+            {
+                "gen_ai.operation.name": "chat",
+                "gen_ai.request.model": "m",
+                "gen_ai.completion": "the summary text produced by the model for the report",
+                "agentwatch.information.instance_id": "summary-1",
+            },
+            parent="1",
+            t=1,
+        ),
+        _otlp_span("3", "write report", {}, parent="1", t=2),
+        _otlp_span(
+            "4",
+            "write report",
+            {
+                "agentwatch.artifact.operation": "create",
+                "agentwatch.artifact.id": "report.md",
+                "agentwatch.artifact.content": "# Report\nthe summary text produced by the model",
+                "agentwatch.information.source": "summary-1",
+            },
+            parent="1",
+            t=3,
+        ),
+    ]
+    otlp = {
+        "resourceSpans": [
+            {
+                "resource": {"attributes": []},
+                "scopeSpans": [{"scope": {"name": "t"}, "spans": spans}],
+            }
+        ]
+    }
+    evs, _, iid = events_of(engine, drafts_from_spans(spans_from_otlp_json(otlp)))
+    plain = next(e for e in evs if e["operation"] == "write report")
+    assert plain["kind"] == "OPERATION"  # OTel alone has no artifact-write convention
+    enriched = next(e for e in evs if e["operation"] == "create:report.md")
+    assert enriched["kind"] == "STATE_MUTATION" and "artifact_creation" in enriched["facets"]
+    assert enriched["object"] == "file:report.md"
+    chat = next(e for e in evs if e["kind"] == "MODEL_INVOCATION")
+    rels = engine.store.relations(iid, all_runs=True)
+    consumes = [
+        r
+        for r in rels
+        if r["type"] == "CONSUMES" and r["head"] == [f"event:{enriched['event_id']}"]
+    ]
+    assert [r["tail"][0] for r in consumes] == [f"inst:{chat['event_id']}/o0"]
+    assert consumes[0]["attributes"]["evidence_type"] == "DECLARED_REFERENCE"
+    assert consumes[0]["attributes"]["reference_only"] is True

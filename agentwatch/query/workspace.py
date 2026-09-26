@@ -112,6 +112,22 @@ class Workspace:
         rels = self.relations(run_id)
         vs = set(views) if views else None
         events = self.events(run_id) if run_id is not None else list(self.all_events.values())
+        if run_id is not None:
+            # a memory read may return a value written in an earlier run (a cache): include the
+            # runs such transfers reach, so provenance can follow them to the original producer
+            seen = {run_id}
+            while len(seen) < 8:
+                linked = {
+                    r["attributes"]["cross_run"]
+                    for r in rels
+                    if r["type"] == "TRANSFERS" and r["attributes"].get("cross_run")
+                } - seen
+                if not linked:
+                    break
+                for other in sorted(x for x in linked if x):
+                    seen.add(other)
+                    rels = rels + self.relations(other)
+                    events = events + self.events(other)
         times = {
             f"event:{e['event_id']}": parse_ts(e["time"]["start"]).timestamp()
             for e in events
@@ -162,16 +178,81 @@ class Workspace:
         raise NotFoundError(f"no artifact matches {ref!r}")
 
     def resolve_node(self, ref: str, run_id: str | None = None) -> str:
-        if ref.startswith("entity:"):
+        if ref.startswith(("entity:", "inst:")):
             return ref
         if ref.startswith("artifact:"):
-            return f"artifact:{self.resolve_artifact_id(ref, run_id)}"
+            return self.instance_for(self.resolve_artifact_id(ref, run_id), run_id)
         if ref.startswith("event:"):
             return f"event:{self.event(ref)['event_id']}"
         try:
             return f"event:{self.event(ref)['event_id']}"
         except (NotFoundError, AmbiguousError):
-            return f"artifact:{self.resolve_artifact_id(ref, run_id)}"
+            return self.instance_for(self.resolve_artifact_id(ref, run_id), run_id)
+
+    def instances_of(self, content_id: str, run_id: str | None = None) -> list[str]:
+        """Information instances carrying this content, oldest first (ADR-0017): equal bytes
+        produced by different events are different instances."""
+        index = self._instance_index(run_id)
+        return list(index.get(content_id, []))
+
+    def _instance_index(self, run_id: str | None) -> dict[str, list[str]]:
+        """content id -> instance nodes (produced values first, oldest first), built once."""
+        cache = self.__dict__.setdefault("_instance_index_cache", {})
+        if run_id in cache:
+            return cache[run_id]
+        scoped = sorted(
+            (e for e in self.all_events.values() if run_id is None or e.get("run_id") == run_id),
+            key=lambda e: e["time"]["start"] or "",
+        )
+        index: dict[str, list[str]] = {}
+        for e in scoped:
+            for k, a in enumerate(e["outputs"]):
+                index.setdefault(a["artifact_id"], []).append(f"inst:{e['event_id']}/o{k}")
+        runs = {run_id} if run_id else {e.get("run_id") for e in scoped}
+        for r in sorted(x for x in runs if x):
+            for rel in self.relations(r, view="INFORMATION"):
+                cid = rel["attributes"].get("content_id")
+                if not cid:
+                    continue
+                if rel["type"] == "CONTAINS_ITEM":
+                    node = rel["head"][0]
+                elif rel["type"] == "CONSUMES" and rel["tail"][0].startswith("inst:"):
+                    node = rel["tail"][0]
+                else:
+                    continue
+                nodes = index.setdefault(cid, [])
+                if node not in nodes:
+                    nodes.append(node)
+        cache[run_id] = index
+        return index
+
+    def instance_for(self, content_id: str, run_id: str | None = None) -> str:
+        """The most recent instance of a content (e.g. the latest ``report.md``)."""
+        found = self.instances_of(content_id, run_id)
+        if not found:
+            raise NotFoundError(f"no information instance carries artifact {content_id[:12]}")
+        return found[-1]
+
+    def instance_content(self, node: str) -> str | None:
+        """Content id of an instance node."""
+        eid, _, slot = node.removeprefix("inst:").partition("/")
+        e = self.all_events.get(eid)
+        if e is None:
+            return None
+        parts = slot.split("/")
+        if len(parts) == 1 and parts[0].startswith("o") and parts[0][1:].isdigit():
+            k = int(parts[0][1:])
+            return e["outputs"][k]["artifact_id"] if k < len(e["outputs"]) else None
+        if len(parts) == 1 and parts[0].startswith("in") and parts[0][2:].isdigit():
+            k = int(parts[0][2:])
+            return e["inputs"][k]["artifact_id"] if k < len(e["inputs"]) else None
+        rev_cache = self.__dict__.setdefault("_instance_rev_cache", {})
+        rid = e.get("run_id")
+        if rid not in rev_cache:
+            rev_cache[rid] = {
+                n: cid for cid, nodes in self._instance_index(rid).items() for n in nodes
+            }
+        return rev_cache[rid].get(node)
 
     def describe_node(self, node: str) -> dict[str, Any]:
         kind, _, ident = node.partition(":")
@@ -185,6 +266,31 @@ class Workspace:
                 "status": e["status"],
                 "start": e["time"]["start"],
                 "run_id": e.get("run_id"),
+            }
+        if kind == "inst":
+            cid = self.instance_content(node)
+            eid, _, slot = ident.partition("/")
+            art = self.store.artifact(self.tenant_id, cid, with_content=False) if cid else None
+            ev = self.all_events.get(eid) or {}
+            refs = ev.get("inputs", []) if slot.startswith("in") else ev.get("outputs", [])
+            k = slot.split("/")[0].lstrip("oin")
+            ref = refs[int(k)] if k.isdigit() and int(k) < len(refs) else {}
+            item = "/i" in slot
+            return {
+                "node": node,
+                "type": "instance",
+                "content_id": cid,
+                "label": (ref.get("label") if not item else None)
+                or ((art or {}).get("preview") or "")[:60],
+                "role": "item" if item else ref.get("role"),
+                "preview": (art or {}).get("preview"),
+                "size_bytes": (art or {}).get("size_bytes"),
+                "producer_event": None if slot.startswith("in") else eid,
+                "consumer_event": eid if slot.startswith("in") else None,
+                "erased": bool(art and art.get("erased")),
+                "same_content_instances": len(self.instances_of(cid, ev.get("run_id")))
+                if cid
+                else 0,
             }
         if kind == "artifact":
             art = self.store.artifact(self.tenant_id, ident, with_content=False) or {}

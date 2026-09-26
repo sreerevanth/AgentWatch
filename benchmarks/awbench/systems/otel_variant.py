@@ -1,5 +1,10 @@
 """The tool_loop architecture instrumented with OpenTelemetry (GenAI conventions) instead
-of the native SDK. Used by AWBench to compare normalization across sensors (H1)."""
+of the native SDK. Used by AWBench to compare normalization across sensors (H1).
+
+``enriched=True`` adds AgentWatch's OpenTelemetry extension attributes (ADR-0018; an
+AgentWatch convention, not an OpenTelemetry standard): the report write is marked as an
+artifact operation with its content, and the model output / report input carry declared
+information instance ids."""
 
 from __future__ import annotations
 
@@ -11,7 +16,13 @@ from agentwatch.sensors.otel import AgentWatchSpanProcessor
 
 
 def run_otel_tool_loop(
-    gt: Any, scenario: str, retrieve: Any, summarize: Any, calculator: Any
+    gt: Any,
+    scenario: str,
+    retrieve: Any,
+    summarize: Any,
+    calculator: Any,
+    *,
+    enriched: bool = False,
 ) -> None:
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
@@ -58,6 +69,8 @@ def run_otel_tool_loop(
         ) as span:
             out = summarize(prompt)
             span.set_attribute("gen_ai.completion", out)
+            if enriched:
+                span.set_attribute("agentwatch.information.instance_id", "awbench:summary")
         gt.flow(r, m)
         t = node("calculate", "TOOL_INVOCATION")
         with tracer.start_as_current_span(
@@ -73,7 +86,17 @@ def run_otel_tool_loop(
             except Exception as exc:  # noqa: BLE001 - recorded on the span
                 span.set_status(Status(StatusCode.ERROR, str(exc)))
         w = node("write_report", "STATE_MUTATION")
-        with tracer.start_as_current_span("write report", attributes={"awbench_id": w}):
+        report_attrs: dict[str, Any] = {"awbench_id": w}
+        if enriched:
+            report_attrs.update(
+                {
+                    "agentwatch.artifact.operation": "create",
+                    "agentwatch.artifact.id": "report.md",
+                    "agentwatch.artifact.content": "# Report\n" + out,
+                    "agentwatch.information.source": "awbench:summary",
+                }
+            )
+        with tracer.start_as_current_span("write report", attributes=report_attrs):
             pass
         gt.flow(m, w)
         gt.data["final_output"] = w

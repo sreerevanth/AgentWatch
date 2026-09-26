@@ -1,6 +1,13 @@
 import { useMutation, useQuery } from '@tanstack/react-query';
 
-import type { CompareResult, EventDetail, GraphResponse, Run, RunDetail } from './types';
+import type {
+  CompareResult,
+  EventDetail,
+  GraphResponse,
+  ProvenanceEvidence,
+  Run,
+  RunDetail,
+} from './types';
 
 export const V3_BASE = process.env.NEXT_PUBLIC_API_V3_URL ?? '/api/v3';
 
@@ -80,6 +87,13 @@ export const useProvenance = (node?: string | null, run?: string) =>
     queryKey: ['v3', 'provenance', node, run],
     queryFn: () => v3<Record<string, any>>(`/provenance/${node}${run ? `?run=${enc(run)}` : ''}`),
     enabled: !!node,
+  });
+
+export const useProvenanceEvidence = (run?: string) =>
+  useQuery({
+    queryKey: ['v3', 'provenance-evidence', run],
+    queryFn: () => v3<ProvenanceEvidence>(`/runs/${enc(run!)}/provenance-evidence`),
+    enabled: !!run,
   });
 
 export const useMotifStats = () =>
