@@ -55,7 +55,15 @@ def _define() -> None:
             "v0.2 AgentEvent translation with loss accounting",
             ("tests/v3/test_normalizers.py",),
         ),
-        ("events.normalization.otel", "1", E, "OTel/GenAI spans → events", ()),
+        ("events.normalization.otel", "2", E, "OTel/GenAI spans → events", ()),
+        (
+            "events.normalization.otel_extension",
+            "1",
+            E,
+            "AgentWatch agentwatch.* OTel attributes: artifact operations, declared lineage "
+            "(ADR-0018; AgentWatch's own convention, not an OTel standard)",
+            ("tests/v3/test_normalizers.py",),
+        ),
         (
             "events.normalization.langchain",
             "1",
@@ -77,9 +85,41 @@ def _define() -> None:
             "OpenAI/Anthropic client wrappers, MCP tap",
             (),
         ),
-        ("graph.execution", "1", E, "declared-structure execution graph", ()),
-        ("graph.information", "2", E, "information lineage incl. content-containment links", ()),
-        ("provenance.lineage", "1", E, "lineage trees and dependents", ()),
+        (
+            "graph.execution",
+            "1",
+            V,
+            "declared-structure execution graph",
+            # H2 execution_f1 1.0 on the development set and on the FIRST scored run of each
+            # held-out architecture (map_reduce, hybrid_rag_cache, async_event_pipeline)
+            (
+                "benchmarks/awbench/results/awbench-20260926T074623Z.json",
+                "benchmarks/awbench/results/awbench-20260926T104846Z.json",
+                "benchmarks/awbench/results/awbench-20260926T145401Z.json",
+            ),
+        ),
+        (
+            "graph.information",
+            "3",
+            E,
+            "information instances with an evidence hierarchy; ambiguity preserved (ADR-0017). "
+            "Held-out precision 0.95, recall of certain links 0.51 (below threshold)",
+            ("tests/v3/test_information_lineage.py", "tests/v3/test_graph_invariants.py"),
+        ),
+        (
+            "provenance.ambiguity",
+            "1",
+            E,
+            "ambiguous-provenance records and per-run information-evidence summaries",
+            ("tests/v3/test_api_parity.py",),
+        ),
+        (
+            "provenance.lineage",
+            "2",
+            E,
+            "lineage trees and dependents (candidates shown, not expanded)",
+            (),
+        ),
         ("compare.runs", "1", E, "earliest divergence, structural/resource/information diffs", ()),
         ("behaviour.motifs", "1", E, "7 defined motif detectors", ()),
         ("behaviour.genome", "1", E, "profiles, genomes, candidate distances", ()),
