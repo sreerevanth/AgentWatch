@@ -123,13 +123,17 @@ def call(kind: str, label: str, fn: Any, arg: Any, *, obj: str, actor: str) -> t
 
 
 # ── stubs ──────────────────────────────────────────────────────────────────
+# which retrieval calls a retrieval scenario perturbs (map_reduce perturbs only one worker)
+PERTURB = {"retrieval": True}
+
+
 def retrieve_docs(query: str) -> list[dict[str, str]]:
-    if SCEN == "bad_retrieval":
+    if SCEN == "bad_retrieval" and PERTURB["retrieval"]:
         ids = ["D5", "D6"]
     else:
         ids = sorted(RNG.sample(RELEVANT, 3))  # seed-dependent choice of relevant documents
     docs = [{"id": i, "text": CORPUS[i]} for i in ids]
-    if SCEN == "corrupted_retrieval":
+    if SCEN == "corrupted_retrieval" and PERTURB["retrieval"]:
         docs[0] = {"id": docs[0]["id"], "text": "#### corrupted #### " + docs[0]["text"][::-1]}
     if SCEN == "latency_injection":
         time.sleep(0.05)
@@ -445,6 +449,7 @@ def arch_map_reduce() -> None:
         results: list[tuple[str, str]] = []
         for i, facet in enumerate(facets):
             with op("OPERATION", f"worker:{facet}", actor=f"agent:worker{i}") as (ws, wnode):
+                PERTURB["retrieval"] = i == 1  # retrieval scenarios hit worker 1 only
                 worker_spans.append(ws)
                 worker_nodes.append(wnode)
                 docs, r = call(
@@ -470,7 +475,8 @@ def arch_map_reduce() -> None:
                 if SCEN == "model_substitution" and i == 0:
                     GT.data["root_cause"] = m
                 if SCEN == "message_loss" and i == 2:
-                    GT.data["root_cause"] = GT.data["root_cause"] or m
+                    # root cause: worker 2's message to the reducer, which the baseline sends
+                    GT.data["root_cause"] = GT.data["root_cause"] or "send:agent:reducer#3"
                     GT.data["outcome"] = "degraded"
                     continue  # the worker's result never reaches the reducer
                 with op(
@@ -482,6 +488,7 @@ def arch_map_reduce() -> None:
                     ms.input(summary, role="message").output(summary, role="message")
                     GT.flow(m, mid)
                 results.append((summary, mid))
+        PERTURB["retrieval"] = True
         with op("OPERATION", "reduce", actor="agent:reducer", links=worker_spans) as (_, red):
             GT.data["exec_edges"] += [[w, red] for w in worker_nodes]
             merged = " ".join(text for text, _ in results)

@@ -415,8 +415,10 @@ def _final_artifact(ws: Workspace, run_id: str) -> str | None:
     return outs[-1] if outs else None
 
 
-def _retrieval_output(ws: Workspace, run_id: str) -> Any:
-    ev = ws.events(run_id, kind="RETRIEVAL")[0]
+def _retrieval_output(ws: Workspace, run_id: str, awbench: str | None = None) -> Any:
+    """The retrieval with the given awbench id (the injected root cause), else the first."""
+    evs = ws.events(run_id, kind="RETRIEVAL")
+    ev = next((e for e in evs if awbench and awb_id(e) == awbench), evs[0])
     out = next(o for o in ev["outputs"] if o["role"] == "documents")
     return ev, ws.store.artifact(ws.tenant_id, out["artifact_id"])["content"]
 
@@ -430,8 +432,9 @@ def counterfactual_quality(engine: Engine, records: list[Any]) -> dict[str, Any]
             continue
         base = _baseline(records, r)
         ws = Workspace(engine)
-        _, clean_docs = _retrieval_output(ws, base.run_id)
-        bad_ev, _ = _retrieval_output(ws, r.run_id)
+        root = r.gt.get("root_cause")
+        _, clean_docs = _retrieval_output(ws, base.run_id, root)
+        bad_ev, _ = _retrieval_output(ws, r.run_id, root)
         res = counterfactual(ws, r.run_id, bad_ev["event_id"], clean_docs, level="L3")
         ws2 = Workspace(engine)
         branch_run = (
@@ -465,8 +468,9 @@ def causal_hypotheses(engine: Engine, records: list[Any]) -> dict[str, Any]:
             continue
         base = _baseline(records, r)
         ws = Workspace(engine)
-        _, clean_docs = _retrieval_output(ws, base.run_id)
-        bad_ev, _ = _retrieval_output(ws, r.run_id)
+        root = r.gt.get("root_cause")
+        _, clean_docs = _retrieval_output(ws, base.run_id, root)
+        bad_ev, _ = _retrieval_output(ws, r.run_id, root)
         n += 1
         h = propose(
             ws,

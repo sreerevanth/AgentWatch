@@ -17,6 +17,13 @@ changelog:
       It was designed after AgentWatch development and is scored separately with the same
       thresholds. AgentWatch code is not to be changed in response to its results before they
       are recorded.
+  - date: 2026-09-26
+    note: >
+      Ground-truth corrections to map_reduce after its first run (results of that run are kept
+      in results/): retrieval perturbations now hit only worker 1 as the ground truth states
+      (they previously hit all workers), the message_loss root cause is the missing message,
+      and lab tasks intervene on the ground-truth root-cause retrieval instead of the first
+      retrieval. No AgentWatch code was changed.
 
 systems:
   tool_loop: single model-driven tool loop (native SDK; OTel variant for H1)
