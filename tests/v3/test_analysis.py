@@ -474,3 +474,32 @@ def test_most_recent_producer_disambiguates_identical_content():
     }
     assert {s.node for s in g.ancestors("event:m1") if s.node.startswith("event:")} == {"event:r1"}
     assert {s.node for s in g.ancestors("event:m0") if s.node.startswith("event:")} == {"event:r0"}
+
+
+def test_identical_retrievals_are_matches_not_derivations(engine, sink):
+    """Regression (held-out AWBench): content retrieved independently twice is a content
+    match, not information flow from the first retrieval to the second."""
+    text = "Solar photovoltaic panels convert sunlight into direct current electricity using silicon cells."
+
+    @aw.retriever("idx")
+    def search(q):
+        return [
+            {"id": "D1", "text": text},
+            {"id": "D2", "text": q + " is an unrelated second document about wind"},
+        ]
+
+    with aw.run("twice"):
+        search("first query words here")
+        search("second query words here")
+    engine.ingest(sink.drafts)
+    ws = Workspace(engine)
+    retrievals = ws.events(ws.resolve_run("latest")["run_id"], kind="RETRIEVAL")
+    g = ws.graph(ws.resolve_run("latest")["run_id"])
+    down = {
+        s.node
+        for s in g.descendants(
+            f"event:{retrievals[0]['event_id']}",
+            types=["PRODUCES", "CONSUMES", "DERIVES_FROM", "CONTAINS_ITEM", "TRANSFERS"],
+        )
+    }
+    assert f"event:{retrievals[1]['event_id']}" not in down

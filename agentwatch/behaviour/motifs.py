@@ -292,7 +292,7 @@ def detect_retrieval_echo(
     for r in relations:
         if r["type"] == "CONTAINS_ITEM":
             items[r["tail"][0][9:]].add(r["head"][0][9:])
-        if r["type"] == "DERIVES_FROM":
+        if r["type"] in ("DERIVES_FROM", "MATCHES_CONTENT"):
             derives[r["head"][0][9:]].append((r["tail"][0][9:], r))
     out = []
     for e in ordered:

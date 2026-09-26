@@ -24,6 +24,11 @@ changelog:
       (they previously hit all workers), the message_loss root cause is the missing message,
       and lab tasks intervene on the ground-truth root-cause retrieval instead of the first
       retrieval. No AgentWatch code was changed.
+  - date: 2026-09-26
+    note: >
+      Information-flow reachability (H2) follows flow relations only (PRODUCES, CONSUMES,
+      DERIVES_FROM, CONTAINS_ITEM, TRANSFERS), matching provenance. AgentWatch added a
+      non-flow MATCHES_CONTENT relation (content similarity into externally sourced artifacts).
 
 systems:
   tool_loop: single model-driven tool loop (native SDK; OTel variant for H1)

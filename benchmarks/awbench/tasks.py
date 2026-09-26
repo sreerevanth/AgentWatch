@@ -18,6 +18,8 @@ from agentwatch.query.engine import ask
 from agentwatch.query.workspace import Workspace
 from agentwatch.runtime.engine import Engine
 
+# information-flow relations (MATCHES_CONTENT is similarity, not flow)
+FLOW_TYPES = ["PRODUCES", "CONSUMES", "DERIVES_FROM", "CONTAINS_ITEM", "TRANSFERS"]
 LEAF = {
     "TOOL_INVOCATION",
     "MODEL_INVOCATION",
@@ -190,7 +192,11 @@ def h2(ws: Workspace, records: list[Any]) -> dict[str, Any]:
         info_reach: set[tuple[str, str]] = set()
         for a, e in ids.items():
             desc = g.descendants(
-                f"event:{e['event_id']}", views=["INFORMATION"], skip_kinds=["entity"], max_depth=12
+                f"event:{e['event_id']}",
+                views=["INFORMATION"],
+                types=FLOW_TYPES,
+                skip_kinds=["entity"],
+                max_depth=12,
             )
             own = {f"artifact:{o['artifact_id']}" for o in e["outputs"]}
             for s in desc:

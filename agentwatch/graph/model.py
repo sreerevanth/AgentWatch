@@ -63,6 +63,9 @@ class RelType(StrEnum):
     PRODUCES = "PRODUCES"
     CONSUMES = "CONSUMES"
     DERIVES_FROM = "DERIVES_FROM"
+    # identical/contained content in an artifact that entered from outside the system
+    # (retrieval, external I/O, external input): a similarity, not an information flow
+    MATCHES_CONTENT = "MATCHES_CONTENT"
     CONTAINS_ITEM = "CONTAINS_ITEM"
     WRITES_TO = "WRITES_TO"
     READS_FROM = "READS_FROM"

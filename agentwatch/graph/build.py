@@ -26,7 +26,7 @@ from agentwatch.graph.model import (
 )
 
 EXEC_BUILDER = "graph.execution@1"
-INFO_BUILDER = "graph.information@3"
+INFO_BUILDER = "graph.information@4"
 
 SHINGLE = 5
 MIN_SHINGLES = 3
@@ -365,9 +365,21 @@ def build_information(
             )
         return sh_cache[aid]
 
+    # Lists decomposed into items are represented by their items for content matching.
+    decomposed = {aid for aid, items in item_cache.items() if items}
+    # Artifacts whose content entered from outside the system cannot derive from earlier
+    # in-system artifacts; a content match into them is recorded as MATCHES_CONTENT.
+    external: set[tuple[str | None, str]] = set()
+    for ev in ordered:
+        if ev.kind in (EventKind.RETRIEVAL, EventKind.EXTERNAL_IO, EventKind.EXTERNAL_INPUT):
+            for ref in ev.outputs:
+                external.add((run_of.get(ev.event_id), ref.artifact_id))
+    for (rid, iid), parent in item_parent.items():
+        if (rid, parent) in external:
+            external.add((rid, iid))
     by_run: dict[str | None, list[str]] = defaultdict(list)
     for rid, aid in first_seen:
-        if len(shingles_of(aid)) >= MIN_SHINGLES:
+        if aid not in decomposed and len(shingles_of(aid)) >= MIN_SHINGLES:
             by_run[rid].append(aid)
     for run_id, aids in by_run.items():
         aids.sort(key=lambda a: first_seen[(run_id, a)])
@@ -403,10 +415,13 @@ def build_information(
                 sy = shingles_of(y)
                 containment = len(sx & sy) / len(sy)
                 if containment >= CONTAINMENT_THRESHOLD:
+                    rtype = (
+                        RelType.MATCHES_CONTENT if (run_id, x) in external else RelType.DERIVES_FROM
+                    )
                     rels.append(
                         make_relation(
                             View.INFORMATION,
-                            RelType.DERIVES_FROM,
+                            rtype,
                             [node_artifact(y)],
                             [node_artifact(x)],
                             basis=Basis.CONTENT_MATCH,
