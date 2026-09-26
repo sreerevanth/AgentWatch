@@ -53,6 +53,11 @@ changelog:
       the motif's definition (tasks.true_bottleneck). Made after seeing M006 fire on the
       development set once content shortcuts were reduced; both the scenario-declared and the
       derived scoring can be reproduced from the recorded ground truth.
+  - date: 2026-09-26
+    note: >
+      Pre-registered the third held-out architecture async_event_pipeline (architecture commit
+      88f46a9); see architecture_status.async_event_pipeline.preregistration. Added computed
+      architecture status (DEVELOPMENT / HELD_OUT / FORMER_HELD_OUT).
 
 systems:
   tool_loop: single model-driven tool loop (native SDK; OTel variant for H1)
@@ -81,6 +86,31 @@ architecture_status:
     first_scored_run: {commit: 1cf3886, results: awbench-20260926T104846Z.json}
   async_event_pipeline:
     declared: HELD_OUT
+    # PRE-REGISTRATION (2026-09-26), recorded before any scored run and before the
+    # information-instance / provenance-hierarchy changes it is meant to test.
+    preregistration:
+      architecture_commit: 88f46a9
+      scenarios: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, model_substitution, message_loss, stale_memory]
+      seeds: 3
+      sensor: native, value-level spans only (no explicit instance references)
+      tasks: [h2_structure, h3_lineage, h4_divergence, h5_motifs, replay_fidelity, counterfactual_quality, explanation_faithfulness]
+      thresholds: same as the tasks section of this registry (not to be changed after the run)
+      expected_structure: >
+        request -> shared evidence retrieval -> 3 task messages -> workers (A: own retrieval;
+        B: discarded draft + analysis with identical text; C: lookup retries) -> results queue
+        (A delivered twice; the aggregator uses the first delivery of each worker) -> merge ->
+        glossary cache (2 misses with define+write, 1 hit whose value equals define#1's output)
+        -> enrich -> db write -> db read -> report. Information flows are the ground-truth
+        data_edges written by workbench.py; the draft and the second delivery of A have no
+        outgoing flow. Root causes: bad_retrieval fetch_evidence#1; corrupted_retrieval
+        retrieve:A#1; tool_timeout lookup:C#2; model_substitution the first model call to
+        execute; message_loss deliver:C#1; stale_memory read:db#1. Motifs: M001 always, M002
+        in tool_timeout, M006 derived from ground-truth flow.
+      evaluation: >
+        tasks.py semantics at this commit. Mechanical adaptation of the evaluator to new graph
+        node names is allowed before the run only if it does not change what is counted, and
+        is logged in the changelog. Run with --first-scored-run async_event_pipeline --seeds 3
+        on a clean tree; results are committed exactly as generated before any diagnosis.
 
 scenarios:
   tool_loop: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, tool_error, incorrect_tool_result, context_pressure, model_substitution, latency_injection, retry_loop]
