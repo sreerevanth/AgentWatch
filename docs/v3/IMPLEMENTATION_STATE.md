@@ -36,11 +36,11 @@ Branch: `architecture/v3` · Updated 2026-09-26
 - **Replay** only mocks calls made through `aw.tool` / `aw.model` / `aw.retriever`. Other program logic runs live, and the reports say so.
 - **Entity resolution** is exact-key only. There is no aliasing (e.g. model version aliases).
 - **Legacy HIPAA redactor** (v0.2) misses US SSNs and mislabels email local parts as MRNs, as observed in the regression test. It is a v0.2 module and has not been fixed here.
-- **Packaging split** (ADR-0008) and legacy quarantine (M2) are not done. The base install still includes the server stack.
+- **Packaging split** (ADR-0008) is scheduled with M4; the base install still includes the server stack. Legacy quarantine is logical and enforced by a CI contract test (ADR-0016).
 - Local development used Python 3.14 against a `>=3.12,<3.13` pin (`--ignore-requires-python`). CI runs 3.12.
 
 ## Next exact tasks
 
-1. M2: move DEPRECATE modules to `agentwatch/legacy/` with import shims, and add an import-linter contract to CI.
+1. M4 (owner decision): merge to `main` together with the packaging split (ADR-0008, ADR-0016).
 2. AWBench: held-out architecture(s), real-model runs behind an opt-in flag, multiple seeds with CIs.
 3. OTel normalizer: map `file.*` / `db.operation=insert` attributes to STATE_MUTATION, and re-measure H1.

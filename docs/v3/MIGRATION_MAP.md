@@ -207,7 +207,7 @@ git add docs/v3 && git commit -m "docs(v3): Phase 0 architecture audit, target a
 |---|---|---|
 | M0 Stabilize | **done** | Interrupted merge completed as a merge commit on `architecture/v3`. The shared-event redaction race is fixed, with a regression test. `/simulate`, `hallucination_risk` and `governance/causal.py` are relabelled. |
 | M1 Parallel core | **done** | v3 packages, `/api/v3`, the OTLP receiver, and the legacy `/api/v1/events` tee (`AGENTWATCH_V3_TEE`). |
-| M2 Quarantine | **pending** | Moving DEPRECATE modules under `agentwatch/legacy/` with shims, and splitting the packaging. No v3 package imports them today. |
+| M2 Quarantine | **done (logical)** | Enforced by `tests/v3/test_architecture_contracts.py` in CI; the physical move is replaced by deletion at M5 (ADR-0016). Packaging split moved to M4. |
 | M3 Read cut-over | **done for the UI** | The frontend reads only `/api/v3`. v0.2 dashboard pages are removed; the v0.2 API remains. |
 | M4 Merge to main | pending | Needs review of `architecture/v3`. |
 | M5 Retire | pending | After a deprecation window. |
