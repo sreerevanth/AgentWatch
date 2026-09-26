@@ -346,19 +346,11 @@ class _Run:
             )
             self.add_anc(inst.node, self.anc_star(enode))
             toks = self.tokens(inst.content_id)
-            cands = self.containment(toks, ev.event_id)
-            if ext:
-                # content that entered from outside the system: similar text is not derivation
-                for c, score in sorted(cands, key=lambda cs: cs[0].node):
-                    self.rel(
-                        RelType.MATCHES_CONTENT,
-                        c.node,
-                        inst.node,
-                        InfoEvidence.CONTENT_MATCH_ONLY,
-                        basis=Basis.CONTENT_MATCH,
-                        confidence=score,
-                        attributes={"containment": round(score, 3)},
-                    )
+            decomposed = bool(self.items.get(inst.content_id))
+            # a decomposed list is matched through its items (one retrieved document at a time)
+            cands = [] if decomposed else self.containment(toks, ev.event_id)
+            if ext and not decomposed:
+                self._similar(inst.node, cands)
             elif cands and ev.kind in CARRIER_KINDS:
                 # a carrier moves or stores data it did not declare; a generator (model,
                 # tool) explains its own output, so similar earlier text is no evidence of copying
@@ -378,7 +370,23 @@ class _Run:
                     attributes={"content_id": iid, "index": j},
                 )
                 self.add_anc(item.node, self.anc_star(inst.node))
+                if ext:
+                    self._similar(item.node, self.containment(self.tokens(iid), ev.event_id))
                 self.schedule(item)
+
+    def _similar(self, node: str, cands: list[tuple[_Inst, float]]) -> None:
+        """Content that entered from outside the system (retrieved, external): similar earlier
+        text is recorded as a similarity, never as a derivation."""
+        for c, score in sorted(cands, key=lambda cs: cs[0].node):
+            self.rel(
+                RelType.MATCHES_CONTENT,
+                c.node,
+                node,
+                InfoEvidence.CONTENT_MATCH_ONLY,
+                basis=Basis.CONTENT_MATCH,
+                confidence=score,
+                attributes={"containment": round(score, 3)},
+            )
 
     def _consume(
         self, ev: ComputationalEvent, node: str, evidence: InfoEvidence, base: dict[str, Any]
