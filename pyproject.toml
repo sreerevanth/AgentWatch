@@ -115,6 +115,9 @@ asyncio_mode = "auto"
 testpaths = ["tests"]
 addopts = "-v --tb=short --basetemp=.pytest-tmp"
 pythonpath = ["."]
+markers = [
+    "external: needs external provider credentials; reported as SKIPPED_EXTERNAL_CREDENTIAL without them",
+]
 
 [tool.ruff]
 cache-dir = ".ruff_cache"

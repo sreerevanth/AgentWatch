@@ -100,7 +100,7 @@ def main(argv: list[str] | None = None) -> int:
         aw.configure(sink)
         workload(args.spans)
         workload(args.spans, variant=1)
-        drafts = sink.drafts
+        drafts = list(sink.drafts)  # a copy: the sink is cleared for the incremental step below
         t_ingest, _ = timed(lambda: engine.ingest(drafts))
         results["observations"] = len(drafts)
         results["ingest_obs_per_s"] = round(len(drafts) / t_ingest, 1)
@@ -108,6 +108,38 @@ def main(argv: list[str] | None = None) -> int:
         results["rebuild_s"] = round(t_process, 3)
         results["rebuild_events_per_s"] = round(report["events"] / t_process, 1)  # type: ignore[index]
         results["relations"] = report["relations"]  # type: ignore[index]
+        # graph construction alone (the part of a rebuild that builds relations)
+        from agentwatch.graph.build import build_execution, build_information
+        from agentwatch.runs.segment import build_source_index, segment
+
+        built = engine.build(
+            "default", engine.interp_id_for("default"), engine.store.observations()
+        )
+        evs = built["events"]
+        seg = segment(evs, "default")
+        index = build_source_index(evs)
+        from agentwatch.events.normalize import NormalizeContext
+
+        nctx = NormalizeContext(
+            "default",
+            engine.interp_id_for("default"),
+            engine.store.artifact_key("default"),
+            artifacts=dict(built["artifacts"]),
+        )
+
+        def graph_only() -> int:
+            return len(build_execution(evs, seg.run_of, index)) + len(
+                build_information(
+                    evs,
+                    seg.run_of,
+                    nctx.artifacts,
+                    lambda v, r: nctx.artifact(v, r).artifact_id,
+                    index,
+                )
+            )
+
+        t_graph_construct, _ = timed(graph_only)
+        results["graph_construction_s"] = round(t_graph_construct, 3)
         # one more small run arriving after the big rebuild: incremental path
         sink.drafts.clear()
         workload(40, variant=2)
@@ -143,8 +175,22 @@ def main(argv: list[str] | None = None) -> int:
         results["store_bytes"] = size
         results["store_bytes_per_observation"] = round(size / len(drafts), 1)
     OUT.mkdir(parents=True, exist_ok=True)
+    previous = OUT / "latest.json"
+    if previous.exists():
+        before = json.loads(previous.read_text(encoding="utf-8"))
+        results["compared_with"] = before.get("generated_at")
+        results["change_vs_previous"] = {
+            k: {"before": before[k], "now": v, "ratio": round(v / before[k], 3)}
+            for k, v in results.items()
+            if isinstance(v, (int, float))
+            and isinstance(before.get(k), (int, float))
+            and before[k]
+            and k != "spans"
+        }
     body = json.dumps(results, indent=2)
-    (OUT / "latest.json").write_text(body, encoding="utf-8")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    (OUT / f"perf-{stamp}.json").write_text(body, encoding="utf-8")
+    previous.write_text(body, encoding="utf-8")
     print(body)
     return 0
 
