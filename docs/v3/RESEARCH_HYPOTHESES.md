@@ -319,3 +319,33 @@ With seeded variability (seeds now change the retrieved documents, tool-failure 
   - replay, counterfactual, hypotheses and faithfulness all at 1.0
 
 "Pooled" values also include the extra drift-set runs. The per-seed ranges use only each seed's matrix runs. Variance across seeds is small because the systems are stubs; it is not an estimate of real-world variance.
+
+### 6.2 Held-out architectures (2026-09-26)
+
+Held-out architectures are added after AgentWatch development, committed before their first run, and scored separately (per architecture) with the same thresholds. Once an architecture's results have led to a change in AgentWatch, it stops being held-out evidence for the affected metrics. The registry changelog records each such step.
+
+**map_reduce** (planner → 3 workers → reducer join, critic model):
+
+| step | information precision | motif precision | note |
+|---|---|---|---|
+| first run | 0.37 | 0.28 | held-out evidence; also exposed ground-truth bugs, fixed and logged |
+| after M005 v2 + most-recent-producer traversal + MATCHES_CONTENT | 0.40–0.43 | 1.0 | development evidence |
+| after content-shortcut reduction (graph.information@5) | 0.47 | 0.19 | development evidence; M006 false positive in every run (below) |
+
+**hybrid_rag_cache** (vector + keyword retrieval, dedupe tool, answerer over a growing multi-turn history, cache write and read-back). It was committed at `1cf3886`, before its first run.
+
+- **First run: held-out evidence for the fixes above.** Results file `results/awbench-20260926T104846Z.json`, commit `1cf3886`.
+  - Met: execution F1 1.0, information recall 0.92, lineage F1 0.96, H4 top-1 1.0, motif precision 1.0 (M005 v2 correct in 21/21 runs), replay, counterfactual and faithfulness.
+  - **Not met: information precision 0.53** (threshold 0.75). **Not met: motif recall 0.55**, because M006 was detected in 0/21 runs.
+  - So most-recent-producer traversal and MATCHES_CONTENT did **not** generalize enough to bring information precision to threshold on a new architecture. M005 v2 did generalize.
+- **Diagnosis of M006 and the change made.** The answerer quotes retrieved text, so the report contained that text, and every retrieved item got a direct DERIVES_FROM edge to the report, bypassing the answer. The builder now drops a direct content edge y→x when an in-system intermediate m carries *all* the text x shares with y, and y demonstrably reaches m before x exists. "Demonstrably" means either a content edge y→m, or m being produced by an event that consumed y. This is a transitive reduction, so reachability is preserved.
+- **After the change: development evidence only.** Motif precision/recall 1.0 / 0.96, information precision 0.51.
+- **A benchmark ground-truth correction was made at the same time.** M006 is structural, so its expectation is now derived from the true data flow for every run rather than declared per scenario.
+
+**What the change costs.** In map_reduce, a critic model reproduces all three worker summaries in a draft that is then discarded, and the report is assembled from the worker messages. Content cannot distinguish that unused draft from a real intermediate. The reduction therefore explains the report through the draft and reports a false bottleneck, which gives 21 M006 false positives. This is a form of the known common-source limitation (no "explaining away"): when an unused artifact reproduces the same text, content matching picks the wrong explanation. Only declared inputs on the report-writing operation could settle it, and neither stub system declares them.
+
+**Open:**
+- Information precision on both labelled architectures (0.47, 0.51). The main cause is identical content produced by several events (ADR-0015), which remains ambiguous.
+- The M006 false positive described above.
+- A third held-out architecture is needed to test the reduction.
+

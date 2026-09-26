@@ -29,7 +29,9 @@ Branch: `architecture/v3` · Updated 2026-09-26
 ## Known limitations (honest list)
 
 - **H1 cross-source equivalence** is below its threshold (0.80 < 0.90). OTel lacks a convention for artifact writes.
-- **AWBench results are in-sample** and come from stub models. No analytic capability is VALIDATED yet; see RESEARCH_HYPOTHESES §6.
+- **AWBench results come from stub models.** No analytic capability is VALIDATED yet. Two held-out architectures exist (RESEARCH_HYPOTHESES §6.2); both have since informed fixes. On first contact, `hybrid_rag_cache` failed information precision (0.53) and motif recall (0.55).
+- **Information precision** is below 0.75 on both held-out architectures (0.47, 0.51). Identical content produced by several events stays ambiguous.
+- **Content-shortcut reduction** (graph.information@5) can explain a report through an unused intermediate that reproduces the same text. This produces false M006 bottlenecks (map_reduce: 21/21 runs).
 - **Processing**: new observations are processed incrementally per correlation group, which is about 11× faster than a full rebuild for one new run in a 4k-event store. LangChain observations (no run-scoped key), run-less events and unresolved links fall back to a full rebuild. Entity aggregation still reads all events.
 - **Storage** is about 9.6 KB per observation, including derived rows and relations. Not optimized.
 - **Privacy**: per-subject crypto-shredding exists but is opt-in (`AGENTWATCH_ENCRYPT_PAYLOADS=1`), and declared ids are not encrypted (ADR-0011, as built). Secret redaction is on by default; PII redaction is opt-in (`PayloadPolicy(redact_pii=True)`).
@@ -42,5 +44,5 @@ Branch: `architecture/v3` · Updated 2026-09-26
 ## Next exact tasks
 
 1. M4 (owner decision): merge to `main` together with the packaging split (ADR-0008, ADR-0016).
-2. AWBench: held-out architecture(s), real-model runs behind an opt-in flag, multiple seeds with CIs.
+2. AWBench: a third held-out architecture (to test graph.information@5), and real-model runs behind an opt-in flag.
 3. OTel normalizer: map `file.*` / `db.operation=insert` attributes to STATE_MUTATION, and re-measure H1.
