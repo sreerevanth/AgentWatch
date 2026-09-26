@@ -274,6 +274,14 @@ def inspect(
         console.print("[bold]motifs[/bold] (EXPERIMENTAL):")
         for m in motifs:
             console.print(f"  {m['motif_id']} {m['motif_name']}: {m['explanation']}")
+    info = next(iter(ws.derived("information_evidence", r["run_id"])), None)
+    if info:
+        share = info.get("high_fidelity_share")
+        console.print(
+            f"information lineage: consumed values {info['consumed_values']}, "
+            f"ambiguous {info['ambiguous_values']}, declared (high-fidelity) share "
+            f"{'n/a' if share is None else f'{share:.0%}'}"
+        )
     if s["missing_facts"]:
         console.print(f"[dim]missing facts (not invented): {s['missing_facts']}[/dim]")
 
@@ -386,12 +394,21 @@ def graph(
         lines = ["digraph agentwatch {", "  rankdir=TB; node [shape=box, fontname=monospace];"]
         for n in nodes:
             d = ws.describe_node(n)
-            shape = {"event": "box", "artifact": "note", "entity": "ellipse"}[d["type"]]
+            shape = {"event": "box", "artifact": "note", "instance": "note"}.get(
+                d["type"], "ellipse"
+            )
             lines.append(
                 f'  "{n}" [label="{str(d["label"])[:60].replace(chr(34), chr(39))}", shape={shape}];'
             )
         for x in rels:
-            style = "solid" if x["basis"] == "DECLARED" else "dashed"
+            a = x.get("attributes") or {}
+            style = (
+                "dotted"  # a candidate or a similarity: not an information flow
+                if a.get("resolution") == "AMBIGUOUS" or a.get("strength") == "NONE"
+                else "solid"
+                if x["basis"] == "DECLARED"
+                else "dashed"
+            )
             for t in x["tail"]:
                 for h in x["head"]:
                     lines.append(f'  "{t}" -> "{h}" [label="{x["type"]}", style={style}];')
@@ -401,7 +418,12 @@ def graph(
     for x in sorted(rels, key=lambda x: (x["view"], x["type"])):
         tails = ", ".join(str(ws.describe_node(t)["label"])[:40] for t in x["tail"])
         heads = ", ".join(str(ws.describe_node(h)["label"])[:40] for h in x["head"])
-        conf = "" if x["basis"] == "DECLARED" else f" ({x['basis'].lower()} {x['confidence']})"
+        a = x.get("attributes") or {}
+        if a.get("evidence_type"):
+            conf = f" ({a['evidence_type'].lower()}, {a['strength']}"
+            conf += ", AMBIGUOUS)" if a.get("resolution") == "AMBIGUOUS" else ")"
+        else:
+            conf = "" if x["basis"] == "DECLARED" else f" ({x['basis'].lower()} {x['confidence']})"
         console.print(
             f"[dim]{x['view'][:4]}[/dim] {tails} [cyan]-{x['type']}->[/cyan] {heads}{conf}"
         )
@@ -410,7 +432,8 @@ def graph(
 @_guard
 def provenance(
     node: str = typer.Argument(
-        ..., help="artifact:<id|label>, event id, or artifact label (e.g. report.md)"
+        ...,
+        help="artifact label (e.g. report.md), artifact:<content id>, inst:<instance>, or event id",
     ),
     run: str | None = typer.Option(None, "--run"),
     store: str | None = STORE_OPTION,
@@ -430,8 +453,15 @@ def provenance(
     m = res["metrics"]
     console.print(
         f"\n[dim]depth {m['provenance_depth']} · transformations {m['transformations']} · origins {len(m['origins'])} · "
-        f"weakest link confidence {m['weakest_path_confidence']} · metrics EXPERIMENTAL[/dim]"
+        f"weakest link confidence {m['weakest_path_confidence']} · links by strength {m['relations_by_strength']} · "
+        f"ambiguous candidates {len(m['ambiguous_candidates'])} · metrics EXPERIMENTAL[/dim]"
     )
+    if m["ambiguous_candidates"]:
+        console.print(
+            "[yellow]Some sources are ambiguous: the evidence fits several producers equally, so "
+            "they are listed as candidates rather than chosen. Declaring inputs (source=...) "
+            "removes the ambiguity.[/yellow]"
+        )
 
 
 @_guard

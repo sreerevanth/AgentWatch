@@ -259,6 +259,9 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
             ]
             s["motif_instances"] = w.derived("motif_instance", s["run"]["run_id"])
             s["profile"] = next(iter(w.derived("behaviour_profile", s["run"]["run_id"])), None)
+            s["information_evidence"] = next(
+                iter(w.derived("information_evidence", s["run"]["run_id"])), None
+            )
             return s
 
         return guard(go)
@@ -295,6 +298,43 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
                 "nodes": [w.describe_node(n) for n in nodes],
                 "relations": rels,
                 "stats": w.graph(rid).stats(),
+            }
+
+        return guard(go)
+
+    @router.get("/api/v3/runs/{ref}/provenance-evidence", tags=["v3 provenance"])
+    def run_provenance_evidence(ref: str, w: Workspace = Depends(ws)) -> dict[str, Any]:
+        """How the run's information flow is supported, and every value whose source is
+        AMBIGUOUS (candidates, evidence, alternatives, certain sources)."""
+
+        def go() -> dict[str, Any]:
+            rid = w.resolve_run(ref)["run_id"]
+            return {
+                "run_id": rid,
+                "summary": next(iter(w.derived("information_evidence", rid)), None),
+                "ambiguous": w.derived("ambiguous_provenance", rid),
+            }
+
+        return guard(go)
+
+    @router.get("/api/v3/instances/{node:path}", tags=["v3 provenance"])
+    def instance(node: str, w: Workspace = Depends(ws)) -> dict[str, Any]:
+        """One information instance: its content identity, producer/consumer, and every
+        relation touching it (with evidence type, strength, resolution)."""
+
+        def go() -> dict[str, Any]:
+            n = node if node.startswith("inst:") else f"inst:{node}"
+            desc = w.describe_node(n)
+            eid = desc.get("producer_event") or desc.get("consumer_event")
+            g = w.graph(w.event(eid).get("run_id") if eid else None)
+            return {
+                "instance": desc,
+                "incoming": [
+                    {**g.relations[r], "other": w.describe_node(o)} for r, o in g.inc.get(n, [])
+                ],
+                "outgoing": [
+                    {**g.relations[r], "other": w.describe_node(o)} for r, o in g.out.get(n, [])
+                ],
             }
 
         return guard(go)
