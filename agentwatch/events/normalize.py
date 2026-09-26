@@ -51,7 +51,14 @@ class NormalizeContext:
     artifacts: dict[str, ArtifactContent] = field(default_factory=dict)
 
     def artifact(
-        self, value: Any, role: str, label: str | None = None, media_type: str | None = None
+        self,
+        value: Any,
+        role: str,
+        label: str | None = None,
+        media_type: str | None = None,
+        *,
+        instance: str | None = None,
+        sources: tuple[str, ...] = (),
     ) -> ArtifactRef:
         """Register an artifact value and return a reference to it."""
         content_json = canonical_json(value)
@@ -69,7 +76,9 @@ class NormalizeContext:
                 size_bytes=len(content_json.encode("utf-8")),
                 preview=text[:240],
             )
-        return ArtifactRef(artifact_id=digest, role=role, label=label)
+        return ArtifactRef(
+            artifact_id=digest, role=role, label=label, instance=instance, sources=sources
+        )
 
 
 @dataclass
@@ -176,13 +185,27 @@ class EventBuilder:
         self.attr_confidence = Confidence(1.0, "declared")
         self.extra_missing: list[str] = []
 
-    def input(self, value: Any, role: str = "input", label: str | None = None) -> ArtifactRef:
-        ref = self.ctx.artifact(value, role, label)
+    def input(
+        self,
+        value: Any,
+        role: str = "input",
+        label: str | None = None,
+        *,
+        sources: tuple[str, ...] | list[str] = (),
+    ) -> ArtifactRef:
+        ref = self.ctx.artifact(value, role, label, sources=tuple(sources))
         self.inputs.append(ref)
         return ref
 
-    def output(self, value: Any, role: str = "output", label: str | None = None) -> ArtifactRef:
-        ref = self.ctx.artifact(value, role, label)
+    def output(
+        self,
+        value: Any,
+        role: str = "output",
+        label: str | None = None,
+        *,
+        instance: str | None = None,
+    ) -> ArtifactRef:
+        ref = self.ctx.artifact(value, role, label, instance=instance)
         self.outputs.append(ref)
         return ref
 

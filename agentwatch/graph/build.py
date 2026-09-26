@@ -7,9 +7,7 @@ observed event are reported, not guessed.
 from __future__ import annotations
 
 import json
-import math
 import re
-from collections import defaultdict
 from collections.abc import Callable, Sequence
 from typing import Any
 
@@ -20,13 +18,12 @@ from agentwatch.graph.model import (
     RelType,
     View,
     make_relation,
-    node_artifact,
     node_entity,
     node_event,
 )
 
 EXEC_BUILDER = "graph.execution@1"
-INFO_BUILDER = "graph.information@5"
+INFO_BUILDER = "graph.information@6"  # 6: information instances (ADR-0017)
 
 SHINGLE = 5
 MIN_SHINGLES = 3
@@ -207,287 +204,41 @@ def build_information(
     run_of: dict[str, str | None],
     artifacts: dict[str, ArtifactContent],
     register: Callable[[Any, str], str],
+    source_index: dict[tuple[str, str], str] | None = None,
+    *,
+    memory_context: Sequence[ComputationalEvent] = (),
+    memory_context_runs: dict[str, str | None] | None = None,
 ) -> list[dict[str, Any]]:
-    """``register(value, role)`` returns the artifact id for a value (registering it)."""
-    rels: list[dict[str, Any]] = []
-    ordered = event_order(events)
-    position = {e.event_id: i for i, e in enumerate(ordered)}
+    """INFORMATION relations over information instances (ADR-0017; see graph.information).
 
-    # 1. declared production / consumption
-    for ev in ordered:
-        rid = run_of.get(ev.event_id)
-        for ref in ev.outputs:
-            rels.append(
-                make_relation(
-                    View.INFORMATION,
-                    RelType.PRODUCES,
-                    [node_event(ev.event_id)],
-                    [node_artifact(ref.artifact_id)],
-                    basis=Basis.DECLARED,
-                    run_id=rid,
-                    evidence=list(ev.derived_from),
-                    derived_by=INFO_BUILDER,
-                    attributes={"role": ref.role, "label": ref.label},
-                )
-            )
-        for ref in ev.inputs:
-            rels.append(
-                make_relation(
-                    View.INFORMATION,
-                    RelType.CONSUMES,
-                    [node_artifact(ref.artifact_id)],
-                    [node_event(ev.event_id)],
-                    basis=Basis.DECLARED,
-                    run_id=rid,
-                    evidence=list(ev.derived_from),
-                    derived_by=INFO_BUILDER,
-                    attributes={"role": ref.role, "label": ref.label},
-                )
-            )
-        for eff in ev.effects:
-            if eff.kind.value == "WRITE":
-                rels.append(
-                    make_relation(
-                        View.INFORMATION,
-                        RelType.WRITES_TO,
-                        [node_event(ev.event_id)],
-                        [node_entity(eff.target)],
-                        basis=Basis.DECLARED,
-                        run_id=rid,
-                        evidence=list(ev.derived_from),
-                        derived_by=INFO_BUILDER,
-                    )
-                )
-            elif eff.kind.value == "READ":
-                rels.append(
-                    make_relation(
-                        View.INFORMATION,
-                        RelType.READS_FROM,
-                        [node_entity(eff.target)],
-                        [node_event(ev.event_id)],
-                        basis=Basis.DECLARED,
-                        run_id=rid,
-                        evidence=list(ev.derived_from),
-                        derived_by=INFO_BUILDER,
-                    )
-                )
+    ``register(value, role)`` returns the content id of a value (registering its content)."""
+    from agentwatch.graph.information import build_information_instances
+    from agentwatch.runs.segment import build_source_index
 
-    # 2. list artifacts decompose into item artifacts (retrieval result sets etc.), per run:
-    #    artifacts are content-addressed and may appear in several runs.
-    first_seen: dict[tuple[str | None, str], int] = {}
-    for ev in ordered:
-        rid = run_of.get(ev.event_id)
-        for ref in [*ev.inputs, *ev.outputs]:
-            first_seen.setdefault((rid, ref.artifact_id), position[ev.event_id])
-    item_parent: dict[tuple[str | None, str], str] = {}
-    item_cache: dict[str, list[str]] = {}
-    for (rid, aid), pos in list(first_seen.items()):
-        if aid not in item_cache:
-            item_cache[aid] = []
-            content = artifacts.get(aid)
-            if content is not None:
-                value = json.loads(content.content_json)
-                if isinstance(value, list) and 1 < len(value) <= MAX_LIST_ITEMS:
-                    item_cache[aid] = [register(item, "item") for item in value]
-        for i, iid in enumerate(item_cache[aid]):
-            if iid == aid:
-                continue
-            item_parent.setdefault((rid, iid), aid)
-            first_seen.setdefault((rid, iid), pos)
-            rels.append(
-                make_relation(
-                    View.INFORMATION,
-                    RelType.CONTAINS_ITEM,
-                    [node_artifact(aid)],
-                    [node_artifact(iid)],
-                    basis=Basis.CONTENT_MATCH,
-                    run_id=rid,
-                    evidence=[node_artifact(aid)],
-                    derived_by=INFO_BUILDER,
-                    attributes={"index": i},
-                )
-            )
+    cache: dict[str, frozenset[str]] = {}
 
-    # 3. memory transfer by declared store + key
-    writes: dict[tuple[Any, ...], ComputationalEvent] = {}
-    for ev in ordered:
-        if ev.kind != EventKind.MEMORY_ACCESS or ev.object is None:
-            continue
-        attrs = ev.attributes
-        key = (run_of.get(ev.event_id), ev.object.canonical, attrs.get("key"))
-        if attrs.get("access") == "write" or "write" in ev.facets:
-            writes[key] = ev
-        elif (
-            (attrs.get("access") == "read" or "read" in ev.facets)
-            and key in writes
-            and attrs.get("key") is not None
-        ):
-            w = writes[key]
-            written = {a.artifact_id for a in w.inputs if a.role == "value"} or {
-                a.artifact_id for a in w.inputs
-            }
-            read = {a.artifact_id for a in ev.outputs if a.role == "value"} or {
-                a.artifact_id for a in ev.outputs
-            }
-            if read and written and not (read & written):
-                # same key, different content: the read did not return what was written
-                # (stale or overwritten elsewhere) — no information flowed from this write
-                continue
-            verified = bool(read & written)
-            rels.append(
-                make_relation(
-                    View.INFORMATION,
-                    RelType.TRANSFERS,
-                    [node_event(w.event_id)],
-                    [node_event(ev.event_id)],
-                    basis=Basis.CONTENT_MATCH if verified else Basis.KEY_MATCH,
-                    confidence=1.0 if verified else 0.5,
-                    run_id=run_of.get(ev.event_id),
-                    evidence=[node_event(w.event_id), node_event(ev.event_id)],
-                    derived_by=INFO_BUILDER,
-                    attributes={
-                        "memory": ev.object.canonical,
-                        "key": attrs.get("key"),
-                        "via": "memory",
-                        "value_match": "identical" if verified else "unverified",
-                    },
-                )
-            )
+    def tokens_of(content_id: str) -> frozenset[str]:
+        if content_id not in cache:
+            content = artifacts.get(content_id)
+            sh = shingles(text_of(json.loads(content.content_json))) if content else frozenset()
+            cache[content_id] = sh if len(sh) >= MIN_SHINGLES else frozenset()
+        return cache[content_id]
 
-    # 4. content containment: an artifact whose text contains an earlier artifact's text
-    sh_cache: dict[str, frozenset[str]] = {}
-
-    def shingles_of(aid: str) -> frozenset[str]:
-        if aid not in sh_cache:
-            content = artifacts.get(aid)
-            sh_cache[aid] = (
-                shingles(text_of(json.loads(content.content_json))) if content else frozenset()
-            )
-        return sh_cache[aid]
-
-    # Lists decomposed into items are represented by their items for content matching.
-    decomposed = {aid for aid, items in item_cache.items() if items}
-    # Artifacts whose content entered from outside the system cannot derive from earlier
-    # in-system artifacts; a content match into them is recorded as MATCHES_CONTENT.
-    external: set[tuple[str | None, str]] = set()
-    for ev in ordered:
-        if ev.kind in (EventKind.RETRIEVAL, EventKind.EXTERNAL_IO, EventKind.EXTERNAL_INPUT):
-            for ref in ev.outputs:
-                external.add((run_of.get(ev.event_id), ref.artifact_id))
-    for (rid, iid), parent in item_parent.items():
-        if (rid, parent) in external:
-            external.add((rid, iid))
-    by_run: dict[str | None, list[str]] = defaultdict(list)
-    for rid, aid in first_seen:
-        if aid not in decomposed and len(shingles_of(aid)) >= MIN_SHINGLES:
-            by_run[rid].append(aid)
-    for run_id, aids in by_run.items():
-        aids.sort(key=lambda a: first_seen[(run_id, a)])
-        # contained[x] = {y: containment of y in x} for every earlier y whose text x contains
-        contained: dict[str, dict[str, float]] = defaultdict(dict)
-        # (m, y) -> positions at which an event consuming y produced m (content-identical values
-        # may be produced again after they were first seen)
-        made_from: dict[tuple[str, str], list[int]] = defaultdict(list)
-        for ev in ordered:
-            if run_of.get(ev.event_id) == run_id:
-                for o in ev.outputs:
-                    for i in ev.inputs:
-                        made_from[(o.artifact_id, i.artifact_id)].append(position[ev.event_id])
-        # Exact prefix-filtered similarity join. containment(y in x) >= t requires x to contain
-        # at least one of y's first |y| - ceil(t*|y|) + 1 shingles under any fixed global order
-        # (pigeonhole). Ordering by rarity keeps those prefixes, and so the index, small;
-        # every candidate is then verified exactly, so the result equals pairwise comparison.
-        df: dict[str, int] = defaultdict(int)
-        for a in aids:
-            for sh in shingles_of(a):
-                df[sh] += 1
-        index: dict[str, list[str]] = defaultdict(list)
-        pending: list[str] = []
-        pending_pos: int | None = None
-        for x in aids:
-            fx = first_seen[(run_id, x)]
-            if pending_pos is not None and fx != pending_pos:
-                for y in pending:  # artifacts become candidates only for strictly later ones
-                    sy = shingles_of(y)
-                    keep = len(sy) - math.ceil(CONTAINMENT_THRESHOLD * len(sy)) + 1
-                    for sh in sorted(sy, key=lambda k: (df[k], k))[:keep]:
-                        index[sh].append(y)
-                pending = []
-            pending_pos = fx
-            pending.append(x)
-            sx = shingles_of(x)
-            candidates: set[str] = set()
-            for sh in sx:
-                candidates.update(index.get(sh, ()))
-            for y in sorted(candidates):
-                if item_parent.get((run_id, y)) == x or item_parent.get((run_id, x)) == y:
-                    continue
-                sy = shingles_of(y)
-                containment = len(sx & sy) / len(sy)
-                if containment >= CONTAINMENT_THRESHOLD:
-                    contained[x][y] = containment
-        for x in aids:
-            sx = shingles_of(x)
-            for y, containment in sorted(contained[x].items()):
-                if (run_id, x) not in external and _mediated(
-                    y,
-                    x,
-                    contained,
-                    made_from,
-                    first_seen[(run_id, x)],
-                    sx,
-                    shingles_of,
-                    external,
-                    run_id,
-                ):
-                    continue
-                rtype = RelType.MATCHES_CONTENT if (run_id, x) in external else RelType.DERIVES_FROM
-                rels.append(
-                    make_relation(
-                        View.INFORMATION,
-                        rtype,
-                        [node_artifact(y)],
-                        [node_artifact(x)],
-                        basis=Basis.CONTENT_MATCH,
-                        confidence=round(containment, 3),
-                        run_id=run_id,
-                        evidence=[node_artifact(y), node_artifact(x)],
-                        derived_by=INFO_BUILDER,
-                        attributes={
-                            "method": f"word-{SHINGLE}gram containment",
-                            "containment": round(containment, 3),
-                        },
-                    )
-                )
+    rels = build_information_instances(
+        events,
+        run_of,
+        artifacts,
+        register,
+        source_index if source_index is not None else build_source_index(events),
+        derived_by=INFO_BUILDER,
+        tokens_of=tokens_of,
+        containment_threshold=CONTAINMENT_THRESHOLD,
+        max_list_items=MAX_LIST_ITEMS,
+        shingle_size=SHINGLE,
+        memory_context=memory_context,
+        memory_context_runs=memory_context_runs or {},
+    )
     return _dedupe(rels)
-
-
-def _mediated(
-    y: str,
-    x: str,
-    contained: dict[str, dict[str, float]],
-    made_from: dict[tuple[str, str], list[int]],
-    x_pos: int,
-    sx: frozenset[str],
-    shingles_of: Callable[[str], frozenset[str]],
-    external: set[tuple[str | None, str]],
-    run_id: str | None,
-) -> bool:
-    """True when y's text in x is explained by an in-system intermediate m that carries all
-    of the shared text and that y demonstrably flows into before x appears — either m contains y
-    (a content edge y→m; ``contained`` only relates earlier to later artifacts) or m was
-    produced, before x, by an event that consumed y. The direct y→x edge is then a transitive
-    shortcut; the path through m remains, so dropping it preserves reachability."""
-    shared = shingles_of(y) & sx
-    for m in contained[x]:
-        if m == y or (run_id, m) in external:
-            continue
-        flows = y in contained.get(m, {}) or any(p < x_pos for p in made_from.get((m, y), ()))
-        # m must carry all of the shared text: whatever x shares with y that m lacks reached x
-        # some other way, possibly directly from y
-        if flows and shared <= shingles_of(m):
-            return True
-    return False
 
 
 def _dedupe(rels: list[dict[str, Any]]) -> list[dict[str, Any]]:

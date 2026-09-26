@@ -87,16 +87,20 @@ def run_by(ws: Workspace, i: int) -> str:
     return sorted(ws.runs(), key=lambda r: r["started_at"])[i]["run_id"]
 
 
-def test_provenance_reaches_retrieved_documents_through_memory(ws):
+def test_provenance_reaches_retrieved_documents_and_exposes_ambiguity(ws):
+    """The report is written from a memory note whose text equals the summary, which (the stub
+    summarizer being extractive) is the retrieved text itself. Content cannot tell which of
+    documents / summary / note the writer used: the documents are certain (an ancestor under
+    every explanation), the note is shown as an ambiguous candidate, nothing is invented."""
     rid = run_by(ws, 0)
     res = lineage(ws, "report.md", run_id=rid)
     text = "\n".join(render(res))
     assert "RETRIEVAL kb" in text, text
-    assert "via memory from MEMORY_ACCESS write:notes" in text
-    assert "MODEL_INVOCATION stub/summarizer" in text
+    assert "POSSIBLY from (ambiguous)" in text
+    assert res["metrics"]["ambiguous_candidates"]
     assert res["metrics"]["provenance_depth"] >= 4
-    # every non-declared step reports its basis and confidence
-    assert "content_match" in text
+    # every non-declared step reports its evidence type and strength
+    assert "content_containment, WEAK" in text
 
 
 def test_dependents_of_retrieval_include_report(ws):
@@ -193,12 +197,12 @@ def test_hyperedge_traversal_and_causal_view_rules():
 def test_retry_and_repeat_motifs(ws):
     inst = ws.derived("motif_instance", run_by(ws, 1))
     ids = {m["motif_id"] for m in inst}
-    # M006: both retrieved docs reach the report only through the summary (information bottleneck
-    # by definition; hidden before content shortcuts were reduced, graph.information@5)
-    assert ids == {"M001", "M002", "M006"}
+    # no M006: the (extractive) summary is not established as the only route from the documents
+    # to the report — content cannot tell the report was not built from the documents directly
+    assert ids == {"M001", "M002"}
     retry = next(m for m in inst if m["motif_id"] == "M001")
     assert retry["measures"]["attempts"] == 3 and retry["measures"]["recovered"] is True
-    assert {m["motif_id"] for m in ws.derived("motif_instance", run_by(ws, 0))} == {"M006"}
+    assert not ws.derived("motif_instance", run_by(ws, 0))
 
 
 def test_every_motif_has_a_definition_and_is_experimental():
@@ -450,32 +454,43 @@ def test_traversal_respects_time_through_shared_artifacts():
     assert "event:early" in {s.node for s in untimed.descendants("event:late")}
 
 
-def test_most_recent_producer_disambiguates_identical_content():
-    """Regression (held-out AWBench, fan-out): two workers retrieve the same document; the
-    second worker's model call must trace to its own retrieval, not the earlier identical one."""
+def test_identical_documents_in_two_workers_resolve_by_declared_scope(engine, sink):
+    """Regression (held-out AWBench, fan-out; ADR-0017): two workers retrieve the same document.
+    Each worker's model call must trace to its own retrieval — the copy produced inside its own
+    declared scope — not to the earlier identical one."""
 
-    def rel(t, tail, head):
-        return make_relation(
-            View.INFORMATION, t, [tail], [head], basis=Basis.DECLARED, run_id=None, derived_by="t"
-        )
+    @aw.retriever("kb")
+    def search(q):
+        return DOCS
 
-    rels = [
-        rel(RelType.PRODUCES, "event:r0", "artifact:list0"),
-        rel(RelType.CONTAINS_ITEM, "artifact:list0", "artifact:doc"),
-        rel(RelType.PRODUCES, "event:r1", "artifact:list1"),
-        rel(RelType.CONTAINS_ITEM, "artifact:list1", "artifact:doc"),
-        rel(RelType.CONSUMES, "artifact:doc", "event:m0"),
-        rel(RelType.CONSUMES, "artifact:doc", "event:m1"),
-    ]
-    g = Graph(rels, times={"event:r0": 1.0, "event:m0": 2.0, "event:r1": 3.0, "event:m1": 4.0})
-    assert {s.node for s in g.descendants("event:r0") if s.node.startswith("event:")} == {
-        "event:m0"
-    }
-    assert {s.node for s in g.descendants("event:r1") if s.node.startswith("event:")} == {
-        "event:m1"
-    }
-    assert {s.node for s in g.ancestors("event:m1") if s.node.startswith("event:")} == {"event:r1"}
-    assert {s.node for s in g.ancestors("event:m0") if s.node.startswith("event:")} == {"event:r0"}
+    def body():
+        for w in range(2):
+            with aw.span("OPERATION", f"worker{w}", actor=f"agent:w{w}"):
+                docs = search(f"q{w}")
+
+                @aw.model("m", actor=f"agent:w{w}")
+                def gen(p):
+                    return f"worker {w} reply"
+
+                gen("Context:\n" + "\n".join(d["text"] for d in docs))
+
+    _motif_run(engine, sink, body)
+    ws = Workspace(engine)
+    run = ws.resolve_run("latest")["run_id"]
+    g = ws.graph(run)
+    retrievals = ws.events(run, kind="RETRIEVAL")
+    models = ws.events(run, kind="MODEL_INVOCATION")
+    for r, m in zip(retrievals, models, strict=True):
+        up = {
+            s.node
+            for s in g.ancestors(
+                f"event:{m['event_id']}",
+                types=["PRODUCES", "CONSUMES", "DERIVES_FROM", "CONTAINS_ITEM", "TRANSFERS"],
+            )
+        }
+        assert f"event:{r['event_id']}" in up
+        others = {f"event:{x['event_id']}" for x in retrievals} - {f"event:{r['event_id']}"}
+        assert not (up & others)
 
 
 def test_identical_retrievals_are_matches_not_derivations(engine, sink):
@@ -509,8 +524,9 @@ def test_identical_retrievals_are_matches_not_derivations(engine, sink):
 
 def test_content_shortcuts_through_an_intermediate_are_reduced(engine, sink):
     """Regression (held-out AWBench, hybrid_rag_cache): a report built from a model answer that
-    quotes retrieved text also contains that text. The direct item→report containment is a
-    shortcut of item→answer→report; keeping it hid the answer as an information bottleneck."""
+    quotes retrieved text also contains that text. Every retrieved item must not also get its
+    own direct edge when an intermediate carries the text; and when content cannot prove the
+    answer (rather than the documents) was used, the answer is a candidate, not a source."""
 
     @aw.retriever("idx")
     def search(q):
@@ -525,16 +541,17 @@ def test_content_shortcuts_through_an_intermediate_are_reduced(engine, sink):
         out = answer("Context:\n" + "\n".join(d["text"] for d in docs))
         aw.artifact("report.md", out + " Estimate: 42.")
 
-    m = _motif_run(engine, sink, body)
-    assert "M006" in m
+    _motif_run(engine, sink, body)
     ws = Workspace(engine)
     run = ws.resolve_run("latest")["run_id"]
     report = next(e for e in ws.events(run) if "artifact_creation" in e["facets"])
-    report_node = f"artifact:{report['outputs'][0]['artifact_id']}"
-    into_report = [
-        r for r in ws.relations(run) if r["type"] == "DERIVES_FROM" and report_node in r["head"]
-    ]
-    assert len(into_report) == 1  # only the answer; item shortcuts reduced
+    report_node = f"inst:{report['event_id']}/o0"
+    into = [r for r in ws.relations(run) if report_node in r["head"]]
+    derived = {r["tail"][0] for r in into if r["type"] == "DERIVES_FROM"}
+    candidates = {r["tail"][0] for r in into if r["type"] == "CANDIDATE_SOURCE"}
+    model = ws.events(run, kind="MODEL_INVOCATION")[0]
+    assert f"inst:{model['event_id']}/o0" in candidates  # extractive answer: not provable
+    assert derived and all("/i" in n for n in derived)  # the documents, certain
     # reachability is preserved: the retrieval still reaches the report
     retrieval = ws.events(run, kind="RETRIEVAL")[0]
     g = ws.graph(run)

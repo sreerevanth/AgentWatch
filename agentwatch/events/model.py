@@ -80,11 +80,45 @@ class EntityRef:
 
 @dataclass(frozen=True, slots=True)
 class ArtifactRef:
-    """Content-addressed value consumed or produced by an event."""
+    """A value consumed or produced by an event.
+
+    ``artifact_id`` is the CONTENT identity (HMAC of the canonical value): equal bytes, equal
+    id. It says nothing about which event produced the value (ADR-0017). Information identity
+    comes from the producing event and output slot, and may be declared by the sensor:
+
+    * ``instance`` (outputs): an opaque instance id the sensor declared for this produced value.
+    * ``sources`` (inputs): references to the produced values this input is, or is built from,
+      as declared by the sensor (``<key_space>:<source_id>/o<slot>``, or a declared instance
+      id). Runtime object identity observed by the native SDK is declared this way.
+    """
 
     artifact_id: str
     role: str  # input | output | prompt | completion | arguments | result | document | message
     label: str | None = None
+    instance: str | None = None
+    sources: tuple[str, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        d: dict[str, Any] = {
+            "artifact_id": self.artifact_id,
+            "role": self.role,
+            "label": self.label,
+        }
+        if self.instance:
+            d["instance"] = self.instance
+        if self.sources:
+            d["sources"] = list(self.sources)
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> ArtifactRef:
+        return cls(
+            d["artifact_id"],
+            d["role"],
+            d.get("label"),
+            d.get("instance"),
+            tuple(d.get("sources") or ()),
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,14 +246,8 @@ class ComputationalEvent:
             "actor": self.actor.canonical if self.actor else None,
             "object": self.object.canonical if self.object else None,
             "facets": list(self.facets),
-            "inputs": [
-                {"artifact_id": a.artifact_id, "role": a.role, "label": a.label}
-                for a in self.inputs
-            ],
-            "outputs": [
-                {"artifact_id": a.artifact_id, "role": a.role, "label": a.label}
-                for a in self.outputs
-            ],
+            "inputs": [a.to_dict() for a in self.inputs],
+            "outputs": [a.to_dict() for a in self.outputs],
             "effects": [
                 {"kind": e.kind.value, "target": e.target, "target_type": e.target_type}
                 for e in self.effects

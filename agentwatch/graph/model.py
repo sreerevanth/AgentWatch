@@ -67,6 +67,9 @@ class RelType(StrEnum):
     # (retrieval, external I/O, external input): a similarity, not an information flow
     MATCHES_CONTENT = "MATCHES_CONTENT"
     CONTAINS_ITEM = "CONTAINS_ITEM"
+    # a possible source of a value that the evidence does not single out (ambiguous
+    # provenance, ADR-0017): NOT an information flow, excluded from traversal by default
+    CANDIDATE_SOURCE = "CANDIDATE_SOURCE"
     WRITES_TO = "WRITES_TO"
     READS_FROM = "READS_FROM"
     TRANSFERS = "TRANSFERS"
@@ -75,6 +78,42 @@ class RelType(StrEnum):
     INFLUENCES = "INFLUENCES"
     ENABLES = "ENABLES"
     PREVENTS = "PREVENTS"
+
+
+class InfoEvidence(StrEnum):
+    """What supports an INFORMATION relation (ADR-0017), strongest first."""
+
+    DECLARED_OUTPUT = "DECLARED_OUTPUT"  # the event declared it produced the value
+    DECLARED_INPUT = "DECLARED_INPUT"  # the event declared it consumed the value
+    DECLARED_REFERENCE = "DECLARED_REFERENCE"  # sensor-declared source (incl. runtime identity)
+    CORRELATION_LINEAGE = "CORRELATION_LINEAGE"  # declared parent/linked span had the value
+    MEMORY_REFERENCE = "MEMORY_REFERENCE"  # memory read returned the written value
+    MESSAGE_REFERENCE = "MESSAGE_REFERENCE"  # same value produced on the same channel
+    ARTIFACT_REFERENCE = "ARTIFACT_REFERENCE"  # same value written to the same named object
+    TEMPORAL_CONTENT_MATCH = "TEMPORAL_CONTENT_MATCH"  # identical value produced earlier
+    CONTENT_CONTAINMENT = "CONTENT_CONTAINMENT"  # constructed value contains earlier text
+    CONTENT_MATCH_ONLY = "CONTENT_MATCH_ONLY"  # similarity only; never an information flow
+
+
+# Deterministic evidence levels (not probabilities). STRONG relations come from what a sensor
+# declared ("high-fidelity mode"); the others are inferred ("best-effort mode").
+_STRENGTH = {
+    InfoEvidence.DECLARED_OUTPUT: "STRONG",
+    InfoEvidence.DECLARED_INPUT: "STRONG",
+    InfoEvidence.DECLARED_REFERENCE: "STRONG",
+    InfoEvidence.CORRELATION_LINEAGE: "MEDIUM",
+    InfoEvidence.MEMORY_REFERENCE: "MEDIUM",
+    InfoEvidence.MESSAGE_REFERENCE: "MEDIUM",
+    InfoEvidence.ARTIFACT_REFERENCE: "MEDIUM",
+    InfoEvidence.TEMPORAL_CONTENT_MATCH: "WEAK",
+    InfoEvidence.CONTENT_CONTAINMENT: "WEAK",
+    InfoEvidence.CONTENT_MATCH_ONLY: "NONE",
+}
+STRENGTH_RANK = {"NONE": 0, "WEAK": 1, "MEDIUM": 2, "STRONG": 3}
+
+
+def strength_of(evidence: InfoEvidence) -> str:
+    return _STRENGTH[evidence]
 
 
 def node_event(event_id: str) -> str:

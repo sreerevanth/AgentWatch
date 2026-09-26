@@ -33,6 +33,36 @@ logger = logging.getLogger(__name__)
 PIPELINE_VERSION = "1"
 
 
+def _writes_seen_by_other_runs(
+    events: Sequence[ComputationalEvent],
+    run_of: dict[str, str | None],
+    stored_memory: Sequence[dict[str, Any]],
+) -> bool:
+    """True when a newly built memory write shares its store and key with a stored read of
+    another run that started after it: that read's source could change."""
+    new_writes = [
+        (e.object.canonical, e.attributes.get("key"), e.time.start, run_of.get(e.event_id))
+        for e in events
+        if e.kind.value == "MEMORY_ACCESS"
+        and e.object is not None
+        and (e.attributes.get("access") == "write" or "write" in e.facets)
+    ]
+    if not new_writes:
+        return False
+    for r in stored_memory:
+        if not (r["attributes"].get("access") == "read" or "read" in r["facets"]):
+            continue
+        for obj, key, t, run in new_writes:
+            if (
+                r.get("object") == obj
+                and r["attributes"].get("key") == key
+                and r.get("run_id") != run
+                and (t is None or (r["time"]["start"] or "") >= t.isoformat())
+            ):
+                return True
+    return False
+
+
 def default_analyzers() -> list[Analyzer]:
     from agentwatch.analysis.registry import builtin_analyzers
 
@@ -200,7 +230,28 @@ class Engine:
             for o in self.store.observations(tenant_id, obs_ids=sorted(group_ids))
             if o.obs_id <= through
         ]
-        built = self.build(tenant_id, interp_id, group)
+        from agentwatch.events.codec import event_from_dict
+
+        group_obs = {o.obs_id for o in group}
+        stored_memory = [
+            e
+            for e in self.store.events(interp_id, kind="MEMORY_ACCESS")
+            if not set(e["derived_from"]) & group_obs
+        ]
+        memory_context = [
+            event_from_dict(e)
+            for e in stored_memory
+            if e["attributes"].get("access") == "write" or "write" in e["facets"]
+        ]
+        built = self.build(
+            tenant_id,
+            interp_id,
+            group,
+            memory_context=memory_context,
+            memory_context_runs={e["event_id"]: e.get("run_id") for e in stored_memory},
+        )
+        if _writes_seen_by_other_runs(built["events"], built["run_of"], stored_memory):
+            return None  # a new write may change what reads of other runs returned
         if any(built["run_of"].get(e.event_id) is None for e in built["events"]):
             return None
         if any(run.get("unresolved_links") for run in built["runs"].values()):
@@ -213,14 +264,11 @@ class Engine:
             new_docs.append(d)
         # entities aggregate over every run: recompute from the unchanged events plus the new ones
         affected_runs = set(built["runs"])
-        group_obs = {o.obs_id for o in group}
         kept = [
             e
             for e in self.store.events(interp_id)
             if e.get("run_id") not in affected_runs and not set(e["derived_from"]) & group_obs
         ]
-        from agentwatch.events.codec import event_from_dict
-
         all_events = [event_from_dict(e) for e in kept] + list(built["events"])
         run_of = {e["event_id"]: e.get("run_id") for e in kept} | dict(built["run_of"])
         entities = resolve_entities(all_events, tenant_id, run_of)
@@ -251,9 +299,19 @@ class Engine:
         }
 
     def build(
-        self, tenant_id: str, interp_id: str, observations: Sequence[RawObservation]
+        self,
+        tenant_id: str,
+        interp_id: str,
+        observations: Sequence[RawObservation],
+        *,
+        memory_context: Sequence[ComputationalEvent] = (),
+        memory_context_runs: dict[str, str | None] | None = None,
     ) -> dict[str, Any]:
-        """Pure derivation from evidence (no store writes). Used by process() and replay."""
+        """Pure derivation from evidence (no store writes). Used by process() and replay.
+
+        ``memory_context``: already-interpreted memory writes of runs outside ``observations``
+        (incremental processing), so reads can be linked to writes of other runs exactly as a
+        full rebuild links them."""
         ctx = NormalizeContext(
             tenant_id=tenant_id,
             interp_id=interp_id,
@@ -323,7 +381,13 @@ class Engine:
             return ctx.artifact(value, role).artifact_id
 
         relations = build_execution(events, seg.run_of, index) + build_information(
-            events, seg.run_of, ctx.artifacts, register
+            events,
+            seg.run_of,
+            ctx.artifacts,
+            register,
+            index,
+            memory_context=memory_context,
+            memory_context_runs=memory_context_runs,
         )
         derived: list[dict[str, Any]] = []
         data = AnalysisInput(

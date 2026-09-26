@@ -47,6 +47,20 @@ def _jsonable(value: Any) -> tuple[Any, bool]:
     return converted, faithful
 
 
+# Runtime object identity (ADR-0017). A value a span produced, passed as the very same Python
+# object into a later span, is a declared reference to that produced instance. Scalars and short
+# strings are not tracked: the interpreter shares them between unrelated producers.
+_IDENTITY_MIN_STR = 16
+_IDENTITY_MAX_OBJECTS = 20_000
+_IDENTITY_SCAN = 64  # container elements inspected per input
+
+
+def _trackable(value: Any) -> bool:
+    if isinstance(value, str):
+        return len(value) >= _IDENTITY_MIN_STR
+    return isinstance(value, (dict, list, tuple, set, bytes)) and bool(value)
+
+
 class RunHandle:
     def __init__(
         self, recorder: Recorder, name: str, run_id: str, attributes: dict[str, Any]
@@ -58,6 +72,39 @@ class RunHandle:
         self.outcome: str | None = None
         self.subject_id: str | None = None
         self._ordinals: dict[tuple[str, str], int] = {}
+        # id(obj) -> (obj, ref); ref None when two producers returned the same object
+        self._produced: dict[int, tuple[Any, str | None]] = {}
+
+    def register_output(self, value: Any, ref: str) -> None:
+        if not _trackable(value) or len(self._produced) >= _IDENTITY_MAX_OBJECTS:
+            return
+        known = self._produced.get(id(value))
+        if known is not None and known[0] is value:
+            if known[1] != ref:
+                self._produced[id(value)] = (value, None)  # ambiguous: several producers
+            return
+        self._produced[id(value)] = (value, ref)  # keeps the object alive: ids stay unique
+
+    def references(self, value: Any) -> list[str]:
+        """Produced instances this input value is (or contains, one or two levels deep)."""
+        out: list[str] = []
+
+        def ref_of(v: Any) -> str | None:
+            known = self._produced.get(id(v))
+            return known[1] if known is not None and known[0] is v else None
+
+        whole = ref_of(value)
+        if whole:
+            return [whole]
+        level1 = list(value.values()) if isinstance(value, dict) else value
+        if isinstance(level1, (list, tuple)):
+            for v in level1[:_IDENTITY_SCAN]:
+                r = ref_of(v)
+                if r:
+                    out.append(r)
+                elif isinstance(v, (list, tuple)):
+                    out.extend(r2 for x in v[:_IDENTITY_SCAN] if (r2 := ref_of(x)))
+        return list(dict.fromkeys(out))
 
     def next_ordinal(self, kind: str, operation: str) -> int:
         key = (kind, operation)
@@ -99,15 +146,41 @@ class Span:
         self.call_key: str | None = None
         self._t0 = time.perf_counter()
 
-    def input(self, value: Any, role: str = "input", label: str | None = None) -> Span:
+    def input(
+        self,
+        value: Any,
+        role: str = "input",
+        label: str | None = None,
+        *,
+        source: Span | str | list[Span | str] | None = None,
+    ) -> Span:
+        """Record a consumed value. ``source`` declares which produced value(s) it is: a Span
+        (its first output), a reference from ``Span.ref()``, or a list of them. Without it, the
+        SDK declares a source only when the very same object was produced by an earlier span
+        of this run (runtime identity); equal but distinct objects get no declared source."""
         jv, faithful = _jsonable(value)
-        self.inputs.append({"role": role, "label": label, "value": jv, "faithful": faithful})
+        item: dict[str, Any] = {"role": role, "label": label, "value": jv, "faithful": faithful}
+        declared = [
+            s.ref() if isinstance(s, Span) else str(s)
+            for s in (source if isinstance(source, list) else [source] if source else [])
+        ]
+        if not declared and self.run is not None:
+            declared = self.run.references(value)
+        if declared:
+            item["sources"] = declared
+        self.inputs.append(item)
         return self
 
     def output(self, value: Any, role: str = "output", label: str | None = None) -> Span:
         jv, faithful = _jsonable(value)
         self.outputs.append({"role": role, "label": label, "value": jv, "faithful": faithful})
+        if self.run is not None:
+            self.run.register_output(value, self.ref(len(self.outputs) - 1))
         return self
+
+    def ref(self, slot: int = 0) -> str:
+        """Reference to this span's ``slot``-th output, for ``Span.input(..., source=...)``."""
+        return f"native.span:{self.span_id}/o{slot}"
 
     def link(self, other: Span | str, relation: str = "depends_on") -> Span:
         """Declare an extra dependency (multi-parent) on another span."""

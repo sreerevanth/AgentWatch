@@ -17,6 +17,7 @@ from agentwatch.analysis.base import AnalysisInput, Analyzer
 from agentwatch.analysis.maturity import Maturity
 from agentwatch.events.model import ComputationalEvent, EventKind, EventStatus
 from agentwatch.graph.build import event_order
+from agentwatch.graph.information import instance_event
 
 MOTIF_NS = uuid.UUID("5e1d7c9a-8b2f-5c3d-9e4f-6a7b8c9d0e1f")
 
@@ -265,7 +266,7 @@ def detect_ping_pong(
     MotifDefinition(
         "M004",
         "retrieval_echo",
-        "1",
+        "2",
         "GRAPH_QUERY",
         "A RETRIEVAL returns content (an item, or the whole result) that was produced earlier in the same run by a "
         "MODEL_INVOCATION or written to memory — identical artifact or DERIVES_FROM containment ≥ threshold. The "
@@ -278,56 +279,42 @@ def detect_retrieval_echo(
     relations: list[dict[str, Any]],
     data: AnalysisInput,
 ) -> list[MotifInstance]:
-    ordered = event_order(events)
-    pos = {e.event_id: i for i, e in enumerate(ordered)}
-    produced_by: dict[str, ComputationalEvent] = {}
-    for e in ordered:
-        if e.kind == EventKind.MODEL_INVOCATION or (
-            e.kind == EventKind.MEMORY_ACCESS and "write" in e.facets
-        ):
-            for a in [*e.outputs, *e.inputs] if e.kind == EventKind.MEMORY_ACCESS else e.outputs:
-                produced_by.setdefault(a.artifact_id, e)
-    items: dict[str, set[str]] = defaultdict(set)
-    derives: dict[str, list[tuple[str, dict[str, Any]]]] = defaultdict(list)
-    for r in relations:
-        if r["type"] == "CONTAINS_ITEM":
-            items[r["tail"][0][9:]].add(r["head"][0][9:])
-        if r["type"] in ("DERIVES_FROM", "MATCHES_CONTENT"):
-            derives[r["head"][0][9:]].append((r["tail"][0][9:], r))
+    by_id = {e.event_id: e for e in events}
+
+    def producer(node: str) -> ComputationalEvent | None:
+        eid = instance_event(node)
+        return by_id.get(eid) if eid else None
+
     out = []
-    for e in ordered:
-        if e.kind != EventKind.RETRIEVAL:
+    seen: set[tuple[str, str]] = set()
+    for r in sorted(relations, key=lambda r: r["rel_id"]):
+        if r["type"] != "MATCHES_CONTENT":
             continue
-        for o in e.outputs:
-            for aid in {o.artifact_id, *items.get(o.artifact_id, set())}:
-                src = produced_by.get(aid)
-                basis, conf, rel_ids = "identical", 1.0, []
-                if src is None:
-                    for tail, rel in derives.get(aid, []):
-                        cand = produced_by.get(tail)
-                        if cand is not None:
-                            src, basis, conf, rel_ids = (
-                                cand,
-                                "content_match",
-                                rel["confidence"],
-                                [rel["rel_id"]],
-                            )
-                            break
-                if src is not None and pos[src.event_id] < pos[e.event_id]:
-                    out.append(
-                        MotifInstance(
-                            "M004",
-                            run_id,
-                            [src.event_id, e.event_id],
-                            artifacts=[aid],
-                            confidence=conf,
-                            evidence=rel_ids or [aid],
-                            explanation=f"retrieval {e.operation} returned content produced earlier by {src.kind.value} {src.operation} ({basis})",
-                            measures={"basis": basis},
-                            t_start=_span([src])[0],
-                            t_end=_span([e])[1],
-                        )
-                    )
+        dst, src_node = producer(r["head"][0]), r["tail"][0]
+        src = producer(src_node)
+        if dst is None or src is None or dst.kind != EventKind.RETRIEVAL:
+            continue
+        own = src.kind == EventKind.MODEL_INVOCATION and "/o" in src_node
+        memory = src.kind == EventKind.MEMORY_ACCESS and "write" in src.facets
+        if not (own or memory) or (src.event_id, dst.event_id) in seen:
+            continue
+        seen.add((src.event_id, dst.event_id))
+        conf = r["confidence"]
+        basis = "identical" if conf >= 1.0 else "content_match"
+        out.append(
+            MotifInstance(
+                "M004",
+                run_id,
+                [src.event_id, dst.event_id],
+                artifacts=[r["attributes"].get("content_id") or r["head"][0]],
+                confidence=conf,
+                evidence=[r["rel_id"]],
+                explanation=f"retrieval {dst.operation} returned content produced earlier by {src.kind.value} {src.operation} ({basis})",
+                measures={"basis": basis},
+                t_start=_span([src])[0],
+                t_end=_span([dst])[1],
+            )
+        )
     return out
 
 
@@ -355,17 +342,22 @@ def detect_context_expansion(
         if e.kind == EventKind.MODEL_INVOCATION and e.object:
             actor = e.actor.canonical if e.actor else "(no actor)"
             by_model[f"{e.object.canonical} by {actor}"].append(e)
+    # the next input contains the previous input's text: a resolved derivation or an ambiguous
+    # candidate both establish that (M005 is about carried content, not which copy carried it)
     derives = {
-        (r["tail"][0][9:], r["head"][0][9:])
+        (r["tail"][0], r["head"][0])
         for r in relations
-        if r["type"] == "DERIVES_FROM"
-        and r["tail"][0].startswith("artifact:")
-        and r["head"][0].startswith("artifact:")
+        if r["type"] in ("DERIVES_FROM", "CANDIDATE_SOURCE")
     }
+    consumed: dict[str, set[str]] = defaultdict(set)
+    for r in relations:
+        if r["type"] == "CONSUMES" and r["head"][0].startswith("event:"):
+            consumed[r["head"][0][6:]].add(r["tail"][0])
 
     def carried_forward(prev: ComputationalEvent, nxt: ComputationalEvent) -> bool:
-        a = {x.artifact_id for x in prev.inputs}
-        b = {x.artifact_id for x in nxt.inputs}
+        if {x.artifact_id for x in prev.inputs} & {x.artifact_id for x in nxt.inputs}:
+            return True  # the identical value is passed again
+        a, b = consumed.get(prev.event_id, set()), consumed.get(nxt.event_id, set())
         return bool(a & b) or any((x, y) in derives for x in a for y in b)
 
     def size(e: ComputationalEvent) -> tuple[float, str]:
@@ -418,7 +410,7 @@ def detect_context_expansion(
     MotifDefinition(
         "M006",
         "information_bottleneck",
-        "1",
+        "2",
         "GRAPH_QUERY",
         "In the INFORMATION view, an intermediate artifact X lies on every lineage path from ≥2 distinct origin "
         "artifacts (retrieved items / external inputs) to a final output artifact: removing X disconnects all origins "
@@ -435,24 +427,27 @@ def detect_bottleneck(
     back = {"PRODUCES", "CONSUMES", "DERIVES_FROM", "CONTAINS_ITEM", "TRANSFERS"}
     inc: dict[str, list[str]] = defaultdict(list)
     for r in relations:
-        if r["view"] == "INFORMATION" and r["type"] in back:
+        if (
+            r["view"] == "INFORMATION"
+            and r["type"] in back
+            and (r.get("attributes") or {}).get("resolution") != "AMBIGUOUS"
+        ):
             for t in r["tail"]:
                 for h in r["head"]:
                     if not t.startswith("entity:") and not h.startswith("entity:"):
                         inc[h].append(t)
+    kinds = {e.event_id: e.kind for e in events}
     origins_kinds = (EventKind.RETRIEVAL, EventKind.EXTERNAL_INPUT)
-    item_of: set[str] = set()
+    produced_by = {r["head"][0]: r["tail"][0][6:] for r in relations if r["type"] == "PRODUCES"}
+    origin_nodes = {n for n, eid in produced_by.items() if kinds.get(eid) in origins_kinds}
     for r in relations:
-        if r["type"] == "CONTAINS_ITEM":
-            item_of.update(r["head"])
-    origin_nodes = {
-        f"artifact:{a.artifact_id}" for e in events if e.kind in origins_kinds for a in e.outputs
-    } | item_of
+        if r["type"] == "CONTAINS_ITEM" and r["tail"][0] in origin_nodes:
+            origin_nodes.update(r["head"])
     finals = [
-        f"artifact:{a.artifact_id}"
+        f"inst:{e.event_id}/o{k}"
         for e in events
         if "artifact_creation" in e.facets
-        for a in e.outputs
+        for k in range(len(e.outputs))
     ]
 
     def ancestors(node: str, banned: str | None = None) -> set[str]:
@@ -473,7 +468,7 @@ def detect_bottleneck(
         if len(origins) < 2:
             continue
         for x in sorted(
-            a for a in anc if a.startswith("artifact:") and a not in origin_nodes and a != final
+            a for a in anc if a.startswith("inst:") and a not in origin_nodes and a != final
         ):
             if not (ancestors(final, banned=x) & origins):
                 out.append(
@@ -481,9 +476,9 @@ def detect_bottleneck(
                         "M006",
                         run_id,
                         [],
-                        artifacts=[x[9:], final[9:]],
+                        artifacts=[x, final],
                         evidence=[x, final],
-                        explanation=f"all {len(origins)} origins reach the output only through artifact {x[9:21]}",
+                        explanation=f"all {len(origins)} origins reach the output only through value {x[5:17]}",
                         measures={"origins": len(origins)},
                     )
                 )
@@ -541,7 +536,7 @@ def detect_strategy_change(
 
 class MotifAnalyzer(Analyzer):
     name = "motifs"
-    version = "2"  # 2: M005 v2
+    version = "3"  # 2: M005 v2; 3: information instances (ADR-0017)
     maturity = Maturity.EXPERIMENTAL
     record_type = "motif_instance"
 

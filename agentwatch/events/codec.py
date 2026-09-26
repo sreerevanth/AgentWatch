@@ -44,12 +44,8 @@ def event_from_dict(d: dict[str, Any]) -> ComputationalEvent:
         actor=EntityRef.parse(d["actor"]) if d.get("actor") else None,
         object=EntityRef.parse(d["object"]) if d.get("object") else None,
         facets=tuple(d.get("facets") or ()),
-        inputs=tuple(
-            ArtifactRef(a["artifact_id"], a["role"], a.get("label")) for a in d.get("inputs") or ()
-        ),
-        outputs=tuple(
-            ArtifactRef(a["artifact_id"], a["role"], a.get("label")) for a in d.get("outputs") or ()
-        ),
+        inputs=tuple(ArtifactRef.from_dict(a) for a in d.get("inputs") or ()),
+        outputs=tuple(ArtifactRef.from_dict(a) for a in d.get("outputs") or ()),
         effects=tuple(
             Effect(EffectKind(e["kind"]), e["target"], e.get("target_type", "entity"))
             for e in d.get("effects") or ()
