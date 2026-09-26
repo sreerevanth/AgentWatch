@@ -43,7 +43,9 @@ Source: `agentwatch/api/v3.py` (mounted by `agentwatch/api/server.py`). FastAPI 
 | GET | `/api/v3/runs/{ref}/branches` | branch history |
 | GET | `/api/v3/events/{ref}` | event, raw evidence, incoming/outgoing relations, motifs |
 | GET | `/api/v3/entities` | resolved entities |
-| GET | `/api/v3/artifacts/{ref}` | artifact content (by id, prefix or output label) |
+| GET | `/api/v3/artifacts/{ref}` | content by content id, prefix or output label (content identity, not a value) |
+| GET | `/api/v3/instances/{node}` | one information instance (`inst:<event>/o<k>` …): content id, producer/consumer, same-bytes count, erased state, relations with evidence |
+| GET | `/api/v3/runs/{ref}/provenance-evidence` | the run's information-evidence summary (by evidence type / strength / mode; resolved, ambiguous, unresolved inputs) and every ambiguous value with its candidates |
 | GET | `/api/v3/diagnostics` | normalization diagnostics |
 
 `{ref}` accepts a full id, a unique prefix, a run name, `latest` or `latest~N`.
@@ -52,7 +54,7 @@ Source: `agentwatch/api/v3.py` (mounted by `agentwatch/api/server.py`). FastAPI 
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/api/v3/provenance/{node}?run=` | lineage tree + text rendering + EXPERIMENTAL metrics |
+| GET | `/api/v3/provenance/{node}?run=` | lineage tree + text rendering + EXPERIMENTAL metrics; every node carries `evidence_type`, `strength`, and `ambiguous` + `alternatives` for candidate sources (not expanded) |
 | GET | `/api/v3/dependents/{node}?run=` | forward lineage |
 | GET | `/api/v3/compare?a=&b=` | earliest divergence, structural/resource/information/motif diffs, dependency cone share |
 | GET | `/api/v3/motifs` | registry with definitions, support and descriptive outcome associations |
@@ -72,3 +74,5 @@ Source: `agentwatch/api/v3.py` (mounted by `agentwatch/api/server.py`). FastAPI 
 | POST | `/api/v3/replay` | `{run, level, live[]}` | L0/L1 always; L2/L3 need `AGENTWATCH_ALLOW_REEXECUTION=1` |
 | POST | `/api/v3/branches` | `{run, at, substitute, level, execute}` | executing needs re-execution enabled |
 | POST | `/api/v3/counterfactual` | `{run, at, alternative, execute}` | falls back to MODEL_ESTIMATED / UNKNOWN when re-execution is off |
+| GET | `/api/v3/experiments?record_type=&subject=` | — | recorded lab experiments of one type (e.g. `branch`), optionally for one run |
+| GET | `/api/v3/experiments/{id}` | — | one recorded experiment |
