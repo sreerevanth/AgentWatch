@@ -46,7 +46,7 @@ Branch: `main` (v3 merged 2026-09-27, `17d667d`) · Updated 2026-09-27 · Releas
   - Crypto-shredding is opt-in (`AGENTWATCH_ENCRYPT_PAYLOADS=1`), and declared ids are not encrypted (ADR-0011).
   - PII redaction is opt-in.
 - **Replay** mocks only instrumented calls. Other program logic runs live, as the reports say.
-- **Entity resolution** is exact-key only.
+- **Entity resolution** is exact-key, plus aliases the user declares (`AGENTWATCH_ENTITY_ALIASES`); nothing is merged by similarity.
 - **Packaging split (ADR-0008)** is not done; the base install still includes the server stack.
 - **Python versions.** Local development used Python 3.14 against a `>=3.12,<3.13` pin; CI runs 3.12.
 

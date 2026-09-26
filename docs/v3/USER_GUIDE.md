@@ -125,6 +125,15 @@ with aw.span("STATE_MUTATION", "write_report", facets=["artifact_creation"]) as 
 
 `agentwatch inspect` reports each run's share of declared (high-fidelity) links, and how many consumed values are resolved, ambiguous or of unknown origin.
 
+**Entity aliases.** Different sensors can name the same thing differently (`model:gpt-4o` vs `model:openai/gpt-4o`). AgentWatch never merges entities by similarity. To merge them, declare it:
+
+```bash
+echo '{"model:gpt-4o": "model:openai/gpt-4o"}' > aliases.json
+export AGENTWATCH_ENTITY_ALIASES=aliases.json
+```
+
+The merged entity has resolution basis `DECLARED_ALIAS` and lists the keys it absorbed. Events keep the names as observed. Aliases are part of the interpretation identity, so changing them triggers a rebuild.
+
 **What the outputs mean**
 
 - **Missing facts stay missing.** If the source didn't declare an actor, parent, run or timestamp, the event lists it under `missing`. AgentWatch never invents these.

@@ -13,11 +13,17 @@ from __future__ import annotations
 
 import logging
 import time
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from agentwatch.analysis.base import AnalysisInput, Analyzer
-from agentwatch.entities.resolve import RESOLVER, RESOLVER_VERSION, merge_entities, resolve_entities
+from agentwatch.entities.resolve import (
+    RESOLVER,
+    RESOLVER_VERSION,
+    load_aliases,
+    merge_entities,
+    resolve_entities,
+)
 from agentwatch.events.model import ComputationalEvent, Diagnostic
 from agentwatch.events.normalize import ArtifactContent, NormalizeContext, Normalizer
 from agentwatch.events.registry import all_normalizers
@@ -78,8 +84,12 @@ class Engine:
         normalizers: Sequence[Normalizer] | None = None,
         analyzers: Sequence[Analyzer] | None = None,
         incremental: bool = True,
+        entity_aliases: Mapping[str, str] | str | None = None,
     ) -> None:
+        """``entity_aliases``: declared aliases (mapping or JSON file; default: the file named by
+        AGENTWATCH_ENTITY_ALIASES). They are part of the interpretation identity."""
         self.store = store if isinstance(store, Store) else Store(store)
+        self.entity_aliases = load_aliases(entity_aliases)
         self.policy = policy
         self.normalizers = list(normalizers) if normalizers is not None else all_normalizers()
         self.analyzers = list(analyzers) if analyzers is not None else default_analyzers()
@@ -118,6 +128,11 @@ class Engine:
                 n.name: n.version for n in sorted(self.normalizers, key=lambda n: n.name)
             },
             "resolver": f"{RESOLVER}@{RESOLVER_VERSION}",
+            **(
+                {"entity_aliases": sha256_hex(canonical_json(self.entity_aliases))}
+                if self.entity_aliases
+                else {}
+            ),
             "graph": [EXEC_BUILDER, INFO_BUILDER],
             "analyzers": {a.name: a.version for a in sorted(self.analyzers, key=lambda a: a.name)},
             "policy": {
@@ -271,7 +286,7 @@ class Engine:
         if not replaces_stored:
             entities = merge_entities(
                 self.store.entities(interp_id),
-                resolve_entities(built["events"], tenant_id, built["run_of"]),
+                resolve_entities(built["events"], tenant_id, built["run_of"], self.entity_aliases),
             )
         else:
             kept = [
@@ -281,7 +296,7 @@ class Engine:
             ]
             all_events = [event_from_dict(e) for e in kept] + list(built["events"])
             run_of = {e["event_id"]: e.get("run_id") for e in kept} | dict(built["run_of"])
-            entities = resolve_entities(all_events, tenant_id, run_of)
+            entities = resolve_entities(all_events, tenant_id, run_of, self.entity_aliases)
         counts = self.store.replace_partial(
             interp_id,
             tenant_id,
@@ -385,7 +400,7 @@ class Engine:
         events = _unique(events, diagnostics)
         seg = segment(events, tenant_id)
         index = build_source_index(events)
-        entities = resolve_entities(events, tenant_id, seg.run_of)
+        entities = resolve_entities(events, tenant_id, seg.run_of, self.entity_aliases)
 
         def register(value: Any, role: str) -> str:
             return ctx.artifact(value, role).artifact_id

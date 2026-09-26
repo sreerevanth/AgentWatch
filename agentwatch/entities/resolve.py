@@ -1,15 +1,21 @@
 """Deterministic entity resolution.
 
 Entities are identified by canonical keys that the source declared (``model:<name>``,
-``tool:<name>``, ``memory:<store>`` ...). Resolution is exact-key only, so confidence is
-1.0 with basis ``EXACT_KEY``. No fuzzy merging is performed; aliasing is left to a
-future, separately versioned resolver.
+``tool:<name>``, ``memory:<store>`` ...). Resolution is exact-key, confidence 1.0, basis
+``EXACT_KEY``. No fuzzy merging is ever performed.
+
+The only way two keys become one entity is a DECLARED alias the user supplies
+(``{"model:gpt-4o": "model:openai/gpt-4o"}``): the entity then has basis ``DECLARED_ALIAS``
+and lists the observed keys it absorbed. Events keep the names as observed.
 """
 
 from __future__ import annotations
 
+import json
+import os
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from pathlib import Path
 from typing import Any
 
 from agentwatch.events.model import ComputationalEvent, EntityRef
@@ -23,13 +29,47 @@ def entity_id_for(tenant_id: str, canonical: str) -> str:
     return str(uuid.uuid5(ENTITY_NAMESPACE, f"{tenant_id}|{canonical}"))
 
 
+def load_aliases(source: Mapping[str, str] | str | Path | None = None) -> dict[str, str]:
+    """Declared entity aliases: ``{observed key: canonical key}``.
+
+    ``source`` is a mapping, a path to a JSON object, or None to read the path in
+    ``AGENTWATCH_ENTITY_ALIASES`` (unset: no aliases). Keys must look like ``kind:name``, an
+    alias cannot point to itself, and a target cannot itself be an alias (no chains)."""
+    if source is None:
+        source = os.environ.get("AGENTWATCH_ENTITY_ALIASES") or None
+        if source is None:
+            return {}
+    if isinstance(source, (str, Path)):
+        raw = json.loads(Path(source).read_text(encoding="utf-8"))
+        if not isinstance(raw, dict):
+            raise ValueError("entity alias file must contain a JSON object")
+        source = raw
+    aliases = {str(k): str(v) for k, v in source.items()}
+    for k, v in aliases.items():
+        for key in (k, v):
+            if ":" not in key or key.startswith(":") or key.endswith(":"):
+                raise ValueError(f"entity alias keys look like kind:name, got {key!r}")
+        if k == v:
+            raise ValueError(f"entity alias {k!r} points to itself")
+        if v in aliases:
+            raise ValueError(f"entity alias target {v!r} is itself an alias (no chains)")
+    return aliases
+
+
 def resolve_entities(
-    events: Sequence[ComputationalEvent], tenant_id: str, run_of: dict[str, str | None]
+    events: Sequence[ComputationalEvent],
+    tenant_id: str,
+    run_of: dict[str, str | None],
+    aliases: Mapping[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     found: dict[str, dict[str, Any]] = {}
+    aliases = aliases or {}
 
     def touch(ref: EntityRef, role: str, ev: ComputationalEvent) -> None:
-        key = ref.canonical
+        observed = ref.canonical
+        key = aliases.get(observed, observed)
+        if key != observed:
+            ref = EntityRef.parse(key)
         rec = found.get(key)
         if rec is None:
             rec = found[key] = {
@@ -48,6 +88,9 @@ def resolve_entities(
                     "resolver": f"{RESOLVER}@{RESOLVER_VERSION}",
                 },
             }
+        if key != observed:
+            rec.setdefault("aliases", set()).add(observed)
+            rec["resolution"] = {**rec["resolution"], "basis": "DECLARED_ALIAS"}
         rec["roles"][role] = rec["roles"].get(role, 0) + 1
         rec["event_count"] += 1
         rid = run_of.get(ev.event_id)
@@ -69,6 +112,8 @@ def resolve_entities(
     out = []
     for rec in found.values():
         rec["runs"] = sorted(rec["runs"])
+        if "aliases" in rec:
+            rec["aliases"] = sorted(rec["aliases"])
         out.append(rec)
     return sorted(out, key=lambda r: r["canonical_key"])
 
@@ -94,6 +139,9 @@ def merge_entities(
         for role, n in e["roles"].items():
             cur["roles"][role] = cur["roles"].get(role, 0) + n
         cur["event_count"] += e["event_count"]
+        if e.get("aliases") or cur.get("aliases"):
+            cur["aliases"] = sorted(set(cur.get("aliases", [])) | set(e.get("aliases", [])))
+            cur["resolution"] = {**cur["resolution"], "basis": "DECLARED_ALIAS"}
         cur["runs"] = sorted(set(cur["runs"]) | set(e["runs"]))
         firsts = [x for x in (cur["first_seen"], e["first_seen"]) if x]
         lasts = [x for x in (cur["last_seen"], e["last_seen"]) if x]
