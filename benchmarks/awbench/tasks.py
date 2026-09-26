@@ -372,7 +372,10 @@ def true_bottleneck(gt: dict[str, Any]) -> bool:
     kinds = {n: v["kind"] for n, v in gt["nodes"].items()}
     anc = {a for a, b in closure(edges) if b == final}
     origins = {n for n in anc if kinds.get(n) in ORIGIN_KINDS}
-    if not final or not origins:
+    # M006 needs >= 2 distinct origin values: every stub retrieval returns >= 2 documents, an
+    # external input is one value (correction 2026-09-27, see REGISTRY changelog)
+    n_values = sum(2 if kinds.get(n) == "RETRIEVAL" else 1 for n in origins)
+    if not final or n_values < 2:
         return False
     inc: dict[str, list[str]] = defaultdict(list)
     for a, b in edges:

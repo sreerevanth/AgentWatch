@@ -80,6 +80,16 @@ changelog:
     note: >
       Pre-registered the fourth held-out architecture code_review_pipeline (architecture commit
       250edad): high-fidelity instrumentation; see architecture_status.code_review_pipeline.
+  - date: 2026-09-27
+    note: >
+      code_review_pipeline first scored run recorded unchanged (703aab0): every pre-registered
+      threshold met (information P/R 1.0/0.92, lineage F1 0.91, H4 1.0/1.0, motif P/R
+      1.0/0.89). Ground-truth correction, benchmark only (no AgentWatch change): the derived
+      M006 expectation counted an external input as >= 2 origin values; M006 requires >= 2
+      distinct origin values and an external input consumed whole is one. The three M006
+      misses of that run were all stale_memory runs whose only origin is the single diff, so
+      with the corrected derivation its motif recall is 24/24 (the recorded file is kept as
+      generated). Later runs use the corrected derivation.
 
 systems:
   tool_loop: single model-driven tool loop (native SDK; OTel variant for H1)
@@ -137,6 +147,7 @@ architecture_status:
         on a clean tree; results are committed exactly as generated before any diagnosis.
   code_review_pipeline:
     declared: HELD_OUT
+    first_scored_run: {commit: e802336, results: awbench-20260926T184322Z.json}
     # PRE-REGISTRATION (2026-09-27), recorded before any scored run. Tests the information
     # model with HIGH-FIDELITY instrumentation and the post-held-out fixes of b2af8bb
     # (retry-aware divergence; declared structure outranks content for outputs).
