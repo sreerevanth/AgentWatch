@@ -11,6 +11,7 @@ import argparse
 import json
 import os
 import platform
+import statistics
 import sys
 import tempfile
 import time
@@ -68,10 +69,23 @@ def timed(fn, repeat: int = 1) -> tuple[float, object]:
     return best or 0.0, res
 
 
+def spread(samples: list[float]) -> dict[str, float]:
+    """Median and range of repeated measurements (single runs vary with machine load)."""
+    xs = sorted(samples)
+    return {
+        "median": round(statistics.median(xs), 3),
+        "min": round(xs[0], 3),
+        "max": round(xs[-1], 3),
+        "n": len(xs),
+    }
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--spans", type=int, default=2000)
+    ap.add_argument("--out", type=Path, default=OUT, help="results directory")
     args = ap.parse_args(argv)
+    out_dir: Path = args.out
     results: dict[str, object] = {
         "generated_at": datetime.now(UTC).isoformat(),
         "python": sys.version.split()[0],
@@ -91,7 +105,13 @@ def main(argv: list[str] | None = None) -> int:
     with aw.run("overhead"):
         t_plain, _ = timed(lambda: [plain("abc") for _ in range(n)])
         t_wrapped, _ = timed(lambda: [wrapped("abc") for _ in range(n)])
-    results["sensor_overhead_us_per_call"] = round((t_wrapped - t_plain) / n * 1e6, 2)
+        rounds = []
+        for _ in range(7):  # repeated rounds: the per-call overhead varies with machine load
+            tp, _ = timed(lambda: [plain("abc") for _ in range(n)])
+            tw, _ = timed(lambda: [wrapped("abc") for _ in range(n)])
+            rounds.append((tw - tp) / n * 1e6)
+    results["sensor_overhead_us_per_call"] = round(statistics.median(rounds), 2)
+    results["sensor_overhead_us_spread"] = spread(rounds)
 
     with tempfile.TemporaryDirectory() as tmp:
         db = Path(tmp) / "perf.db"
@@ -104,8 +124,22 @@ def main(argv: list[str] | None = None) -> int:
         t_ingest, _ = timed(lambda: engine.ingest(drafts))
         results["observations"] = len(drafts)
         results["ingest_obs_per_s"] = round(len(drafts) / t_ingest, 1)
-        t_process, report = timed(lambda: engine.process(force=True))
+        # ingest again into fresh stores (a store is idempotent: re-ingesting only dedupes)
+        rates = [len(drafts) / t_ingest]
+        for k in range(2):
+            fresh = Engine(f"sqlite:///{(Path(tmp) / f'ingest{k}.db').as_posix()}")
+            t_k, _ = timed(lambda fresh=fresh: fresh.ingest(drafts))
+            rates.append(len(drafts) / t_k)
+            fresh.store.close()
+        results["ingest_obs_per_s"] = round(statistics.median(rates), 1)
+        results["ingest_obs_per_s_spread"] = spread(rates)
+        rebuilds = []
+        for _ in range(3):
+            t_k, report = timed(lambda: engine.process(force=True))
+            rebuilds.append(t_k)
+        t_process = statistics.median(rebuilds)
         results["rebuild_s"] = round(t_process, 3)
+        results["rebuild_s_spread"] = spread(rebuilds)
         results["rebuild_events_per_s"] = round(report["events"] / t_process, 1)  # type: ignore[index]
         results["relations"] = report["relations"]  # type: ignore[index]
         # graph construction alone (the part of a rebuild that builds relations)
@@ -174,8 +208,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         results["store_bytes"] = size
         results["store_bytes_per_observation"] = round(size / len(drafts), 1)
-    OUT.mkdir(parents=True, exist_ok=True)
-    previous = OUT / "latest.json"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    previous = out_dir / "latest.json"
     if previous.exists():
         before = json.loads(previous.read_text(encoding="utf-8"))
         results["compared_with"] = before.get("generated_at")
@@ -189,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
         }
     body = json.dumps(results, indent=2)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    (OUT / f"perf-{stamp}.json").write_text(body, encoding="utf-8")
+    (out_dir / f"perf-{stamp}.json").write_text(body, encoding="utf-8")
     previous.write_text(body, encoding="utf-8")
     print(body)
     return 0
