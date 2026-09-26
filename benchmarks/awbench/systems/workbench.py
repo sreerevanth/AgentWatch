@@ -429,11 +429,94 @@ def arch_multi_agent() -> None:
                 GT.data["final_output"] = fw
 
 
+def arch_map_reduce() -> None:
+    """HELD-OUT architecture (added after AgentWatch development; never used to tune it).
+
+    planner fans a question out to three workers; each retrieves and summarizes one facet;
+    the reducer joins the worker results (multi-parent), a critic model reviews the merged
+    draft and may call a checker tool, and the final report is written.
+    """
+    model = summarize_v2 if SCEN == "model_substitution" else summarize_v1
+    model_name = "stub/summarizer-v2" if SCEN == "model_substitution" else "stub/summarizer-v1"
+    facets = ["cost", "efficiency", "storage"]
+    with op("OPERATION", "plan", actor="agent:planner"):
+        worker_spans = []
+        worker_nodes = []
+        results: list[tuple[str, str]] = []
+        for i, facet in enumerate(facets):
+            with op("OPERATION", f"worker:{facet}", actor=f"agent:worker{i}") as (ws, wnode):
+                worker_spans.append(ws)
+                worker_nodes.append(wnode)
+                docs, r = call(
+                    "RETRIEVAL",
+                    "retrieve",
+                    retrieve_docs,
+                    f"solar {facet}",
+                    obj="corpus",
+                    actor=f"agent:worker{i}",
+                )
+                if SCEN in ("bad_retrieval", "corrupted_retrieval") and i == 1:
+                    GT.data["root_cause"] = GT.data["root_cause"] or r
+                prompt = f"Facet {facet}:\n" + "\n".join(f"- {d['text']}" for d in docs)
+                summary, m = call(
+                    "MODEL_INVOCATION",
+                    "summarize",
+                    model,
+                    prompt,
+                    obj=model_name,
+                    actor=f"agent:worker{i}",
+                )
+                GT.flow(r, m)
+                if SCEN == "model_substitution" and i == 0:
+                    GT.data["root_cause"] = m
+                if SCEN == "message_loss" and i == 2:
+                    GT.data["root_cause"] = GT.data["root_cause"] or m
+                    GT.data["outcome"] = "degraded"
+                    continue  # the worker's result never reaches the reducer
+                with op(
+                    "MESSAGE",
+                    "send:agent:reducer",
+                    actor=f"agent:worker{i}",
+                    object="agent:reducer",
+                ) as (ms, mid):
+                    ms.input(summary, role="message").output(summary, role="message")
+                    GT.flow(m, mid)
+                results.append((summary, mid))
+        with op("OPERATION", "reduce", actor="agent:reducer", links=worker_spans) as (_, red):
+            GT.data["exec_edges"] += [[w, red] for w in worker_nodes]
+            merged = " ".join(text for text, _ in results)
+            draft, critic = call(
+                "MODEL_INVOCATION",
+                "critique",
+                model,
+                "Review:\n" + "\n".join(f"- {t}" for t, _ in results),
+                obj=model_name,
+                actor="agent:critic",
+            )
+            for _, mid in results:
+                GT.flow(mid, critic)
+            value, t = _calc_with_retries()
+            with op(
+                "STATE_MUTATION",
+                "write_report",
+                actor="agent:reducer",
+                facets=["artifact_creation"],
+            ) as (fs, fw):
+                fs.output(merged + f" Estimate: {value}", role="artifact", label="report.md")
+                for _, mid in results:
+                    GT.flow(mid, fw)
+                if t:
+                    GT.flow(t, fw)
+                GT.data["final_output"] = fw
+
+
 def main() -> None:
     global GT, RNG, SCEN
     ap = argparse.ArgumentParser()
     ap.add_argument(
-        "--arch", choices=["tool_loop", "rag_memory", "multi_agent"], default="tool_loop"
+        "--arch",
+        choices=["tool_loop", "rag_memory", "multi_agent", "map_reduce"],
+        default="tool_loop",
     )
     ap.add_argument("--scenario", choices=SCENARIOS, default="normal")
     ap.add_argument("--seed", type=int, default=0)
@@ -453,6 +536,7 @@ def main() -> None:
                 "tool_loop": arch_tool_loop,
                 "rag_memory": arch_rag_memory,
                 "multi_agent": arch_multi_agent,
+                "map_reduce": arch_map_reduce,
             }[args.arch]()
     Path(args.gt).write_text(json.dumps(GT.data, indent=1), encoding="utf-8")
 

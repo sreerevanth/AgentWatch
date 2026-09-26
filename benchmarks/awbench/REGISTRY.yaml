@@ -11,15 +11,26 @@ changelog:
       of the reported divergence" instead of the top-3 metric sketched in
       RESEARCH_HYPOTHESES.md, because the v3 comparator reports a single earliest divergence.
 
+  - date: 2026-09-26
+    note: >
+      Added held-out architecture map_reduce (fan-out workers, multi-parent reducer, critic).
+      It was designed after AgentWatch development and is scored separately with the same
+      thresholds. AgentWatch code is not to be changed in response to its results before they
+      are recorded.
+
 systems:
   tool_loop: single model-driven tool loop (native SDK; OTel variant for H1)
   rag_memory: retrieval, summarization, memory write/read, second retrieval round
   multi_agent: planner delegating to researcher/analyst/critic, synthesizer join
+  map_reduce: HELD-OUT; planner fans out to 3 workers, reducer joins (multi-parent), critic model
 
 scenarios:
   tool_loop: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, tool_error, incorrect_tool_result, context_pressure, model_substitution, latency_injection, retry_loop]
   rag_memory: [normal, bad_retrieval, corrupted_retrieval, stale_memory, duplicate_memory, model_substitution, latency_injection]
   multi_agent: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, message_duplication, message_loss, model_substitution, delegation_loop, resource_contention, retry_loop]
+
+held_out:
+  map_reduce: [normal, bad_retrieval, corrupted_retrieval, tool_timeout, model_substitution, message_loss, latency_injection]
 
 tasks:
   h1_normalization:

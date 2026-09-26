@@ -88,6 +88,20 @@ def evaluate_all(
     return out
 
 
+def evaluate_held_out(ws: Workspace, engine: Engine, records: list[Any]) -> dict[str, Any]:
+    """Tasks that apply to the held-out architecture (no drift or cross-source sets)."""
+    native = [r for r in records if r.sensor == "native"]
+    return {
+        "h2_structure": h2(ws, native),
+        "h3_lineage": h3(ws, native),
+        "h4_divergence": h4(ws, native),
+        "h5_motifs": h5(ws, native),
+        "replay_fidelity": replay_fidelity(ws, engine, native),
+        "counterfactual_quality": counterfactual_quality(engine, native),
+        "explanation_faithfulness": faithfulness(ws, native),
+    }
+
+
 def _primary(records: list[Any]) -> int:
     """Lowest seed present: the seed used by the expensive lab/faithfulness tasks."""
     return min((r.seed for r in records), default=0)

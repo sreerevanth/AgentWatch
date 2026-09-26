@@ -46,6 +46,7 @@ class RunRecord:
     run_id: str
     gt: dict[str, Any]
     extra_runs: list[str] = field(default_factory=list)
+    held_out: bool = False
 
 
 def _git(*args: str) -> str | None:
@@ -118,6 +119,10 @@ def execute_matrix(
         records.append(rec)
         return rec
 
+    for arch, scenarios in (registry.get("held_out") or {}).items():
+        for seed in range(seeds):
+            for scenario in scenarios:
+                run(arch, scenario, seed).held_out = True
     for arch, scenarios in registry["scenarios"].items():
         for seed in range(seeds):
             for scenario in scenarios:
@@ -162,7 +167,10 @@ def main(argv: list[str] | None = None) -> int:
         records = execute_matrix(engine, gt_dir, registry, args.seeds, drift_n)
         t_runs = time.perf_counter()
         ws = Workspace(engine)
+        held = [r for r in records if r.held_out]
+        records = [r for r in records if not r.held_out]
         results = tasks.evaluate_all(ws, engine, records, drift_n)
+        held_results = tasks.evaluate_held_out(Workspace(engine), engine, held) if held else {}
         per_seed: dict[int, dict[str, Any]] = {}
         if args.seeds > 1:
             matrix_seeds = range(args.seeds)
@@ -207,6 +215,16 @@ def main(argv: list[str] | None = None) -> int:
             "meets_threshold": passed,
             "all_thresholds_met": all(passed.values()) if passed else None,
         }
+    report["held_out"] = {}
+    for name, measured in held_results.items():
+        spec = registry["tasks"].get(name, {})
+        thr = spec.get("thresholds", {})
+        passed = {
+            k: _meets(measured["metrics"].get(k), v)
+            for k, v in thr.items()
+            if k in measured["metrics"]
+        }
+        report["held_out"][name] = {**measured, "thresholds": thr, "meets_threshold": passed}
     args.out.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     body = json.dumps(report, indent=2, default=str)
@@ -267,6 +285,21 @@ def render_markdown(report: dict[str, Any]) -> str:
             shown = v if not isinstance(v, float) else round(v, 4)
             verdict = "" if met is None else ("yes" if met else "**no**")
             lines.append(f"| {name} | {k} | {shown} | {spread} | {thr} | {verdict} |")
+    if report.get("held_out"):
+        lines += [
+            "",
+            "## Held-out architecture (map_reduce; not used during development)",
+            "",
+            "| task | metric | measured | threshold | met |",
+            "|---|---|---|---|---|",
+        ]
+        for name, t in report["held_out"].items():
+            for k, v in t["metrics"].items():
+                thr = t["thresholds"].get(k, "")
+                met = t["meets_threshold"].get(k)
+                shown = v if not isinstance(v, float) else round(v, 4)
+                verdict = "" if met is None else ("yes" if met else "**no**")
+                lines.append(f"| {name} | {k} | {shown} | {thr} | {verdict} |")
     lines += [
         "",
         "Results come from stub systems (seeded document choice, failure counts and latency jitter); they do not measure behaviour with real models. Lab and faithfulness tasks use the lowest seed of each set.",
