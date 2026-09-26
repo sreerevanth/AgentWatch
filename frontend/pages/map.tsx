@@ -92,7 +92,7 @@ export default function MapView() {
                     checked={kinds[k]}
                     onChange={(e) => setKinds({ ...kinds, [k]: e.target.checked })}
                   />{' '}
-                  {k === 'instance' ? 'values' : `${k}s`}
+                  {k === 'instance' ? 'values' : k === 'entity' ? 'entities' : 'events'}
                 </label>
               ))}
               <label className="flex items-center gap-1 text-zinc-400">
