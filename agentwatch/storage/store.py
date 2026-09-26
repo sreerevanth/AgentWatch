@@ -891,118 +891,272 @@ class Store:
             ):
                 conn.execute(delete(table).where(table.c.interp_id == interp_id))
             conn.execute(delete(s.derived).where(s.derived.c.interp_id == interp_id))
-            if events:
-                conn.execute(
-                    insert(s.events),
-                    [
-                        {
-                            "event_id": e["event_id"],
-                            "interp_id": interp_id,
-                            "tenant_id": tenant_id,
-                            "run_id": e.get("run_id"),
-                            "kind": e["kind"],
-                            "operation": e["operation"][:256],
-                            "actor": e.get("actor"),
-                            "object": e.get("object"),
-                            "status": e["status"],
-                            "t_start": e["time"]["start"],
-                            "t_end": e["time"]["end"],
-                            "ordering_key": e["time"].get("ordering_key", "")[:160],
-                            "doc": canonical_json(e),
-                        }
-                        for e in events
-                    ],
-                )
-                conn.execute(
-                    insert(s.event_sources),
-                    [
-                        {"event_id": e["event_id"], "interp_id": interp_id, "obs_id": o}
-                        for e in events
-                        for o in sorted(set(e["derived_from"]))
-                    ],
-                )
-            if diagnostics:
-                conn.execute(
-                    insert(s.diagnostics),
-                    [{"interp_id": interp_id, "tenant_id": tenant_id, **d} for d in diagnostics],
-                )
-            if artifacts:
-                self._put_artifacts(conn, artifacts)
-            if entities:
-                conn.execute(
-                    insert(s.entities),
-                    [
-                        {
-                            "entity_id": en["entity_id"],
-                            "tenant_id": tenant_id,
-                            "interp_id": interp_id,
-                            "kind": en["kind"],
-                            "canonical_key": en["canonical_key"][:512],
-                            "doc": canonical_json(en),
-                        }
-                        for en in entities
-                    ],
-                )
-            if runs:
-                conn.execute(
-                    insert(s.runs),
-                    [
-                        {
-                            "run_id": r["run_id"],
-                            "interp_id": interp_id,
-                            "tenant_id": tenant_id,
-                            "name": (r.get("name") or "")[:256],
-                            "started_at": r.get("started_at"),
-                            "ended_at": r.get("ended_at"),
-                            "status": r.get("status"),
-                            "system_version": r.get("system_version"),
-                            "doc": canonical_json(r),
-                        }
-                        for r in runs
-                    ],
-                )
-            if relations:
-                conn.execute(
-                    insert(s.relations),
-                    [
-                        {
-                            "rel_id": rel["rel_id"],
-                            "interp_id": interp_id,
-                            "tenant_id": tenant_id,
-                            "run_id": rel.get("run_id"),
-                            "view": rel["view"],
-                            "type": rel["type"],
-                            "basis": rel["basis"],
-                            "evidence_class": rel.get("evidence_class"),
-                            "confidence": rel["confidence"],
-                            "doc": canonical_json(rel),
-                        }
-                        for rel in relations
-                    ],
-                )
-                members = []
-                for rel in relations:
-                    for role in ("tail", "head"):
-                        for i, node in enumerate(rel[role]):
-                            members.append(
-                                {
-                                    "rel_id": rel["rel_id"],
-                                    "interp_id": interp_id,
-                                    "role": role,
-                                    "ordinal": i,
-                                    "node": node[:600],
-                                }
-                            )
-                conn.execute(insert(s.relation_members), members)
-            if derived:
-                conn.execute(
-                    insert(s.derived), [self._derived_row(interp_id, tenant_id, r) for r in derived]
-                )
+            self._insert_rows(
+                conn,
+                interp_id,
+                tenant_id,
+                events=events,
+                diagnostics=diagnostics,
+                artifacts=artifacts,
+                entities=entities,
+                runs=runs,
+                relations=relations,
+                derived=derived,
+            )
             conn.execute(
                 update(s.interpretations)
                 .where(s.interpretations.c.interp_id == interp_id)
                 .values(processed_through=processed_through, stats=canonical_json(stats))
             )
+
+    def _insert_rows(
+        self,
+        conn: Any,
+        interp_id: str,
+        tenant_id: str,
+        *,
+        events: Sequence[dict[str, Any]],
+        diagnostics: Sequence[dict[str, Any]],
+        artifacts: Sequence[dict[str, Any]],
+        entities: Sequence[dict[str, Any]],
+        runs: Sequence[dict[str, Any]],
+        relations: Sequence[dict[str, Any]],
+        derived: Sequence[dict[str, Any]],
+    ) -> None:
+        if events:
+            conn.execute(
+                insert(s.events),
+                [
+                    {
+                        "event_id": e["event_id"],
+                        "interp_id": interp_id,
+                        "tenant_id": tenant_id,
+                        "run_id": e.get("run_id"),
+                        "kind": e["kind"],
+                        "operation": e["operation"][:256],
+                        "actor": e.get("actor"),
+                        "object": e.get("object"),
+                        "status": e["status"],
+                        "t_start": e["time"]["start"],
+                        "t_end": e["time"]["end"],
+                        "ordering_key": e["time"].get("ordering_key", "")[:160],
+                        "doc": canonical_json(e),
+                    }
+                    for e in events
+                ],
+            )
+            conn.execute(
+                insert(s.event_sources),
+                [
+                    {"event_id": e["event_id"], "interp_id": interp_id, "obs_id": o}
+                    for e in events
+                    for o in sorted(set(e["derived_from"]))
+                ],
+            )
+        if diagnostics:
+            conn.execute(
+                insert(s.diagnostics),
+                [{"interp_id": interp_id, "tenant_id": tenant_id, **d} for d in diagnostics],
+            )
+        if artifacts:
+            self._put_artifacts(conn, artifacts)
+        if entities:
+            conn.execute(
+                insert(s.entities),
+                [
+                    {
+                        "entity_id": en["entity_id"],
+                        "tenant_id": tenant_id,
+                        "interp_id": interp_id,
+                        "kind": en["kind"],
+                        "canonical_key": en["canonical_key"][:512],
+                        "doc": canonical_json(en),
+                    }
+                    for en in entities
+                ],
+            )
+        if runs:
+            conn.execute(
+                insert(s.runs),
+                [
+                    {
+                        "run_id": r["run_id"],
+                        "interp_id": interp_id,
+                        "tenant_id": tenant_id,
+                        "name": (r.get("name") or "")[:256],
+                        "started_at": r.get("started_at"),
+                        "ended_at": r.get("ended_at"),
+                        "status": r.get("status"),
+                        "system_version": r.get("system_version"),
+                        "doc": canonical_json(r),
+                    }
+                    for r in runs
+                ],
+            )
+        if relations:
+            conn.execute(
+                insert(s.relations),
+                [
+                    {
+                        "rel_id": rel["rel_id"],
+                        "interp_id": interp_id,
+                        "tenant_id": tenant_id,
+                        "run_id": rel.get("run_id"),
+                        "view": rel["view"],
+                        "type": rel["type"],
+                        "basis": rel["basis"],
+                        "evidence_class": rel.get("evidence_class"),
+                        "confidence": rel["confidence"],
+                        "doc": canonical_json(rel),
+                    }
+                    for rel in relations
+                ],
+            )
+            members = []
+            for rel in relations:
+                for role in ("tail", "head"):
+                    for i, node in enumerate(rel[role]):
+                        members.append(
+                            {
+                                "rel_id": rel["rel_id"],
+                                "interp_id": interp_id,
+                                "role": role,
+                                "ordinal": i,
+                                "node": node[:600],
+                            }
+                        )
+            conn.execute(insert(s.relation_members), members)
+        if derived:
+            conn.execute(
+                insert(s.derived), [self._derived_row(interp_id, tenant_id, r) for r in derived]
+            )
+
+    def replace_partial(
+        self,
+        interp_id: str,
+        tenant_id: str,
+        *,
+        run_ids: Sequence[str],
+        obs_ids: Sequence[str],
+        events: Sequence[dict[str, Any]],
+        diagnostics: Sequence[dict[str, Any]],
+        artifacts: Sequence[dict[str, Any]],
+        entities: Sequence[dict[str, Any]],
+        runs: Sequence[dict[str, Any]],
+        relations: Sequence[dict[str, Any]],
+        derived: Sequence[dict[str, Any]],
+        processed_through: str | None,
+    ) -> dict[str, int]:
+        """Replace the derived rows of specific runs (and of events derived from ``obs_ids``)
+        atomically; entities are replaced wholesale because they aggregate over all runs."""
+        with self.engine.begin() as conn:
+            if not self.is_sqlite:
+                conn.execute(text("SELECT pg_advisory_xact_lock(:k)"), {"k": _lock_key(interp_id)})
+            stale_events: set[str] = set()
+            for chunk in _chunks(list(obs_ids), 500):
+                stale_events.update(
+                    r[0]
+                    for r in conn.execute(
+                        select(s.event_sources.c.event_id).where(
+                            s.event_sources.c.interp_id == interp_id,
+                            s.event_sources.c.obs_id.in_(chunk),
+                        )
+                    )
+                )
+            for chunk in _chunks(list(run_ids), 500):
+                stale_events.update(
+                    r[0]
+                    for r in conn.execute(
+                        select(s.events.c.event_id).where(
+                            s.events.c.interp_id == interp_id, s.events.c.run_id.in_(chunk)
+                        )
+                    )
+                )
+                rel_ids = [
+                    r[0]
+                    for r in conn.execute(
+                        select(s.relations.c.rel_id).where(
+                            s.relations.c.interp_id == interp_id, s.relations.c.run_id.in_(chunk)
+                        )
+                    )
+                ]
+                for rchunk in _chunks(rel_ids, 500):
+                    conn.execute(
+                        delete(s.relation_members).where(
+                            s.relation_members.c.interp_id == interp_id,
+                            s.relation_members.c.rel_id.in_(rchunk),
+                        )
+                    )
+                    conn.execute(
+                        delete(s.relations).where(
+                            s.relations.c.interp_id == interp_id, s.relations.c.rel_id.in_(rchunk)
+                        )
+                    )
+                conn.execute(
+                    delete(s.runs).where(
+                        s.runs.c.interp_id == interp_id, s.runs.c.run_id.in_(chunk)
+                    )
+                )
+                conn.execute(
+                    delete(s.derived).where(
+                        s.derived.c.interp_id == interp_id, s.derived.c.scope.in_(chunk)
+                    )
+                )
+            for chunk in _chunks(sorted(stale_events), 500):
+                conn.execute(
+                    delete(s.event_sources).where(
+                        s.event_sources.c.interp_id == interp_id,
+                        s.event_sources.c.event_id.in_(chunk),
+                    )
+                )
+                conn.execute(
+                    delete(s.events).where(
+                        s.events.c.interp_id == interp_id, s.events.c.event_id.in_(chunk)
+                    )
+                )
+            for chunk in _chunks(list(obs_ids), 500):
+                conn.execute(
+                    delete(s.diagnostics).where(
+                        s.diagnostics.c.interp_id == interp_id, s.diagnostics.c.obs_id.in_(chunk)
+                    )
+                )
+            conn.execute(delete(s.entities).where(s.entities.c.interp_id == interp_id))
+            self._insert_rows(
+                conn,
+                interp_id,
+                tenant_id,
+                events=events,
+                diagnostics=diagnostics,
+                artifacts=artifacts,
+                entities=entities,
+                runs=runs,
+                relations=relations,
+                derived=derived,
+            )
+            counts = {
+                name: int(
+                    conn.execute(
+                        select(func.count()).select_from(t).where(t.c.interp_id == interp_id)
+                    ).scalar_one()
+                )
+                for name, t in (
+                    ("events", s.events),
+                    ("runs", s.runs),
+                    ("relations", s.relations),
+                    ("entities", s.entities),
+                    ("diagnostics", s.diagnostics),
+                    ("derived_records", s.derived),
+                )
+            }
+            conn.execute(
+                update(s.interpretations)
+                .where(s.interpretations.c.interp_id == interp_id)
+                .values(
+                    processed_through=processed_through,
+                    stats=canonical_json({**counts, "incremental": True}),
+                )
+            )
+        return counts
 
     def _put_artifacts(self, conn: Any, artifacts: Sequence[dict[str, Any]]) -> None:
         by_tenant: dict[str, list[dict[str, Any]]] = {}

@@ -57,6 +57,9 @@ class NativeNormalizer(Normalizer):
     )
     maturity = "VALIDATED"
 
+    def correlation_key(self, obs: RawObservation) -> tuple[str, str] | None:
+        return self._declared_key(obs, "run_id")
+
     def normalize(
         self, observations: Sequence[RawObservation], ctx: NormalizeContext
     ) -> NormalizeResult:

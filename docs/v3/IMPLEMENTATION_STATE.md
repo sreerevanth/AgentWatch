@@ -30,7 +30,7 @@ Branch: `architecture/v3` · Updated 2026-09-26
 
 - **H1 cross-source equivalence** is below its threshold (0.80 < 0.90). OTel lacks a convention for artifact writes.
 - **AWBench results are in-sample** and come from stub models. No analytic capability is VALIDATED yet; see RESEARCH_HYPOTHESES §6.
-- **Full rebuild per interpretation**: 5.2 s for 4k events on a laptop. Fine for development-scale stores; large deployments need incremental processing.
+- **Processing**: new observations are processed incrementally per correlation group, which is about 11× faster than a full rebuild for one new run in a 4k-event store. LangChain observations (no run-scoped key), run-less events and unresolved links fall back to a full rebuild. Entity aggregation still reads all events.
 - **Storage** is about 9.6 KB per observation, including derived rows and relations. Not optimized.
 - **Privacy**: per-subject crypto-shredding exists but is opt-in (`AGENTWATCH_ENCRYPT_PAYLOADS=1`), and declared ids are not encrypted (ADR-0011, as built). Secret redaction is on by default; PII redaction is opt-in (`PayloadPolicy(redact_pii=True)`).
 - **Replay** only mocks calls made through `aw.tool` / `aw.model` / `aw.retriever`. Other program logic runs live, and the reports say so.
@@ -44,4 +44,3 @@ Branch: `architecture/v3` · Updated 2026-09-26
 1. M2: move DEPRECATE modules to `agentwatch/legacy/` with import shims, and add an import-linter contract to CI.
 2. AWBench: held-out architecture(s), real-model runs behind an opt-in flag, multiple seeds with CIs.
 3. OTel normalizer: map `file.*` / `db.operation=insert` attributes to STATE_MUTATION, and re-measure H1.
-4. Incremental normalization keyed by run, once a workload needs it.

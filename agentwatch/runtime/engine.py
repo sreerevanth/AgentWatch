@@ -47,11 +47,16 @@ class Engine:
         policy: PayloadPolicy = DEFAULT_POLICY,
         normalizers: Sequence[Normalizer] | None = None,
         analyzers: Sequence[Analyzer] | None = None,
+        incremental: bool = True,
     ) -> None:
         self.store = store if isinstance(store, Store) else Store(store)
         self.policy = policy
         self.normalizers = list(normalizers) if normalizers is not None else all_normalizers()
         self.analyzers = list(analyzers) if analyzers is not None else default_analyzers()
+        self.incremental = incremental
+        self.last_mode: str | None = (
+            None  # "full" | "incremental" | "skipped" (for tests and stats)
+        )
 
     # ── ingestion ──────────────────────────────────────────────────────────
     def ingest(
@@ -116,6 +121,10 @@ class Engine:
         if not force and not self.is_stale(tenant_id):
             interp = self.store.get_interpretation(interp_id) or {}
             return {"interp_id": interp_id, "skipped": True, **(interp.get("stats") or {})}
+        if not force and self.incremental:
+            incremental = self._process_incremental(tenant_id, interp_id)
+            if incremental is not None:
+                return incremental
         t0 = time.perf_counter()
         through = self.store.latest_obs_id(tenant_id)
         observations = list(self.store.iter_all_observations(tenant_id)) if through else []
@@ -157,7 +166,89 @@ class Engine:
             derived=derived,
         )
         stats["total_ms"] = round((time.perf_counter() - t0) * 1000, 1)
-        return {"interp_id": interp_id, "skipped": False, **stats}
+        self.last_mode = "full"
+        return {"interp_id": interp_id, "skipped": False, "mode": "full", **stats}
+
+    def _process_incremental(self, tenant_id: str, interp_id: str) -> dict[str, Any] | None:
+        """Rebuild only the correlation groups touched by new observations.
+
+        Returns None (the caller then does a full rebuild) whenever the result could differ
+        from a full rebuild: an observation without a known correlation key, an erased or
+        unnormalizable observation, events without a run, or declared links that do not
+        resolve inside the rebuilt group.
+        """
+        interp = self.store.get_interpretation(interp_id)
+        if not interp or interp.get("status") != "active" or not interp.get("processed_through"):
+            return None
+        t0 = time.perf_counter()
+        new = self.store.observations(tenant_id, after=interp["processed_through"])
+        if not new:
+            return None
+        keys: set[tuple[str, str]] = set()
+        for obs in new:
+            normalizer = next((n for n in self.normalizers if n.accepts(obs)), None)
+            key = normalizer.correlation_key(obs) if normalizer and not obs.erased else None
+            if key is None:
+                return None
+            keys.add(key)
+        through = max(o.obs_id for o in new)
+        group_ids: set[str] = set()
+        for name, value in keys:
+            group_ids.update(self.store.find_by_declared_id(tenant_id, name, value))
+        group = [
+            o
+            for o in self.store.observations(tenant_id, obs_ids=sorted(group_ids))
+            if o.obs_id <= through
+        ]
+        built = self.build(tenant_id, interp_id, group)
+        if any(built["run_of"].get(e.event_id) is None for e in built["events"]):
+            return None
+        if any(run.get("unresolved_links") for run in built["runs"].values()):
+            return None
+        new_docs = []
+        for ev in built["events"]:
+            d = ev.to_dict()
+            d["run_id"] = built["run_of"].get(ev.event_id)
+            d["run_basis"] = built["run_basis"].get(ev.event_id)
+            new_docs.append(d)
+        # entities aggregate over every run: recompute from the unchanged events plus the new ones
+        affected_runs = set(built["runs"])
+        group_obs = {o.obs_id for o in group}
+        kept = [
+            e
+            for e in self.store.events(interp_id)
+            if e.get("run_id") not in affected_runs and not set(e["derived_from"]) & group_obs
+        ]
+        from agentwatch.events.codec import event_from_dict
+
+        all_events = [event_from_dict(e) for e in kept] + list(built["events"])
+        run_of = {e["event_id"]: e.get("run_id") for e in kept} | dict(built["run_of"])
+        entities = resolve_entities(all_events, tenant_id, run_of)
+        counts = self.store.replace_partial(
+            interp_id,
+            tenant_id,
+            run_ids=sorted(affected_runs),
+            obs_ids=sorted(group_obs),
+            events=new_docs,
+            diagnostics=[d.to_dict() for d in built["diagnostics"]],
+            artifacts=artifact_rows(built["artifacts"]),
+            entities=entities,
+            runs=list(built["runs"].values()),
+            relations=built["relations"],
+            derived=built["derived"],
+            processed_through=through,
+        )
+        self.last_mode = "incremental"
+        return {
+            "interp_id": interp_id,
+            "skipped": False,
+            "mode": "incremental",
+            "new_observations": len(new),
+            "group_observations": len(group),
+            "runs_rebuilt": len(affected_runs),
+            **counts,
+            "total_ms": round((time.perf_counter() - t0) * 1000, 1),
+        }
 
     def build(
         self, tenant_id: str, interp_id: str, observations: Sequence[RawObservation]

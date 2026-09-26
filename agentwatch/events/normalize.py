@@ -93,6 +93,17 @@ class Normalizer:
     def accepts(self, obs: RawObservation) -> bool:
         return obs.source_kind in self.source_kinds
 
+    def correlation_key(self, obs: RawObservation) -> tuple[str, str] | None:
+        """A declared id shared by every observation needed to interpret ``obs`` (and by
+        nothing belonging to another run). ``None`` means unknown, which forces a full
+        rebuild instead of an incremental one."""
+        return None
+
+    @staticmethod
+    def _declared_key(obs: RawObservation, name: str) -> tuple[str, str] | None:
+        value = obs.declared(name)
+        return (name, value) if value else None
+
     def normalize(
         self, observations: Sequence[RawObservation], ctx: NormalizeContext
     ) -> NormalizeResult:

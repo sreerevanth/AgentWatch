@@ -108,11 +108,18 @@ def main(argv: list[str] | None = None) -> int:
         results["rebuild_s"] = round(t_process, 3)
         results["rebuild_events_per_s"] = round(report["events"] / t_process, 1)  # type: ignore[index]
         results["relations"] = report["relations"]  # type: ignore[index]
+        # one more small run arriving after the big rebuild: incremental path
+        sink.drafts.clear()
+        workload(40, variant=2)
+        engine.ingest(list(sink.drafts))
+        t_inc, inc = timed(lambda: engine.process())
+        results["incremental_process_s"] = round(t_inc, 3)
+        results["incremental_mode"] = inc.get("mode")  # type: ignore[union-attr]
         ws = Workspace(engine)
         a, b = (
             sorted(ws.runs(), key=lambda r: r["started_at"])[0]["run_id"],
             sorted(ws.runs(), key=lambda r: r["started_at"])[1]["run_id"],
-        )
+        )  # the two large runs
         t_graph, g = timed(lambda: ws._build_graph(a, None), repeat=3)  # uncached build
         results["graph_build_ms"] = round(t_graph * 1000, 1)
         start = f"event:{ws.events(a, kind='RETRIEVAL')[0]['event_id']}"
