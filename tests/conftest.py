@@ -7,8 +7,9 @@ _AW3_TMP = tempfile.mkdtemp(prefix="agentwatch-tests-")
 os.environ["AGENTWATCH_HOME"] = _AW3_TMP
 os.environ["AGENTWATCH_STORE"] = f"sqlite:///{_AW3_TMP}/agentwatch-v3.db".replace("\\", "/")
 
-import agentwatch.memory.engine
-import agentwatch.scoring.drift
+# after the environment above: importing agentwatch must see the isolated test store
+import agentwatch.memory.engine  # noqa: E402
+import agentwatch.scoring.drift  # noqa: E402
 
 if not hasattr(datetime, "UTC"):
     datetime.UTC = datetime.timezone.utc  # noqa: UP017
