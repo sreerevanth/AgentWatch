@@ -997,15 +997,22 @@ def main() -> None:
     ap.add_argument("--scenario", choices=SCENARIOS, default="normal")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--gt", required=True)
-    ap.add_argument("--sensor", choices=["native", "otel"], default="native")
+    ap.add_argument("--sensor", choices=["native", "otel", "otel_enriched"], default="native")
     args = ap.parse_args()
     GT = GroundTruth(args.arch, args.scenario, args.seed)
     RNG = random.Random(args.seed)  # noqa: S311 - benchmark seed, not security
     SCEN = args.scenario
-    if args.sensor == "otel":
+    if args.sensor in ("otel", "otel_enriched"):
         from otel_variant import run_otel_tool_loop  # noqa: PLC0415
 
-        run_otel_tool_loop(GT, SCEN, retrieve_docs, summarize_v1, calculator)
+        run_otel_tool_loop(
+            GT,
+            SCEN,
+            retrieve_docs,
+            summarize_v1,
+            calculator,
+            enriched=args.sensor == "otel_enriched",
+        )
     else:
         with aw.run(f"awbench:{args.arch}", scenario=args.scenario, seed=args.seed, arch=args.arch):
             {

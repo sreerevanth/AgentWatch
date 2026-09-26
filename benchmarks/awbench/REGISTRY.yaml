@@ -58,6 +58,16 @@ changelog:
       Pre-registered the third held-out architecture async_event_pipeline (architecture commit
       88f46a9); see architecture_status.async_event_pipeline.preregistration. Added computed
       architecture status (DEVELOPMENT / HELD_OUT / FORMER_HELD_OUT).
+  - date: 2026-09-26
+    note: >
+      Evaluator adaptation to information instances (ADR-0017), before the async_event_pipeline
+      run and without changing what is counted: H2 attributes an information node to the event
+      that produced it by parsing inst:<event>/o.. (previously by content id); H3 asks lineage
+      of the exact value the final operation produced (inst:<event>/o<k>) instead of its content
+      id. H2 additionally REPORTS (no threshold) information precision/recall if ambiguous
+      candidates were followed as flow. H1 adds an otel_enriched sensor run (AgentWatch OTel
+      extension, ADR-0018) reported as cross_source_kind_f1_enriched with NO threshold; the
+      thresholded cross_source_kind_f1 remains OTel-only.
 
 systems:
   tool_loop: single model-driven tool loop (native SDK; OTel variant for H1)

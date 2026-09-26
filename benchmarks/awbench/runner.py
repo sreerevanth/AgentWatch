@@ -104,7 +104,7 @@ def execute_matrix(
         gt_path = gt_dir / f"{arch}-{scenario}-{seed}-{sensor}.json"
         before = (
             {r["run_id"] for r in Workspace(engine, process=False).runs()}
-            if sensor == "otel"
+            if sensor.startswith("otel")
             else set()
         )
         res = observe(
@@ -131,7 +131,7 @@ def execute_matrix(
         gt = json.loads(gt_path.read_text(encoding="utf-8"))
         run_id = res.run_id or ""
         extra: list[str] = []
-        if sensor == "otel":
+        if sensor.startswith("otel"):
             new = [
                 r["run_id"]
                 for r in Workspace(engine).runs()
@@ -152,6 +152,7 @@ def execute_matrix(
                 run(arch, scenario, seed)
     for seed in range(seeds):
         run("tool_loop", "normal", seed, "otel")
+        run("tool_loop", "normal", seed, "otel_enriched")
     # drift sets: extra seeds of normal vs model_substitution (tool_loop)
     for seed in range(seeds, drift_n):
         run("tool_loop", "normal", seed)
