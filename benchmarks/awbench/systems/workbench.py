@@ -19,6 +19,8 @@ AgentWatch SpanProcessor) instead of the native SDK, for cross-source comparison
 from __future__ import annotations
 
 import argparse
+import asyncio
+import contextvars
 import json
 import random
 import sys
@@ -60,6 +62,30 @@ CORPUS = {
 RELEVANT = ["D1", "D2", "D3", "D4"]
 
 
+class _ContextStack:
+    """The ground-truth parent stack, per execution context: concurrent asyncio tasks each
+    see their own stack (a plain list would interleave their parents)."""
+
+    def __init__(self) -> None:
+        self._var: contextvars.ContextVar[tuple[str, ...]] = contextvars.ContextVar(
+            "gt_stack", default=()
+        )
+
+    def append(self, nid: str) -> None:
+        self._var.set((*self._var.get(), nid))
+
+    def pop(self) -> str:
+        cur = self._var.get()
+        self._var.set(cur[:-1])
+        return cur[-1]
+
+    def __getitem__(self, i: int) -> str:
+        return self._var.get()[i]
+
+    def __bool__(self) -> bool:
+        return bool(self._var.get())
+
+
 class GroundTruth:
     def __init__(self, arch: str, scenario: str, seed: int) -> None:
         self.data: dict[str, Any] = {
@@ -76,7 +102,7 @@ class GroundTruth:
             "outcome": "ok",
         }
         self.counts: dict[str, int] = {}
-        self.stack: list[str] = []
+        self.stack = _ContextStack()
 
     def node(self, label: str, kind: str) -> str:
         self.counts[label] = self.counts.get(label, 0) + 1
@@ -663,12 +689,309 @@ def arch_hybrid_rag_cache() -> None:
         PERTURB["retrieval"] = True
 
 
+def arch_async_event_pipeline() -> None:
+    """THIRD HELD-OUT architecture (designed and committed before the information-instance /
+    provenance-hierarchy changes; never used to design them).
+
+    Event-driven asynchronous workflow, instrumented with value-level spans only (best-effort
+    telemetry: no explicit instance references):
+
+        request -> router (shared evidence retrieval) -> task queue
+        workers A, B, C run concurrently (asyncio) and complete out of order:
+          A: own retrieval (overlaps the shared evidence) + analysis
+          B: a speculative draft that is DISCARDED, then the real analysis (same prompt, so the
+             draft's text is identical to the published result)
+          C: lookup tool with retries, then analysis
+        the results queue delivers at least once (A's result is delivered twice)
+        aggregator (multi-parent) dedupes deliveries and merges in task order
+        enrichment: glossary cache per section (miss -> define tool -> cache write; the third
+          section's term is a cache HIT returning the first definition), then an enrich model
+        database write of the enriched record; final composer reads it back, writes the report
+
+    It stresses same content vs same information instance: identical documents from two
+    retrievals, identical draft/result texts from two model calls, identical duplicate
+    deliveries, a cache hit identical to a tool output.
+    """
+    model = summarize_v2 if SCEN == "model_substitution" else summarize_v1
+    model_name = "stub/summarizer-v2" if SCEN == "model_substitution" else "stub/summarizer-v1"
+    first_model = {"done": False}
+
+    def model_call(label: str, prompt: str, actor: str) -> tuple[str, str]:
+        out, nid = call("MODEL_INVOCATION", label, model, prompt, obj=model_name, actor=actor)
+        if SCEN == "model_substitution" and not first_model["done"]:
+            GT.data["root_cause"] = nid  # the first model call to execute diverges first
+        first_model["done"] = True
+        return out, nid
+
+    request = "How practical is residential solar power with battery storage?"
+    with op("OPERATION", "handle_request", actor="agent:router"):
+        with op("EXTERNAL_INPUT", "receive_request", actor="agent:router") as (rs, req):
+            rs.output(request, role="request")
+        PERTURB["retrieval"] = SCEN == "bad_retrieval"  # bad_retrieval: the shared evidence
+        evidence, ev = call(
+            "RETRIEVAL",
+            "fetch_evidence",
+            retrieve_docs,
+            request,
+            obj="evidence_index",
+            actor="agent:router",
+        )
+        GT.flow(req, ev)
+        if SCEN == "bad_retrieval":
+            GT.data["root_cause"] = ev
+        workers = ["A", "B", "C"]
+        terms = {"A": "solar", "B": "storage", "C": "solar"}
+        enq: dict[str, str] = {}
+        for w in workers:
+            msg = {"task": w, "term": terms[w], "request": request}
+            with op("MESSAGE", f"enqueue:{w}", actor="agent:router", object="queue:tasks") as (
+                ms,
+                mid,
+            ):
+                ms.input(msg, role="message").output(msg, role="message")
+                GT.flow(req, mid)
+            enq[w] = mid
+        # seed-dependent completion order: distinct delays, 40 ms apart
+        order = RNG.sample(workers, 3)
+        delay = {w: 0.04 * (1 + order.index(w)) for w in workers}
+        # drawn in every scenario so the random stream (and worker A's documents) stays aligned
+        timeout_fails = RNG.randint(3, 4)
+        lookup_fails = timeout_fails if SCEN == "tool_timeout" else 1
+        a_retrieval_seed = RNG.random()
+        results: dict[str, tuple[str, str, Any]] = {}  # worker -> (text, publish node, span)
+
+        async def worker(w: str) -> None:
+            with op("OPERATION", f"worker:{w}", actor=f"agent:worker{w}") as (wspan, _wn):
+                with op(
+                    "MESSAGE", f"dequeue:{w}", actor=f"agent:worker{w}", object="queue:tasks"
+                ) as (ms, dq):
+                    task = {"task": w, "term": terms[w], "request": request}
+                    ms.input(task, role="message").output(task, role="message")
+                    GT.flow(enq[w], dq)
+                await asyncio.sleep(delay[w])
+                inputs = [ev]
+                docs = list(evidence)
+                if w == "A":
+                    PERTURB["retrieval"] = SCEN == "corrupted_retrieval"
+                    saved = RNG.getstate()
+                    RNG.seed(a_retrieval_seed)
+                    own, ra = call(
+                        "RETRIEVAL",
+                        "retrieve:A",
+                        retrieve_docs,
+                        f"{task['term']} battery storage",  # query uses the dequeued task
+                        obj="doc_index",
+                        actor="agent:workerA",
+                    )
+                    RNG.setstate(saved)
+                    PERTURB["retrieval"] = False
+                    GT.flow(dq, ra)
+                    if SCEN == "corrupted_retrieval":
+                        GT.data["root_cause"] = ra
+                    seen = {d["id"] for d in docs}
+                    docs += [d for d in own if d["id"] not in seen]
+                    inputs.append(ra)
+                if w == "C":
+                    _calc_state["fail"] = lookup_fails
+                    for _ in range(lookup_fails + 1):
+                        try:
+                            v, lk = call(
+                                "TOOL_INVOCATION",
+                                "lookup:C",
+                                calculator,
+                                "5 * 365",
+                                obj="lookup_service",
+                                actor="agent:workerC",
+                            )
+                            inputs.append(lk)  # constant expression: no flow from the task
+                            docs.append({"id": "L", "text": f"Lookup: {v} sunny hours per year."})
+                            break
+                        except TimeoutError:
+                            await asyncio.sleep(0.005)
+                    if SCEN == "tool_timeout":
+                        # lookup:C#1 fails in the baseline too; #2 succeeds there, fails here
+                        GT.data["root_cause"] = "lookup:C#2"
+                prompt = f"Task {task['task']}: {task['term']}\n" + "\n".join(
+                    f"- {d['text']}" for d in docs
+                )
+                if w == "B":
+                    # speculative draft, discarded: its text equals the real result's text
+                    _draft, dr = model_call("draft:B", prompt, "agent:workerB")
+                    GT.flow(dq, dr)
+                    GT.flow(ev, dr)
+                    await asyncio.sleep(0.01)
+                text, an = model_call(f"analyze:{w}", prompt, f"agent:worker{w}")
+                GT.flow(dq, an)
+                for i in inputs:
+                    GT.flow(i, an)
+                result = {"task": w, "result": text}
+                with op(
+                    "MESSAGE", f"publish:{w}", actor=f"agent:worker{w}", object="queue:results"
+                ) as (ms, pb):
+                    ms.input(result, role="message").output(result, role="message")
+                    GT.flow(an, pb)
+                results[w] = (text, pb, wspan)
+
+        async def run_workers() -> None:
+            await asyncio.gather(*(worker(w) for w in workers))
+
+        asyncio.run(run_workers())
+        PERTURB["retrieval"] = True
+        # at-least-once delivery in completion order; A is delivered twice
+        completion = sorted(workers, key=lambda w: delay[w])
+        deliveries: list[str] = []
+        for w in completion:
+            deliveries.append(w)
+            if w == "A":
+                deliveries.append(w)
+        with op(
+            "OPERATION",
+            "aggregate",
+            actor="agent:aggregator",
+            links=[results[w][2] for w in workers],
+        ) as (_, agg):
+            GT.data["exec_edges"] += [
+                [n, agg] for n, v in GT.data["nodes"].items() if v["label"].startswith("worker:")
+            ]
+            used: dict[str, str] = {}
+            for w in deliveries:
+                if SCEN == "message_loss" and w == "C":
+                    GT.data["root_cause"] = "deliver:C#1"
+                    GT.data["outcome"] = "degraded"
+                    continue
+                text, pb, _ = results[w]
+                with op(
+                    "MESSAGE", f"deliver:{w}", actor="agent:aggregator", object="queue:results"
+                ) as (ms, dl):
+                    msg = {"task": w, "result": text}
+                    ms.input(msg, role="message").output(msg, role="message")
+                    GT.flow(pb, dl)
+                used.setdefault(w, dl)  # duplicate deliveries are dropped by the dedupe
+            sections = [results[w][0] for w in workers if w in used]
+
+            def merge(parts: list[str]) -> str:
+                return "\n\n".join(parts)
+
+            merged, mg = call(
+                "TOOL_INVOCATION", "merge", merge, sections, obj="merger", actor="agent:aggregator"
+            )
+            for w in workers:
+                if w in used:
+                    GT.flow(used[w], mg)
+        with op("OPERATION", "enrichment", actor="agent:enricher"):
+            cache: dict[str, str] = {}
+            cache_writes: dict[str, str] = {}
+            definition_nodes: list[str] = []
+            definitions: list[str] = []
+
+            def define(term: str) -> str:
+                return f"Glossary: {term} refers to the {term} component of a home energy system."
+
+            for w in workers:
+                if w not in used:
+                    continue
+                term = terms[w]
+                hit = cache.get(term)
+                with op(
+                    "MEMORY_ACCESS",
+                    "read:glossary",
+                    object="memory:glossary",
+                    actor="agent:enricher",
+                    facets=["read"],
+                ) as (rs2, rd):
+                    rs2.set(key=term, access="read")
+                    if hit is not None:
+                        rs2.output(hit, role="value", label=term)
+                        GT.flow(cache_writes[term], rd)
+                if hit is not None:
+                    definitions.append(hit)
+                    definition_nodes.append(rd)
+                    continue
+                value, df = call(
+                    "TOOL_INVOCATION",
+                    "define",
+                    define,
+                    term,
+                    obj="glossary_service",
+                    actor="agent:enricher",
+                )
+                with op(
+                    "MEMORY_ACCESS",
+                    "write:glossary",
+                    object="memory:glossary",
+                    actor="agent:enricher",
+                    facets=["write"],
+                ) as (ws2, wr):
+                    ws2.input(value, role="value", label=term).set(key=term, access="write")
+                    GT.flow(df, wr)
+                cache[term] = value
+                cache_writes[term] = wr
+                definitions.append(value)
+                definition_nodes.append(df)
+            enriched, en = model_call(
+                "enrich",
+                "Enrich:\n" + "\n".join(f"- {t}" for t in [merged, *definitions]),
+                "agent:enricher",
+            )
+            GT.flow(mg, en)
+            for n in definition_nodes:
+                GT.flow(n, en)
+        with op("OPERATION", "persist", actor="agent:store"):
+            with op(
+                "MEMORY_ACCESS",
+                "write:db",
+                object="db:records",
+                actor="agent:store",
+                facets=["write"],
+            ) as (ws3, dbw):
+                ws3.input(enriched, role="value", label="record").set(key="record", access="write")
+                GT.flow(en, dbw)
+        with op("OPERATION", "compose", actor="agent:composer"):
+            stale = SCEN == "stale_memory"
+            record = (
+                "Archived record: wind turbines were evaluated for a coastal site last year."
+                if stale
+                else enriched
+            )
+            with op(
+                "MEMORY_ACCESS",
+                "read:db",
+                object="db:records",
+                actor="agent:composer",
+                facets=["read"],
+            ) as (rs3, dbr):
+                rs3.set(key="record", access="read").output(record, role="value", label="record")
+                if stale:
+                    GT.data["root_cause"] = dbr
+                else:
+                    GT.flow(dbw, dbr)
+            with op(
+                "STATE_MUTATION",
+                "write_report",
+                actor="agent:composer",
+                facets=["artifact_creation"],
+            ) as (fs, fw):
+                fs.output(f"# Report\n\n{record}\n", role="artifact", label="report.md")
+                GT.flow(dbr, fw)
+                GT.data["final_output"] = fw
+        GT.data["expected_motifs"].append("M001")  # lookup:C always retries at least once
+        if lookup_fails + 1 >= 3:
+            GT.data["expected_motifs"].append("M002")  # >=3 identical lookup calls
+
+
 def main() -> None:
     global GT, RNG, SCEN
     ap = argparse.ArgumentParser()
     ap.add_argument(
         "--arch",
-        choices=["tool_loop", "rag_memory", "multi_agent", "map_reduce", "hybrid_rag_cache"],
+        choices=[
+            "tool_loop",
+            "rag_memory",
+            "multi_agent",
+            "map_reduce",
+            "hybrid_rag_cache",
+            "async_event_pipeline",
+        ],
         default="tool_loop",
     )
     ap.add_argument("--scenario", choices=SCENARIOS, default="normal")
@@ -691,6 +1014,7 @@ def main() -> None:
                 "multi_agent": arch_multi_agent,
                 "map_reduce": arch_map_reduce,
                 "hybrid_rag_cache": arch_hybrid_rag_cache,
+                "async_event_pipeline": arch_async_event_pipeline,
             }[args.arch]()
     Path(args.gt).write_text(json.dumps(GT.data, indent=1), encoding="utf-8")
 

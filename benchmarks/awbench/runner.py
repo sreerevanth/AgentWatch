@@ -72,6 +72,29 @@ def _git_sha() -> str:
     return _git("rev-parse", "HEAD") or "unknown"
 
 
+def effective_status(spec: dict[str, Any] | None) -> dict[str, Any]:
+    """Evidence status of an architecture, computed rather than asserted: a declared held-out
+    architecture becomes FORMER_HELD_OUT as soon as AgentWatch code changed after its first
+    scored run (its later results may have been shaped by it)."""
+    spec = spec or {}
+    declared = spec.get("declared", "DEVELOPMENT")
+    first = spec.get("first_scored_run")
+    if declared != "HELD_OUT":
+        return {"status": declared}
+    if not first:
+        return {"status": "HELD_OUT", "reason": "first scored run"}
+    changed = _git("diff", "--name-only", first["commit"], "HEAD", "--", "agentwatch")
+    if changed is None:
+        return {"status": "UNKNOWN", "reason": "git unavailable"}
+    if changed.strip() or _git_dirty():
+        return {
+            "status": "FORMER_HELD_OUT",
+            "reason": f"agentwatch/ changed since first scored run {first['commit']}",
+            "first_scored_run": first,
+        }
+    return {"status": "HELD_OUT", "first_scored_run": first}
+
+
 def execute_matrix(
     engine: Engine, gt_dir: Path, registry: dict[str, Any], seeds: int, drift_n: int
 ) -> list[RunRecord]:
@@ -149,11 +172,27 @@ def main(argv: list[str] | None = None) -> int:
         default=None,
         help="write the benchmark store here for inspection",
     )
+    ap.add_argument(
+        "--first-scored-run",
+        action="append",
+        default=[],
+        metavar="ARCH",
+        help="score a never-scored HELD_OUT architecture (otherwise it is skipped, so it cannot "
+        "be looked at by accident during development)",
+    )
     args = ap.parse_args(argv)
 
     from benchmarks.awbench import tasks
 
     registry = yaml.safe_load(REGISTRY.read_text(encoding="utf-8"))
+    status_specs = registry.get("architecture_status") or {}
+    held_out = dict(registry.get("held_out") or {})
+    for arch in list(held_out):
+        st = effective_status(status_specs.get(arch))
+        if st.get("reason") == "first scored run" and arch not in args.first_scored_run:
+            print(f"skipping never-scored held-out architecture {arch} (--first-scored-run {arch})")
+            del held_out[arch]
+    registry = {**registry, "held_out": held_out}
     t0 = time.perf_counter()
     with tempfile.TemporaryDirectory(prefix="awbench-") as tmp:
         tmpdir = Path(tmp)
@@ -224,6 +263,11 @@ def main(argv: list[str] | None = None) -> int:
         }
     report["held_out"] = {}
     report["held_out_notes"] = registry.get("held_out_notes") or {}
+    status_specs = registry.get("architecture_status") or {}
+    report["architecture_status"] = {
+        arch: effective_status(status_specs.get(arch))
+        for arch in [*registry["scenarios"], *(registry.get("held_out") or {})]
+    }
     for arch, arch_results in held_results.items():
         report["held_out"][arch] = {}
         for name, measured in arch_results.items():
@@ -303,7 +347,8 @@ def render_markdown(report: dict[str, Any]) -> str:
     for arch, arch_results in (report.get("held_out") or {}).items():
         lines += [
             "",
-            f"## Held-out architecture: {arch}",
+            f"## Held-out architecture: {arch} — status "
+            f"{(report.get('architecture_status') or {}).get(arch, {}).get('status', '?')}",
             "",
             notes.get(arch, ""),
             "",
