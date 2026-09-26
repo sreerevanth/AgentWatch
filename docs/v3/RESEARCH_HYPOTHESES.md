@@ -300,3 +300,22 @@ These are machine-generated values from `benchmarks/awbench/results/latest.json`
 4. **Evaluator definitions** are in `benchmarks/awbench/tasks.py`. Their docstrings and notes state what each metric does and does not measure.
 
 Before any VALIDATED claim, the next steps are held-out architectures, real-model runs, and multiple seeds.
+
+
+### 6.1 Three-seed run (2026-09-26)
+
+With seeded variability (seeds now change the retrieved documents, tool-failure counts and latency jitter), 3 seeds × 3 architectures × 16 scenarios, plus drift sets (108 runs, clean tree `a3fa5c1`):
+
+- **Not met:**
+  - **H1 cross-source kind F1 0.80** (unchanged cause: no OTel convention for artifact writes).
+  - **H2 information precision 0.747** pooled; 0.69–0.77 per seed; threshold 0.75. With varied documents, identical content produced by several events makes content-addressed flow ambiguous more often (ADR-0015). The evaluator counts every such ambiguous pair as a false positive.
+- **Met:**
+  - H2 execution F1 1.0
+  - information recall 0.85 (0.90 per seed)
+  - H3 lineage F1 0.88 (0.90–0.91)
+  - H4 top-1 0.96 (baseline 0.91)
+  - H5 precision/recall 0.94/0.94
+  - H7 drift detected with a clean control
+  - replay, counterfactual, hypotheses and faithfulness all at 1.0
+
+"Pooled" values also include the extra drift-set runs. The per-seed ranges use only each seed's matrix runs. Variance across seeds is small because the systems are stubs; it is not an estimate of real-world variance.
