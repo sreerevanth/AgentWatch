@@ -347,11 +347,17 @@ class _Run:
             self.add_anc(inst.node, self.anc_star(enode))
             toks = self.tokens(inst.content_id)
             decomposed = bool(self.items.get(inst.content_id))
+            # declared structure outranks content: a memory read's value is explained by the
+            # write it returned, a pass-through output (equal to one of the event's own inputs)
+            # by that input — content inference into them would bypass the hierarchy
+            explained = (
+                ev.event_id in self.transfers and self.transfers[ev.event_id][1]
+            ) or inst.content_id in {i.artifact_id for i in ev.inputs}
             # a decomposed list is matched through its items (one retrieved document at a time)
             cands = [] if decomposed else self.containment(toks, ev.event_id)
             if ext and not decomposed:
                 self._similar(inst.node, cands)
-            elif cands and ev.kind in CARRIER_KINDS:
+            elif cands and ev.kind in CARRIER_KINDS and not explained:
                 # a carrier moves or stores data it did not declare; a generator (model,
                 # tool) explains its own output, so similar earlier text is no evidence of copying
                 res = self._compute(inst.node, toks, cands)
