@@ -349,3 +349,42 @@ Held-out architectures are added after AgentWatch development, committed before 
 - The M006 false positive described above.
 - A third held-out architecture is needed to test the reduction.
 
+
+### 6.3 Information instances and the third held-out architecture (2026-09-26)
+
+Both earlier held-out architectures had shown the same failure: identical or overlapping content was treated as information flow. The information model was rebuilt around information instances, an evidence hierarchy and preserved ambiguity (ADR-0017), rather than patched per architecture.
+
+**Pre-registration.** `async_event_pipeline` was designed and committed before those changes were tested (architecture `88f46a9`, pre-registration `bfc68cb`). It features asyncio workers completing out of order, an at-least-once queue, a discarded draft identical to the published result, shared evidence overlapping a worker's own retrieval, retries, a glossary cache hit and a database read-back.
+
+**First scored run.** Clean tree, 3 seeds, commit `9f7e97c`, results `awbench-20260926T145401Z.json`, recorded unchanged in `a00dac2`.
+
+| task | metric | held-out result | threshold |
+|---|---|---|---|
+| H2 | execution F1 | 1.0 | 0.9 ✓ |
+| H2 | information precision | **0.95** | 0.75 ✓ |
+| H2 | information recall | 0.51 | 0.75 ✗ |
+| H3 | lineage F1 | 0.33 (precision 1.0, recall 0.20) | 0.8 ✗ |
+| H4 | top-1 / root at or upstream | 0.89 / 0.89 | 0.7 ✓ / 0.9 ✗ |
+| H5 | motif precision / recall | 1.0 / 0.64 | 0.9 ✓ / 0.8 ✗ |
+| lab, faithfulness | replay, counterfactual, faithfulness | 1.0 | ✓ |
+
+**Reading of the held-out result.**
+- **Precision generalized.** Precision is 0.95 on the unseen architecture, against 0.53 and 0.47 on first contact with the previous two held-out architectures.
+- **The cost is recall.** When content fits several producers, AgentWatch now lists candidates instead of choosing one, as ADR-0017 intends.
+  - The stub models are extractive, so every intermediate (analysis, merge, enrich, db record) is explainable from its sources. The certain lineage of the report therefore reaches the retrieved evidence and glossary definitions, not the operations in between.
+  - Following candidates too gives recall 0.58 at precision 0.36.
+
+**Diagnosis and fixes after recording (`b2af8bb`; the architecture is FORMER_HELD_OUT since).**
+1. **H4 `tool_timeout` localized in 1 of 3 seeds.** The comparator aligned steps by signature only. Extra retries were "inserted" before the first attempt, so it blamed an attempt that failed identically in both runs. The fix aligns on (signature, status) with gaps right-normalized past identical steps. After the fix, H4 is 1.0/1.0.
+2. **A hierarchy violation.** A memory read's value got content-inferred parents although the transfer from its write explains it. Declared structure now outranks content for outputs too.
+
+**Development set, after the changes** (`awbench-20260926T172315Z.json`; development evidence only):
+- information precision 0.94, recall of certain links 0.49 (0.80 with candidates);
+- lineage F1 0.42 (precision 1.0);
+- motif precision 0.94, recall 0.36 (M006: 0/81 — bottlenecks through extractive intermediates are not certain);
+- H4 0.96;
+- H1 OTel-only 0.80; with the AgentWatch extension 1.0 (unthresholded, AgentWatch's own mapping, ADR-0018).
+
+**Not yet tested.** The ambiguity is a property of value-level telemetry combined with extractive models.
+- Real models are abstractive, and declared inputs remove the ambiguity.
+- Neither case has been measured by a held-out run yet: real-model runs need a working credential, and a declared-instrumentation held-out architecture is the next benchmark to build.
