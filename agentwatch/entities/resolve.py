@@ -71,3 +71,32 @@ def resolve_entities(
         rec["runs"] = sorted(rec["runs"])
         out.append(rec)
     return sorted(out, key=lambda r: r["canonical_key"])
+
+
+def merge_entities(
+    stored: Sequence[dict[str, Any]], added: Sequence[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    """Aggregate entities of runs that are new to the store into the stored aggregates.
+
+    Only valid when ``added`` comes from events no stored aggregate already counts (new runs):
+    counts and roles add, runs union, first/last seen take min/max — the same result as
+    resolving all events again. Replacing a run's events needs a full recompute (a minimum
+    cannot be subtracted)."""
+    merged: dict[str, dict[str, Any]] = {
+        e["canonical_key"]: {**e, "roles": dict(e["roles"]), "runs": list(e["runs"])}
+        for e in stored
+    }
+    for e in added:
+        cur = merged.get(e["canonical_key"])
+        if cur is None:
+            merged[e["canonical_key"]] = {**e, "roles": dict(e["roles"]), "runs": list(e["runs"])}
+            continue
+        for role, n in e["roles"].items():
+            cur["roles"][role] = cur["roles"].get(role, 0) + n
+        cur["event_count"] += e["event_count"]
+        cur["runs"] = sorted(set(cur["runs"]) | set(e["runs"]))
+        firsts = [x for x in (cur["first_seen"], e["first_seen"]) if x]
+        lasts = [x for x in (cur["last_seen"], e["last_seen"]) if x]
+        cur["first_seen"] = min(firsts) if firsts else None
+        cur["last_seen"] = max(lasts) if lasts else None
+    return [merged[k] for k in sorted(merged)]

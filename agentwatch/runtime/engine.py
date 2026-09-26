@@ -17,7 +17,7 @@ from collections.abc import Iterable, Sequence
 from typing import Any
 
 from agentwatch.analysis.base import AnalysisInput, Analyzer
-from agentwatch.entities.resolve import RESOLVER, RESOLVER_VERSION, resolve_entities
+from agentwatch.entities.resolve import RESOLVER, RESOLVER_VERSION, merge_entities, resolve_entities
 from agentwatch.events.model import ComputationalEvent, Diagnostic
 from agentwatch.events.normalize import ArtifactContent, NormalizeContext, Normalizer
 from agentwatch.events.registry import all_normalizers
@@ -262,16 +262,26 @@ class Engine:
             d["run_id"] = built["run_of"].get(ev.event_id)
             d["run_basis"] = built["run_basis"].get(ev.event_id)
             new_docs.append(d)
-        # entities aggregate over every run: recompute from the unchanged events plus the new ones
+        # entities aggregate over every run. New runs only add to the stored aggregates; a run
+        # whose events are being replaced needs a recompute (a minimum cannot be subtracted).
         affected_runs = set(built["runs"])
-        kept = [
-            e
-            for e in self.store.events(interp_id)
-            if e.get("run_id") not in affected_runs and not set(e["derived_from"]) & group_obs
-        ]
-        all_events = [event_from_dict(e) for e in kept] + list(built["events"])
-        run_of = {e["event_id"]: e.get("run_id") for e in kept} | dict(built["run_of"])
-        entities = resolve_entities(all_events, tenant_id, run_of)
+        replaces_stored = any(
+            self.store.events(interp_id, run_id=r, limit=1) for r in affected_runs
+        ) or any(i == interp_id for o in group_obs for _, i in self.store.events_for_observation(o))
+        if not replaces_stored:
+            entities = merge_entities(
+                self.store.entities(interp_id),
+                resolve_entities(built["events"], tenant_id, built["run_of"]),
+            )
+        else:
+            kept = [
+                e
+                for e in self.store.events(interp_id)
+                if e.get("run_id") not in affected_runs and not set(e["derived_from"]) & group_obs
+            ]
+            all_events = [event_from_dict(e) for e in kept] + list(built["events"])
+            run_of = {e["event_id"]: e.get("run_id") for e in kept} | dict(built["run_of"])
+            entities = resolve_entities(all_events, tenant_id, run_of)
         counts = self.store.replace_partial(
             interp_id,
             tenant_id,
