@@ -7,6 +7,8 @@ worker processes can share a store.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import json
 import os
 import secrets
@@ -20,6 +22,7 @@ from sqlalchemy import create_engine, delete, event, func, insert, select, text,
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import IntegrityError
 
+from agentwatch.evidence import crypto
 from agentwatch.evidence.blobs import BlobStore, FsBlobStore, MemoryBlobStore
 from agentwatch.evidence.canonical import canonical_json, sha256_hex
 from agentwatch.evidence.ids import new_ulid
@@ -86,8 +89,20 @@ class Store:
         *,
         blob_dir: str | Path | None = None,
         blob_store: BlobStore | None = None,
+        encrypt_payloads: bool | None = None,
     ) -> None:
         self.url = url or default_store_url()
+        if encrypt_payloads is None:
+            encrypt_payloads = os.environ.get("AGENTWATCH_ENCRYPT_PAYLOADS", "").lower() in (
+                "1",
+                "true",
+                "yes",
+            )
+        if encrypt_payloads and not crypto.available():
+            raise crypto.CryptoUnavailableError(
+                "AGENTWATCH_ENCRYPT_PAYLOADS requires the 'cryptography' package"
+            )
+        self.encrypt_payloads = bool(encrypt_payloads)
         self.is_sqlite = self.url.startswith("sqlite")
         kwargs: dict[str, Any] = {"future": True}
         if self.is_sqlite:
@@ -133,6 +148,12 @@ class Store:
                 conn.execute(
                     insert(s.meta_table).values(key="schema_version", value=str(s.SCHEMA_VERSION))
                 )
+            elif int(existing) < s.SCHEMA_VERSION:  # additive upgrades only (new tables)
+                conn.execute(
+                    update(s.meta_table)
+                    .where(s.meta_table.c.key == "schema_version")
+                    .values(value=str(s.SCHEMA_VERSION))
+                )
             elif int(existing) > s.SCHEMA_VERSION:
                 raise RuntimeError(
                     f"store schema {existing} is newer than this AgentWatch ({s.SCHEMA_VERSION})"
@@ -169,6 +190,154 @@ class Store:
                 ).scalar_one()
             )
 
+    # ── data keys (crypto-shredding) ───────────────────────────────────────
+    def data_key(
+        self, tenant_id: str, subject: str | None, *, create: bool = True
+    ) -> tuple[str, bytes | None] | None:
+        """(key_id, key) for a subject ('' = tenant default). key is None once destroyed."""
+        subj = subject or ""
+        with self.engine.begin() as conn:
+            row = conn.execute(
+                select(s.data_keys.c.key_id, s.data_keys.c.key_hex).where(
+                    s.data_keys.c.tenant_id == tenant_id, s.data_keys.c.subject == subj
+                )
+            ).first()
+            if row is not None:
+                return row.key_id, bytes.fromhex(row.key_hex) if row.key_hex else None
+            if not create:
+                return None
+            key_id = secrets.token_hex(8)
+            try:
+                conn.execute(
+                    insert(s.data_keys).values(
+                        key_id=key_id,
+                        tenant_id=tenant_id,
+                        subject=subj,
+                        key_hex=crypto.new_key().hex(),
+                        created_at=_now(),
+                    )
+                )
+            except IntegrityError:  # pragma: no cover - concurrent creation
+                pass
+        return self.data_key(tenant_id, subject, create=False)
+
+    def _key_by_id(self, key_id: str, cache: dict[str, bytes | None]) -> bytes | None:
+        if key_id not in cache:
+            with self.engine.connect() as conn:
+                hexkey = conn.execute(
+                    select(s.data_keys.c.key_hex).where(s.data_keys.c.key_id == key_id)
+                ).scalar()
+            cache[key_id] = bytes.fromhex(hexkey) if hexkey else None
+        return cache[key_id]
+
+    def erase_subject(
+        self, tenant_id: str, subject: str, *, reason: str, actor: str | None = None
+    ) -> dict[str, Any]:
+        """Crypto-shred a data subject: destroy its key, then purge every derived row that may
+        hold its plaintext (events, relations, artifacts, analyses of all interpretations of
+        the tenant, and experiments about affected runs). Raw observations are untouched, so
+        the evidence chain still verifies; their payloads just become unreadable."""
+        found = self.data_key(tenant_id, subject, create=False)
+        obs_ids = self.find_by_declared_id(tenant_id, "subject_id", subject)
+        with self.engine.begin() as conn:
+            if found is not None:
+                conn.execute(
+                    update(s.data_keys)
+                    .where(s.data_keys.c.key_id == found[0])
+                    .values(key_hex=None, destroyed_at=_now(), reason=reason)
+                )
+            runs: set[str] = set()
+            for chunk in _chunks(obs_ids, 500):
+                ev = [
+                    r[0]
+                    for r in conn.execute(
+                        select(s.event_sources.c.event_id).where(
+                            s.event_sources.c.obs_id.in_(chunk)
+                        )
+                    )
+                ]
+                for echunk in _chunks(ev, 500):
+                    runs.update(
+                        r[0]
+                        for r in conn.execute(
+                            select(s.events.c.run_id).where(s.events.c.event_id.in_(echunk))
+                        )
+                        if r[0]
+                    )
+            interp_ids = [
+                r[0]
+                for r in conn.execute(
+                    select(s.interpretations.c.interp_id).where(
+                        s.interpretations.c.tenant_id == tenant_id
+                    )
+                )
+            ]
+            for table in (
+                s.events,
+                s.event_sources,
+                s.diagnostics,
+                s.entities,
+                s.runs,
+                s.relations,
+                s.relation_members,
+                s.derived,
+            ):
+                for chunk in _chunks(interp_ids, 200):
+                    conn.execute(delete(table).where(table.c.interp_id.in_(chunk)))
+            conn.execute(
+                update(s.interpretations)
+                .where(s.interpretations.c.tenant_id == tenant_id)
+                .values(processed_through=None)
+            )
+            conn.execute(delete(s.artifacts).where(s.artifacts.c.tenant_id == tenant_id))
+            removed_experiments = 0
+            for chunk in _chunks(sorted(runs), 200):
+                removed_experiments += int(
+                    conn.execute(
+                        delete(s.experiments).where(
+                            s.experiments.c.tenant_id == tenant_id,
+                            s.experiments.c.subject.in_(chunk),
+                        )
+                    ).rowcount
+                    or 0
+                )
+            report = {
+                "subject": subject,
+                "key_destroyed": found is not None,
+                "observations_affected": len(obs_ids),
+                "runs_affected": sorted(runs),
+                "derived_data_purged": {
+                    "interpretations": len(interp_ids),
+                    "experiments": removed_experiments,
+                },
+                "note": "raw observations are unchanged (ciphertext); rebuild derived data with Engine.process(force=True)",
+            }
+            conn.execute(
+                insert(s.erasures).values(
+                    erasure_id=new_ulid(),
+                    tenant_id=tenant_id,
+                    subject=subject,
+                    key_id=found[0] if found else None,
+                    reason=reason,
+                    actor=actor,
+                    erased_at=_now(),
+                    observations_affected=len(obs_ids),
+                    doc=canonical_json(report),
+                )
+            )
+        return report
+
+    def erasures(self, tenant_id: str = "default") -> list[dict[str, Any]]:
+        with self.engine.connect() as conn:
+            return [
+                json.loads(r[0]) | {"erased_at": r[1], "reason": r[2]}
+                for r in conn.execute(
+                    select(s.erasures.c.doc, s.erasures.c.erased_at, s.erasures.c.reason)
+                    .where(s.erasures.c.tenant_id == tenant_id)
+                    .order_by(s.erasures.c.erasure_id)
+                )
+            ]
+
     # ── evidence: append ───────────────────────────────────────────────────
     def append(
         self, drafts: Sequence[ObservationDraft], policy: PayloadPolicy = DEFAULT_POLICY
@@ -179,6 +348,8 @@ class Store:
         rows: list[dict[str, Any]] = []
         id_rows: list[dict[str, Any]] = []
         keys_seen: dict[tuple[str, str], str] = {}
+        rows_seen: dict[tuple[str, str], str] = {}
+        key_cache: dict[tuple[str, str], tuple[str, bytes | None]] = {}
         for i, draft in enumerate(drafts):
             problem = _validate_draft(draft)
             if problem:
@@ -203,7 +374,12 @@ class Store:
                 result.duplicates.append(keys_seen[k])
                 continue
             keys_seen[k] = obs.obs_id
-            rows.append(self._obs_row(obs))
+            row = self._obs_row(obs, key_cache)
+            if (obs.tenant_id, row["idempotency_key"]) in rows_seen:
+                result.duplicates.append(rows_seen[(obs.tenant_id, row["idempotency_key"])])
+                continue
+            rows_seen[(obs.tenant_id, row["idempotency_key"])] = obs.obs_id
+            rows.append(row)
             id_rows.extend(
                 {"obs_id": obs.obs_id, "key": key, "value": val[:256], "tenant_id": obs.tenant_id}
                 for key, val in obs.declared_ids_items
@@ -234,11 +410,36 @@ class Store:
             result.accepted.extend(r["obs_id"] for r in fresh)
         return result
 
-    def _obs_row(self, obs: RawObservation) -> dict[str, Any]:
-        payload_json: str | None = obs.payload_json
+    def _obs_row(
+        self,
+        obs: RawObservation,
+        key_cache: dict[tuple[str, str], tuple[str, bytes | None]] | None = None,
+    ) -> dict[str, Any]:
+        stored = obs.payload_json
+        payload_sha256 = obs.payload_sha256
+        idem = obs.idempotency_key
+        if self.encrypt_payloads:
+            subject = obs.declared("subject_id") or ""
+            ck = (obs.tenant_id, subject)
+            cache = key_cache if key_cache is not None else {}
+            if ck not in cache:
+                found = self.data_key(obs.tenant_id, subject)
+                assert found is not None
+                cache[ck] = found
+            key_id, key = cache[ck]
+            if key is None:
+                raise ValueError(
+                    f"data key for subject {subject!r} was destroyed (erased subject); refusing to store new payloads"
+                )
+            stored = crypto.encrypt(obs.payload_json, key, key_id)
+            # the chain hashes the ciphertext so it still verifies after the key is destroyed;
+            # the dedup key is keyed by the subject key so erased payloads cannot be guessed from it
+            payload_sha256 = sha256_hex(stored)
+            idem = hmac.new(key, obs.idempotency_key.encode("utf-8"), hashlib.sha256).hexdigest()
+        payload_json: str | None = stored
         payload_blob = None
-        if len(obs.payload_json.encode("utf-8")) > INLINE_PAYLOAD_LIMIT:
-            payload_blob = self.blobs.put(obs.payload_json.encode("utf-8"))
+        if len(stored.encode("utf-8")) > INLINE_PAYLOAD_LIMIT:
+            payload_blob = self.blobs.put(stored.encode("utf-8"))
             payload_json = None
         return {
             "obs_id": obs.obs_id,
@@ -248,24 +449,39 @@ class Store:
             "sensor_instance": obs.sensor.instance_id,
             "source_kind": obs.source_kind,
             "source_seq": obs.source_seq,
-            "idempotency_key": obs.idempotency_key,
+            "idempotency_key": idem,
             "observed_at": _iso(obs.observed_at),
             "received_at": _iso(obs.received_at),
             "clock": canonical_json(obs.clock.to_dict()),
             "content_type": obs.content_type,
             "payload_json": payload_json,
             "payload_blob": payload_blob,
-            "payload_sha256": obs.payload_sha256,
+            "payload_sha256": payload_sha256,
             "declared_ids": canonical_json(dict(obs.declared_ids_items)),
             "redaction": canonical_json(obs.redaction.to_dict()) if obs.redaction else None,
             "sampling": canonical_json(obs.sampling.to_dict()) if obs.sampling else None,
             "segment_id": None,
         }
 
-    def _row_to_obs(self, r: Any) -> RawObservation:
+    def _row_to_obs(
+        self, r: Any, key_cache: dict[str, bytes | None] | None = None
+    ) -> RawObservation:
         payload_json = r.payload_json
         if payload_json is None and r.payload_blob:
             payload_json = self.blobs.get(r.payload_blob).decode("utf-8")
+        encoding = "plain"
+        if crypto.is_encrypted(payload_json):
+            key = self._key_by_id(
+                crypto.key_id_of(payload_json), key_cache if key_cache is not None else {}
+            )
+            if key is None:
+                encoding = "erased"
+                payload_json = canonical_json(
+                    {"$erased": True, "reason": "data key destroyed (subject erased)"}
+                )
+            else:
+                encoding = "aes-gcm"
+                payload_json = crypto.decrypt(payload_json, key)
         clock = json.loads(r.clock)
         sampling = json.loads(r.sampling) if r.sampling else None
         return RawObservation(
@@ -287,6 +503,7 @@ class Store:
             redaction=RedactionManifest.from_dict(json.loads(r.redaction) if r.redaction else None),
             sampling=SamplingInfo(sampling["policy"], sampling["rate"]) if sampling else None,
             segment_id=r.segment_id,
+            encoding=encoding,
         )
 
     # ── evidence: read ─────────────────────────────────────────────────────
@@ -319,8 +536,10 @@ class Store:
         q = q.order_by(s.observations.c.obs_id)
         if limit:
             q = q.limit(limit)
+        cache: dict[str, bytes | None] = {}
         with self.engine.connect() as conn:
-            return [self._row_to_obs(r) for r in conn.execute(q)]
+            rows = list(conn.execute(q))
+        return [self._row_to_obs(r, cache) for r in rows]
 
     def count_observations(self, tenant_id: str = "default") -> int:
         with self.engine.connect() as conn:

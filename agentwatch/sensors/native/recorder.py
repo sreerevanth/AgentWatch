@@ -56,6 +56,7 @@ class RunHandle:
         self.run_id = run_id
         self.attributes = attributes
         self.outcome: str | None = None
+        self.subject_id: str | None = None
         self._ordinals: dict[tuple[str, str], int] = {}
 
     def next_ordinal(self, kind: str, operation: str) -> int:
@@ -156,19 +157,29 @@ class Recorder(Sensor):
 
     # -- runs -----------------------------------------------------------------
     @contextmanager
-    def run(self, name: str, run_id: str | None = None, **attributes: Any) -> Iterator[RunHandle]:
+    def run(
+        self,
+        name: str,
+        run_id: str | None = None,
+        *,
+        subject_id: str | None = None,
+        **attributes: Any,
+    ) -> Iterator[RunHandle]:
+        """``subject_id`` declares whose data the run processes; every observation of the run
+        carries it, so the subject can later be erased by crypto-shredding (ADR-0011)."""
         handle = RunHandle(
             self,
             name,
             run_id or uuid.uuid4().hex,
             {k: _jsonable(v)[0] for k, v in attributes.items()},
         )
+        handle.subject_id = subject_id
         token = _current_run.set(handle)
         span_token = _current_span.set(None)
         self.ctx.emit(
             "native.run.start",
             {"name": name, "attributes": handle.attributes, "system": self.system},
-            declared_ids={"run_id": handle.run_id},
+            declared_ids={"run_id": handle.run_id, "subject_id": handle.subject_id},
         )
         error: BaseException | None = None
         try:
@@ -181,7 +192,11 @@ class Recorder(Sensor):
             payload: dict[str, Any] = {"name": name, "outcome": outcome}
             if error is not None:
                 payload["error"] = {"type": type(error).__name__, "message": str(error)}
-            self.ctx.emit("native.run.end", payload, declared_ids={"run_id": handle.run_id})
+            self.ctx.emit(
+                "native.run.end",
+                payload,
+                declared_ids={"run_id": handle.run_id, "subject_id": handle.subject_id},
+            )
             _current_span.reset(span_token)
             _current_run.reset(token)
             self.ctx.sink.flush()
@@ -238,6 +253,7 @@ class Recorder(Sensor):
             "span_id": span.span_id,
             "parent_span_id": span.parent.span_id if span.parent else None,
             "run_id": span.run.run_id if span.run else None,
+            "subject_id": span.run.subject_id if span.run else None,
         }
 
     def _emit_start(self, span: Span) -> None:
@@ -300,6 +316,7 @@ class Recorder(Sensor):
                 "event_id": uuid.uuid4().hex[:16],
                 "parent_span_id": parent.span_id if parent else None,
                 "run_id": run.run_id if run else None,
+                "subject_id": run.subject_id if run else None,
             },
         )
 

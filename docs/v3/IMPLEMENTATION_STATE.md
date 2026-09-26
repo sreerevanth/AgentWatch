@@ -1,6 +1,6 @@
 # AgentWatch v3 — Implementation State
 
-Branch: `architecture/v3` · Updated 2026-09-25
+Branch: `architecture/v3` · Updated 2026-09-26
 
 ## Completed
 
@@ -32,7 +32,7 @@ Branch: `architecture/v3` · Updated 2026-09-25
 - **AWBench results are in-sample** and come from stub models. No analytic capability is VALIDATED yet; see RESEARCH_HYPOTHESES §6.
 - **Full rebuild per interpretation**: 5.2 s for 4k events on a laptop. Fine for development-scale stores; large deployments need incremental processing.
 - **Storage** is about 9.6 KB per observation, including derived rows and relations. Not optimized.
-- **Privacy**: there is no per-subject encryption or crypto-shredding yet (ADR-0011). Erasure is available only as authorized purge of whole sealed segments. Secret redaction is on by default; PII redaction is opt-in (`PayloadPolicy(redact_pii=True)`).
+- **Privacy**: per-subject crypto-shredding exists but is opt-in (`AGENTWATCH_ENCRYPT_PAYLOADS=1`), and declared ids are not encrypted (ADR-0011, as built). Secret redaction is on by default; PII redaction is opt-in (`PayloadPolicy(redact_pii=True)`).
 - **Replay** only mocks calls made through `aw.tool` / `aw.model` / `aw.retriever`. Other program logic runs live, and the reports say so.
 - **Entity resolution** is exact-key only. There is no aliasing (e.g. model version aliases).
 - **Legacy HIPAA redactor** (v0.2) misses US SSNs and mislabels email local parts as MRNs, as observed in the regression test. It is a v0.2 module and has not been fixed here.
@@ -45,4 +45,3 @@ Branch: `architecture/v3` · Updated 2026-09-25
 2. AWBench: held-out architecture(s), real-model runs behind an opt-in flag, multiple seeds with CIs.
 3. OTel normalizer: map `file.*` / `db.operation=insert` attributes to STATE_MUTATION, and re-measure H1.
 4. Incremental normalization keyed by run, once a workload needs it.
-5. Crypto-shredding for per-subject erasure.

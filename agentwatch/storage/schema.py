@@ -20,7 +20,7 @@ from sqlalchemy import (
     UniqueConstraint,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2  # 2: data keys + erasure log (crypto-shredding)
 metadata = MetaData()
 
 # ── Evidence ──────────────────────────────────────────────────────────────
@@ -94,6 +94,33 @@ tenant_keys = Table(
     Column("tenant_id", String(64), primary_key=True),
     Column("artifact_key_hex", String(128), nullable=False),
     Column("created_at", String(40), nullable=False),
+)
+
+data_keys = Table(
+    "aw3_data_keys",
+    metadata,
+    Column("key_id", String(32), primary_key=True),
+    Column("tenant_id", String(64), nullable=False),
+    Column("subject", String(256), nullable=False),  # '' = tenant default key
+    Column("key_hex", String(64)),  # NULL once destroyed (crypto-shredding)
+    Column("created_at", String(40), nullable=False),
+    Column("destroyed_at", String(40)),
+    Column("reason", Text),
+    UniqueConstraint("tenant_id", "subject", name="uq_aw3_data_key_subject"),
+)
+
+erasures = Table(
+    "aw3_erasures",
+    metadata,
+    Column("erasure_id", String(26), primary_key=True),
+    Column("tenant_id", String(64), nullable=False),
+    Column("subject", String(256), nullable=False),
+    Column("key_id", String(32)),
+    Column("reason", Text, nullable=False),
+    Column("actor", String(256)),
+    Column("erased_at", String(40), nullable=False),
+    Column("observations_affected", Integer, nullable=False),
+    Column("doc", Text, nullable=False),
 )
 
 # ── Interpretation ────────────────────────────────────────────────────────

@@ -91,3 +91,24 @@ def test_pg_engine_shared_between_processes(pg_store):
     iid = e2.interp_id_for(t)
     assert len(e2.store.runs(iid)) == 1
     assert {e["kind"] for e in e1.store.events(iid)} == {"LIFECYCLE", "TOOL_INVOCATION"}
+
+
+def test_pg_crypto_shredding(tmp_path):
+    t = _tenant()
+    store = Store(PG_URL, blob_dir=tmp_path / "blobs", encrypt_payloads=True)
+    try:
+        sink = ListSink()
+        rec = Recorder(sink, tenant_id=t)
+        with rec.run("pg-erase", subject_id="subj-1"):
+            with rec.span("TOOL_INVOCATION", "t", object="tool:t") as s:
+                s.input({"name": "Private Person"}).output("ok")
+        engine = Engine(store)
+        engine.ingest(sink.drafts)
+        engine.process(t)
+        store.seal_all(t)
+        report = engine.erase_subject(t, "subj-1", reason="test")
+        assert report["key_destroyed"]
+        assert store.verify(t).ok
+        assert all(o.erased for o in store.observations(t))
+    finally:
+        store.close()

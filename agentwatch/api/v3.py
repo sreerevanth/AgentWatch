@@ -91,6 +91,11 @@ class EvidenceRequest(BaseModel):
     reproduction_confidence: float | None = None
 
 
+class EraseRequest(BaseModel):
+    subject: str
+    reason: str
+
+
 class QueryRequest(BaseModel):
     text: str
 
@@ -172,6 +177,15 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
         eng.store.seal_all(tenant_id)
         return eng.store.verify(tenant_id).to_dict()
 
+    @router.post("/api/v3/evidence/erase", tags=["v3 evidence"])
+    def erase(req: EraseRequest, tenant_id: str = Depends(tenant)) -> dict[str, Any]:
+        """Crypto-shred a data subject (irreversible)."""
+        return get_engine().erase_subject(tenant_id, req.subject, reason=req.reason, actor="api")
+
+    @router.get("/api/v3/evidence/erasures", tags=["v3 evidence"])
+    def erasures(tenant_id: str = Depends(tenant)) -> list[dict[str, Any]]:
+        return get_engine().store.erasures(tenant_id)
+
     @router.get("/api/v3/observations/{obs_id}", tags=["v3 evidence"])
     def observation(obs_id: str, tenant_id: str = Depends(tenant)) -> dict[str, Any]:
         eng = get_engine()
@@ -197,6 +211,7 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
             "observations": w.store.count_observations(w.tenant_id),
             "capabilities": [c.to_dict() for c in all_capabilities()],
             "reexecution_enabled": _reexecution_allowed(),
+            "payload_encryption": w.store.encrypt_payloads,
         }
 
     @router.get("/api/v3/live", tags=["v3"])

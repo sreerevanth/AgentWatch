@@ -35,6 +35,13 @@ def _define() -> None:
             ("tests/v3/test_evidence.py",),
         ),
         (
+            "evidence.crypto_shredding",
+            "1",
+            V,
+            "per-subject payload encryption; erasure destroys the key and purges derived copies",
+            ("tests/v3/test_erasure.py",),
+        ),
+        (
             "events.normalization.native",
             "1",
             V,

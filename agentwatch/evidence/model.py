@@ -189,6 +189,10 @@ class RawObservation:
     redaction: RedactionManifest | None = None
     sampling: SamplingInfo | None = None
     segment_id: str | None = None
+    # "plain": payload_sha256 covers payload_json. "aes-gcm": stored encrypted; the hash covers
+    # the stored ciphertext and payload_json is the decrypted text. "erased": the data key
+    # was destroyed (crypto-shredding); payload_json is a placeholder.
+    encoding: str = "plain"
 
     def payload(self) -> Any:
         """Return a fresh, independent copy of the payload."""
@@ -205,8 +209,16 @@ class RawObservation:
                 return v
         return None
 
-    def verify_hash(self) -> bool:
+    def verify_hash(self) -> bool | None:
+        """True/False for plain payloads; None when the hash covers stored ciphertext
+        (verified by the store, see ``Store.verify``)."""
+        if self.encoding != "plain":
+            return None
         return sha256_hex(self.payload_json) == self.payload_sha256
+
+    @property
+    def erased(self) -> bool:
+        return self.encoding == "erased"
 
     def to_dict(self, include_payload: bool = True) -> dict[str, Any]:
         data: dict[str, Any] = {
@@ -225,6 +237,7 @@ class RawObservation:
             "redaction": self.redaction.to_dict() if self.redaction else None,
             "sampling": self.sampling.to_dict() if self.sampling else None,
             "segment_id": self.segment_id,
+            "encoding": self.encoding,
         }
         if include_payload:
             data["payload"] = self.payload()

@@ -59,6 +59,14 @@ class Engine:
     ) -> AppendResult:
         return self.store.append(drafts, policy or self.policy)
 
+    def erase_subject(
+        self, tenant_id: str, subject: str, *, reason: str, actor: str | None = None
+    ) -> dict[str, Any]:
+        """Crypto-shred ``subject`` and rebuild derived data without its payloads."""
+        report = self.store.erase_subject(tenant_id, subject, reason=reason, actor=actor)
+        report["rebuild"] = self.process(tenant_id, force=True)
+        return report
+
     def ingest_legacy(
         self, events: Iterable[Any], tenant_id: str = "default"
     ) -> tuple[list[TranslationResult], AppendResult]:
@@ -164,6 +172,16 @@ class Engine:
         diagnostics: list[Diagnostic] = []
         by_normalizer: dict[str, list[RawObservation]] = {n.name: [] for n in self.normalizers}
         for obs in observations:
+            if obs.erased:
+                diagnostics.append(
+                    Diagnostic(
+                        obs.obs_id,
+                        "info",
+                        "payload_erased",
+                        "data subject erased (key destroyed); payload not interpreted",
+                    )
+                )
+                continue
             target = next((n for n in self.normalizers if n.accepts(obs)), None)
             if target is None:
                 diagnostics.append(

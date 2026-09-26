@@ -157,6 +157,14 @@ agentwatch evidence purge --older-than-days 90 --reason "retention" --yes
 agentwatch reprocess                                         # rebuild the interpretation from evidence
 ```
 
+**Per-subject erasure (crypto-shredding).** Set `AGENTWATCH_ENCRYPT_PAYLOADS=1` and declare the data subject when recording (`with aw.run("intake", subject_id="customer-42"):`). Then:
+
+```bash
+agentwatch evidence erase-subject customer-42 --reason "GDPR art. 17" --yes
+```
+
+This destroys the subject's key, purges every derived copy and rebuilds. The raw evidence chain still verifies.
+
 Raw observations cannot be updated or deleted. Database triggers reject both. Retention removes whole sealed segments, and the purge authorization is recorded. Secrets are redacted before storage, and a redaction manifest is kept.
 
 ## 7. Server and UI

@@ -965,6 +965,23 @@ def evidence_purge(
     )
 
 
+@evidence_app.command("erase-subject")
+@_guard
+def evidence_erase_subject(
+    subject: str = typer.Argument(..., help="value of the declared subject_id"),
+    reason: str = typer.Option(..., "--reason"),
+    yes: bool = typer.Option(False, "--yes"),
+    store: str | None = STORE_OPTION,
+    tenant: str = typer.Option("default", "--tenant"),
+) -> None:
+    """Crypto-shred a data subject: destroy its key and purge derived copies (irreversible)."""
+    from agentwatch.runtime.engine import Engine
+
+    if not yes:
+        _fail(f"erasing subject {subject!r} is irreversible; re-run with --yes to confirm")
+    _out(Engine(store).erase_subject(tenant, subject, reason=reason, actor="cli"))
+
+
 @evidence_app.command("show")
 @_guard
 def evidence_show(obs_id: str = typer.Argument(...), store: str | None = STORE_OPTION) -> None:
