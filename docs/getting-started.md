@@ -174,13 +174,13 @@ result = agent.run("your task")
 The smallest working setup is to install AgentWatch and wrap your Claude Code command with the AgentWatch CLI:
 
 ```bash
-agentwatch watch "Build me a REST API"
+agentwatch session watch "Build me a REST API"
 ```
 
 If you want to pin a model or change the safety policy, add options:
 
 ```bash
-agentwatch watch "Build me a REST API" --model claude-opus-4-5 --policy default
+agentwatch session watch "Build me a REST API" --model claude-opus-4-5 --policy default
 ```
 
 What happens:

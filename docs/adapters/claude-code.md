@@ -4,10 +4,10 @@ AgentWatch provides a first-class CLI wrapper for [Claude Code](https://github.c
 
 ## Usage
 
-Simply prefix your `claude` command with `agentwatch watch`:
+Run your task through `agentwatch session watch`:
 
 ```bash
-agentwatch watch "Build me a React component for a weather dashboard"
+agentwatch session watch "Build me a React component for a weather dashboard"
 ```
 
 ## How It Works
@@ -20,17 +20,17 @@ agentwatch watch "Build me a React component for a weather dashboard"
 ## Configuration Options
 
 ### Pinning a Model
-By default, AgentWatch respects the model Claude Code is configured to use. You can override this for auditing purposes:
+`session watch` passes a model to Claude Code (default `claude-opus-4-5`). Choose another with `--model`:
 
 ```bash
-agentwatch watch "..." --model claude-3-5-sonnet-20241022
+agentwatch session watch "..." --model claude-sonnet-5
 ```
 
 ### Applying a Safety Policy
-Use a custom policy defined in your AgentWatch server:
+Choose one of the built-in safety policies, `default`, `strict` or `permissive`:
 
 ```bash
-agentwatch watch "..." --policy strict-production
+agentwatch session watch "..." --policy strict
 ```
 
 ## Benefits for Claude Code Users

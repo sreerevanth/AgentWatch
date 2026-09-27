@@ -25,7 +25,7 @@
 
 ```
 pip install agentwatch-ai
-agentwatch watch "your agent command"
+agentwatch session watch "your agent command"
 ```
 
 *One command. Every failure caught. Before it runs.*
@@ -36,7 +36,7 @@ agentwatch watch "your agent command"
 
 </div>
 
-> **Branch `architecture/v3`: AgentWatch v3.** This branch rebuilds AgentWatch as a *passive instrument*. It reconstructs, compares, replays and explains the behaviour of AI-native systems from immutable runtime evidence, and it does not block or control them.
+> **AgentWatch v3** (merged into `main`) rebuilds AgentWatch as a *passive instrument*. It reconstructs, compares, replays and explains the behaviour of AI-native systems from immutable runtime evidence, and it does not block or control them.
 >
 > ```bash
 > agentwatch observe python examples/research_system.py   # record a program
@@ -260,7 +260,7 @@ cp .env.example .env
 docker compose up -d
 
 # Wrap your agent
-agentwatch watch "Build me a REST API"
+agentwatch session watch "Build me a REST API"
 ```
 
 **Dashboard** → http://localhost:3000
@@ -335,7 +335,7 @@ except CommandError as exc:
 ### ⏪ One-Click Rollback
 
 ```bash
-agentwatch rollback <session-id> --to-step 12
+agentwatch session rollback <session-id> --to-step 12
 ```
 
 Every step is a **git-backed filesystem snapshot.** Irreversible actions become reversible. Click rollback in the dashboard or use the CLI.

@@ -178,7 +178,7 @@ Stages:
 Guarantees during migration:
 
 1. No working integration is broken before M5. Every v0.2 adapter feeds v3 via `sensors/legacy` from day one of M1.
-2. **No destructive data migration.** Old `agent_events` rows can be *imported* as observations (`agentwatch evidence import-legacy`). They are marked `source_kind="legacy.agent_event.pg"` with `observation_confidence` reflecting that timestamps and parents are unreliable (D1, D5).
+2. **No destructive data migration.** Old `agent_events` rows can be *imported* as observations (export them as JSONL, then `agentwatch ingest events.jsonl`; as built, there is no separate `import-legacy` command). They are marked `source_kind="legacy.agent_event.pg"` with `observation_confidence` reflecting that timestamps and parents are unreliable (D1, D5).
 3. The legacy code is frozen for features. Bug and security fixes only.
 
 ---
