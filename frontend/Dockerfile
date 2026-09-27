@@ -32,7 +32,10 @@ COPY --from=builder --chown=agentwatch:agentwatch /app/.next/static ./.next/stat
 USER agentwatch
 EXPOSE 3000
 
+# 127.0.0.1, not localhost: busybox wget resolves localhost to ::1, while the server listens
+# on IPv4 (HOSTNAME=0.0.0.0), so a localhost probe is refused and the container never
+# becomes healthy
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-  CMD wget -q -O - http://localhost:3000/api/health || exit 1
+  CMD wget -q -O - http://127.0.0.1:3000/api/health || exit 1
 
 CMD ["node", "server.js"]
