@@ -30,7 +30,8 @@ pip install -e ".[dev]"
 ruff check agentwatch/
 ruff format --check agentwatch/
 
-# Tests (requires Postgres + Redis — use docker compose up -d first)
+# Tests (run without services; Postgres-store and connectivity tests are skipped unless
+# AGENTWATCH_TEST_PG_URL / DATABASE_URL / REDIS_URL are set — CI sets them)
 pytest tests/ -v --cov=agentwatch --cov-fail-under=70
 ```
 
@@ -72,7 +73,7 @@ npm run dev
 ## Docker
 
 ```bash
-docker compose up -d   # Postgres (pgvector), Redis, API, frontend
+docker compose up -d   # Postgres (pgvector), Redis, API, frontend — needs AGENTWATCH_API_KEY in .env
 docker compose --profile workers up -d   # + Celery worker
 docker compose --profile tracing up -d   # + Jaeger UI on :16686
 ```
@@ -82,7 +83,7 @@ Services: `postgres` (pgvector:pg16), `redis`, `api` (FastAPI on :8000, image: `
 Dockerfiles:
 
 - `Dockerfile.api` — Python 3.12-slim, multi-stage pip wheel build, non-root user, healthcheck on `/health`.
-- `Dockerfile.worker` — same builder/runtime pattern, CMD overridden in docker-compose to launch `celery worker`.
+- `Dockerfile.worker` — same builder/runtime pattern; its default CMD launches `celery worker` (docker-compose supplies only the broker/database environment).
 - `frontend/Dockerfile` — Node 20-alpine, Next.js standalone output, non-root user, healthcheck on `/api/health`.
 
 `.dockerignore` excludes `.git`, `node_modules`, `.next`, `.pytest_cache`, `.ruff_cache`, tests, IDE configs.

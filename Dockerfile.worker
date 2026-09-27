@@ -17,5 +17,5 @@ RUN pip install --no-cache-dir /wheels/*.whl && rm -rf /wheels
 USER agentwatch
 
 # Default CMD is the celery worker; the worker service in docker-compose
-# overrides this to set the broker URL via env vars.
+# supplies the broker and database URLs through environment variables.
 CMD ["celery", "-A", "agentwatch.tasks.celery_app", "worker", "--loglevel=info", "--concurrency=2"]
