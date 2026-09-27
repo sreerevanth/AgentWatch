@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 from collections.abc import Iterable, Iterator, Sequence
@@ -74,12 +75,45 @@ def _iso(dt: datetime | None) -> str | None:
     return dt.isoformat() if dt else None
 
 
+logger = logging.getLogger(__name__)
+
+
+def agentwatch_home() -> Path:
+    """AGENTWATCH_HOME, or ~/.agentwatch when unset or empty (an empty value exported from a
+    template must not mean the current directory)."""
+    return Path(os.environ.get("AGENTWATCH_HOME") or Path.home() / ".agentwatch")
+
+
 def default_store_url() -> str:
     url = os.environ.get("AGENTWATCH_STORE")
     if url:
         return url
-    home = Path(os.environ.get("AGENTWATCH_HOME", Path.home() / ".agentwatch"))
-    return f"sqlite:///{(home / 'agentwatch.db').as_posix()}"
+    return f"sqlite:///{(agentwatch_home() / 'agentwatch.db').as_posix()}"
+
+
+def default_blob_store(url: str, blob_dir: str | Path | None = None) -> BlobStore:
+    """Where payloads larger than INLINE_PAYLOAD_LIMIT live. They must persist as long as the
+    observations that reference them, so memory is used only for an in-memory SQLite store.
+
+    Order: explicit ``blob_dir`` > AGENTWATCH_BLOB_DIR > next to a SQLite file >
+    $AGENTWATCH_HOME/blobs (a server database: every API/worker replica must share it)."""
+    if blob_dir is not None:
+        return FsBlobStore(blob_dir)
+    if os.environ.get("AGENTWATCH_BLOB_DIR"):
+        return FsBlobStore(os.environ["AGENTWATCH_BLOB_DIR"])
+    if url.startswith("sqlite"):
+        path = url.split("///", 1)[-1]
+        if not path or ":memory:" in url:
+            return MemoryBlobStore()
+        return FsBlobStore(Path(path).parent / "blobs")
+    root = agentwatch_home() / "blobs"
+    logger.warning(
+        "large payloads of this %s store are kept in %s; set AGENTWATCH_BLOB_DIR to a directory "
+        "every API/worker replica shares",
+        url.split(":", 1)[0],
+        root,
+    )
+    return FsBlobStore(root)
 
 
 class Store:
@@ -123,16 +157,9 @@ class Store:
                 cur.execute("PRAGMA foreign_keys=ON")
                 cur.close()
 
-        if blob_store is not None:
-            self.blobs: BlobStore = blob_store
-        elif blob_dir is not None:
-            self.blobs = FsBlobStore(blob_dir)
-        elif self.is_sqlite and ":memory:" not in self.url:
-            self.blobs = FsBlobStore(Path(self.url.split("///", 1)[-1]).parent / "blobs")
-        elif os.environ.get("AGENTWATCH_BLOB_DIR"):
-            self.blobs = FsBlobStore(os.environ["AGENTWATCH_BLOB_DIR"])
-        else:
-            self.blobs = MemoryBlobStore()
+        self.blobs: BlobStore = (
+            blob_store if blob_store is not None else default_blob_store(self.url, blob_dir)
+        )
         self.init()
 
     # ── lifecycle ──────────────────────────────────────────────────────────
