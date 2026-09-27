@@ -203,5 +203,8 @@ jobs:
         run: npm ci
         working-directory: agentwatch-landing
       - name: Build
-        run: npm run build
+        # next/font downloads Google Fonts at build time; that fetch fails intermittently on
+        # runners. Retry once — a real build error fails both attempts.
+        run: |
+          npm run build || { echo "::warning::landing build failed, retrying once (font fetch)"; sleep 20; npm run build; }
         working-directory: agentwatch-landing
