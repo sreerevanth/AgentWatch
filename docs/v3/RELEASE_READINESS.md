@@ -4,6 +4,8 @@ Branch `architecture/v3` · assessed 2026-09-26 · proposed release: **0.3.0 (pr
 
 **Status (2026-09-27):** merged into `main` with `--no-ff` (merge commit `17d667d`), keeping every v3 commit. Development continues directly on `main`. Still open: the packaging split (ADR-0008) — the default `pip install agentwatch-ai` is deliberately unchanged until the owner approves it — and a release tag (tags publish to PyPI; none has been created).
 
+**Final pre-release state (2026-09-27, `main`).** After the merge, pre-release gaps were fixed one commit at a time on `main`, each with a regression test and green CI (section 4a). No engineering work outside the owner's decisions (section 9) and external credentials remains open. No maturity label was changed.
+
 ## 1. Quality bar
 
 | Requirement | Status | Evidence |
@@ -39,15 +41,16 @@ Some systems are EXPERIMENTAL by design and are labelled so in the capability re
 
 | Check | Result |
 |---|---|
-| Backend `pytest tests/` (local, Python 3.14; also 1207 passed / 7 skipped on Python 3.12) | **1191 passed, 7 skipped**, 0 failed, 265 s |
+| Backend `pytest tests/` (local, Python 3.14, 2026-09-27) | **1234 passed, 7 skipped**, 0 failed, 263 s |
 | — of which v3 | 124 tests (incl. 15 adversarial lineage, 10 graph invariants, 5 API parity, full CLI surface) |
 | — skipped | 3 PostgreSQL store tests and 2 connectivity tests (need DATABASE_URL/REDIS_URL/PG URL; they run in CI), 2 real-model tests `SKIPPED_EXTERNAL_CREDENTIAL` |
 | `ruff check` / `ruff format --check` (agentwatch, tests/v3, benchmarks) | clean |
-| mypy (changed v3 modules) | clean (not enforced in CI) |
+| mypy (`make typecheck`, v3 modules) | clean; enforced in CI |
 | Frontend: ESLint, Prettier check, `tsc --noEmit`, Jest | clean; 16 passed |
 | Frontend `next build` | succeeds |
 | Docker | CI builds `Dockerfile.api` and `frontend/Dockerfile` on every push (success); `docker compose config` validates all services |
-| CI (GitHub Actions, Python 3.12, PostgreSQL + Redis) | green: lint, unit, integration, frontend, landing, Docker build, security scan |
+| Compose smoke test (CI) | starts `api` + `frontend` with `--wait`; checks health, 401 without a key, the v3 store on PostgreSQL, an observation round trip, the frontend and its key-attaching proxy, and that a >64 KB payload survives an API restart |
+| CI (GitHub Actions, Python 3.12, PostgreSQL + Redis) | green: lint + mypy, unit, integration, frontend, landing, Docker build, compose smoke, security scan |
 
 One Landing Page Build failure in CI was a transient Google Fonts fetch; it passed on re-run.
 
@@ -64,7 +67,7 @@ All AWBench results come from deterministic stub systems. Real-model mode exists
 | **async_event_pipeline (information instances, best-effort telemetry)** | **0.95** | 0.51 | 0.33 | 0.89 | 1.0 / 0.64 |
 | **code_review_pipeline (information instances, high-fidelity telemetry)** | **1.0** | **0.92** | **0.91** | **1.0** | **1.0 / 0.89** (24/24 after a logged ground-truth correction) |
 
-**Current results (development evidence).** The most recent full run is at `7916690`, `results/awbench-20260926T172315Z.json`. Commits after it (`ef40ae6`, `a268d2d`) changed only the capability registry, mypy typing, formatting and docs, with no change in behaviour.
+**Current results (development evidence).** The most recent full run is at `cfac761` (clean tree, 3 seeds), `results/awbench-20260927T080257Z.json`. Its development metrics are identical to the previous committed run (`e802336`). The only difference is `code_review_pipeline` motif recall 0.89 → 1.0, which is the logged, benchmark-only ground-truth correction `e93bde8`. So the post-merge changes (ordering keys, run ordering, entity merging and aliases, storage and retention fixes) moved no AWBench metric.
 
 | thresholded metric | met? |
 |---|---|
@@ -93,6 +96,30 @@ The failed recall metrics are the deliberate trade-off of ADR-0017. Content that
 - **Surfaces:** query engine; API `/api/v3`; CLI; frontend (LIVE, MAP, TIMELINE, LAB, GENOME, COMPARE, QUERY); `agentwatch doctor`.
 - **AWBench:** development and held-out architectures, pre-registration, computed evidence status, opt-in real-model mode. The performance benchmark compares each run with the previous one.
 
+## 4a. Pre-release fixes after the merge
+
+Each is its own commit on `main` with a regression test; CI was green after each.
+
+- **Storage and privacy.**
+  - Large payloads (>64 KB) of a PostgreSQL store were kept in memory and lost on restart; they now go to `AGENTWATCH_BLOB_DIR` or `$AGENTWATCH_HOME/blobs`.
+  - Retention purge left payload blob files and derived copies behind; erasure left plaintext artifact blobs. Both now delete them and rebuild (`test_retention.py`).
+  - API keys are compared in constant time.
+  - HIPAA mode detects SSNs and emails, without MRN false positives.
+  - Schema-v1 stores upgrade in place; newer stores are refused.
+- **Correctness.** Ordering keys sort numerically under coarse clocks; runs that share a start time are ordered by their first observation; incremental processing merges entity aggregates.
+- **Deployment.**
+  - Compose used to crash-loop without a key and kept the v3 store inside the container. It now requires the key and uses PostgreSQL plus a blob volume.
+  - The frontend container was never healthy (BusyBox resolved `localhost` to `::1`).
+  - A compose smoke test runs in CI.
+- **CLI, API and docs.**
+  - `observe` reports refused arguments instead of crashing.
+  - The capability registry works in installed packages.
+  - `/api/v3/status` reports the store backend (never the URL).
+  - Re-execution warns that ingesting clients choose the command (ADR-0014).
+  - Docs commands are checked against the CLI by a test.
+  - `.env.example`, `AGENTS.md`, examples and the erasure endpoints were corrected or documented.
+- **Features added in this phase:** declared entity aliases (no fuzzy merging), and entity resolution shown in the API and MAP.
+
 ## 5. Breaking changes and packaging
 
 - **Graph node model.** Information nodes are `inst:<event>/o<k>` (and `/i<j>`, `/in<k>`), no longer `artifact:<content id>`.
@@ -112,7 +139,8 @@ The failed recall metrics are the deliberate trade-off of ADR-0017. Content that
   - Declared inputs, runtime identity or the OTel extension make lineage exact.
   - Short or templated texts that differ by fewer shingles than one seam cannot be separated.
 - **Stub models only.** No real-model AWBench run yet. The OpenAI key present in this environment is rejected by the provider (401 `account_deactivated`); no Anthropic key is set.
-- **Held-out evidence is spent.** `code_review_pipeline` met every threshold on its first run. It becomes FORMER_HELD_OUT on the next AgentWatch code change, so later changes need a fifth held-out architecture.
+- **Held-out evidence is spent.** All four held-out architectures are now FORMER_HELD_OUT (computed). `code_review_pipeline` met every threshold on its first run, before the post-merge changes. Those changes touched interpretation code (ordering keys, run ordering, entity merging), so re-validating the current code, or claiming generalization for it, needs a fresh fifth held-out architecture. Re-running the former held-out ones is development evidence only. The labels (high-fidelity VALIDATED, best-effort EXPERIMENTAL) rest on the first runs and were not changed.
+- **Retention and erasure** delete unreferenced payload blobs and every derived copy, then rebuild. A byte-identical large payload ingested at the same moment could lose its shared blob file, so run retention while such payloads are not being ingested.
 - **Privacy.** Crypto-shredding is opt-in (`AGENTWATCH_ENCRYPT_PAYLOADS=1`); declared ids are not encrypted; PII redaction is opt-in.
 - **Replay** mocks only instrumented calls. Real models are not deterministic, so replay differences can come from the model alone.
 - **Entity resolution** is exact-key plus user-declared aliases; no fuzzy merging.
@@ -129,11 +157,11 @@ The failed recall metrics are the deliberate trade-off of ADR-0017. Content that
 3. **Rebuild interpretations.** Run `agentwatch reprocess`; `doctor` reports STALE until then.
 4. **Existing v0.2 integrations** keep working. `/api/v1/events` is teed into v3, and `agentwatch ingest events.jsonl` imports history with translation-loss accounting.
 5. **Improve lineage in instrumented code.** Pass produced objects directly, or use `source=`. For OTel, set the `agentwatch.information.*` attributes.
-6. **Deploy.** `docker compose up -d` (images built in CI). Optional profiles: `workers`, `tracing`.
+6. **Deploy.** Set `AGENTWATCH_API_KEY` in `.env` (compose refuses to start without it), then `docker compose up -d` (images built in CI). The v3 store is on the PostgreSQL service and large payloads are on the `agentwatch_blobs` volume. Optional profiles: `workers`, `tracing`.
 
 ## 8. Rollback plan
 
-- **Git.** The release merges to `main` as one merge commit, tagged `v0.3.0`. Rollback means reverting that merge (or redeploying `v0.2.0`) and re-tagging. `main` is PR-protected, so the revert goes through a PR.
+- **Git.** The release merges to `main` as one merge commit, tagged `v0.3.0`. Rollback means reverting that merge with a new commit on `main` (history is never rewritten) or redeploying `v0.2.0`.
 - **Data.**
   - v3 data lives in separate tables (`aw3_*`) and does not modify v0.2 tables, so rolling back the code leaves v0.2 data intact.
   - v3 observations are immutable and can stay in place for a later re-upgrade. Interpretations are derived and can be rebuilt.

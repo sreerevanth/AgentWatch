@@ -6,8 +6,8 @@ Branch: `main` (v3 merged 2026-09-27, `17d667d`) · Updated 2026-09-27 · Releas
 
 | Area | Where | Status |
 |---|---|---|
-| Immutable evidence: frozen observations, DB-enforced immutability, idempotent append, edge redaction + manifests, blobs, Merkle segments, verify, inclusion proofs, authorized purge | `agentwatch/evidence`, `agentwatch/storage` | tested on SQLite and PostgreSQL (CI) |
-| Crypto-shredding: per-subject keys, erasure destroys the key and purges derived copies | `agentwatch/evidence/crypto.py`, `storage` | tested; graph invariant: erased data is not reconstructable |
+| Immutable evidence: frozen observations, DB-enforced immutability, idempotent append, edge redaction + manifests, blobs (persisted for every store backend), Merkle segments, verify, inclusion proofs, authorized purge (also deletes payload blobs and derived copies, then rebuilds) | `agentwatch/evidence`, `agentwatch/storage` | tested on SQLite and PostgreSQL (CI); `test_retention.py`, `test_blob_location.py` |
+| Crypto-shredding: per-subject keys, erasure destroys the key, purges derived copies and their blobs | `agentwatch/evidence/crypto.py`, `storage` | tested; graph invariant: erased data is not reconstructable |
 | Sensors: native SDK (incl. runtime object identity and explicit `source=`), OTel (OTLP JSON/protobuf, SpanProcessor, `agentwatch.*` extension attributes), LangChain, Claude Code, OpenAI/Anthropic wrappers, MCP tap, LegacyTranslator | `agentwatch/sensors`, `agentwatch/instrument.py` | tested |
 | Normalizers + canonical event algebra with explicit missing facts | `agentwatch/events` | tested |
 | Engine: versioned, deterministic rebuild; incremental per correlation group (with cross-run memory context); every observation → event or diagnostic | `agentwatch/runtime` | tested; incremental == full over random programs |
@@ -26,7 +26,7 @@ Branch: `main` (v3 merged 2026-09-27, `17d667d`) · Updated 2026-09-27 · Releas
 | Frontend: LIVE, MAP, TIMELINE, LAB, GENOME, COMPARE, QUERY (values, evidence strength, ambiguity, erased state) | `frontend/` | Jest, type-check, build; production build verified against live data |
 | AWBench: 3 development + 4 held-out architectures, computed evidence status, pre-registration, opt-in real-model mode | `benchmarks/awbench` | results committed |
 | Performance benchmark (with comparison to the previous run) | `benchmarks/perf` | results committed |
-| Docker images (API, frontend) | `Dockerfile.api`, `frontend/Dockerfile` | built in CI on every push |
+| Docker images (API, frontend) and compose stack (v3 store on PostgreSQL, blob volume, key required) | `Dockerfile.api`, `frontend/Dockerfile`, `docker-compose.yml` | built in CI on every push; compose smoke test in CI |
 
 ## Known limitations
 
@@ -41,7 +41,11 @@ Branch: `main` (v3 merged 2026-09-27, `17d667d`) · Updated 2026-09-27 · Releas
 - **M006 (information bottleneck)** fires only when a bottleneck is certain, so recall is low with extractive intermediates.
 - **Content matching has a resolution limit.** Candidates that differ by fewer shingles than one concatenation seam (4) cannot be separated.
 - **AWBench uses stub models.** Real-model runs are implemented (`--real-model`) but have not been run: no usable credential was available. The OpenAI key in this environment is rejected by the provider (401, `account_deactivated`).
-- **Held-out status.** Three held-out architectures have informed fixes and are FORMER_HELD_OUT. The fourth (`code_review_pipeline`, high-fidelity) met every threshold on its first run. It becomes FORMER_HELD_OUT on the next AgentWatch code change, so a fifth is needed for any later change.
+- **Held-out status.** All four held-out architectures are FORMER_HELD_OUT. Three informed fixes. The fourth (`code_review_pipeline`, high-fidelity) met every threshold on its first run, before the post-merge changes to interpretation code (ordering keys, run ordering, entity merging).
+  - The development regression run at `cfac761` shows no metric moved.
+  - Re-validating the current code, or any generalization claim about it, needs a fresh fifth held-out architecture.
+  - Maturity labels were not changed.
+- **Retention concurrency.** Purge and erasure delete payload blobs that nothing references. A byte-identical large payload ingested at that moment could lose its shared blob (documented in USER_GUIDE §6).
 - **Privacy.**
   - Crypto-shredding is opt-in (`AGENTWATCH_ENCRYPT_PAYLOADS=1`), and declared ids are not encrypted (ADR-0011).
   - PII redaction is opt-in.
@@ -52,6 +56,6 @@ Branch: `main` (v3 merged 2026-09-27, `17d667d`) · Updated 2026-09-27 · Releas
 
 ## Next exact tasks
 
-1. Owner decision: the packaging split (ADR-0008) and a release tag. v3 is merged into `main`.
+1. Owner decision: the packaging split (ADR-0008) and a release tag. v3 is merged into `main`, and the post-merge pre-release fixes are done (RELEASE_READINESS §4a); no other engineering work is open.
 2. Run AWBench `--real-model` with a working credential, and the `external` test marker.
 3. A fifth held-out architecture before claiming anything about later changes; a real-model held-out run would test best-effort lineage on abstractive outputs.
