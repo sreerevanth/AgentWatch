@@ -171,6 +171,56 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+  # ─── Compose smoke test ───────────────────────────────────────────────────
+  # Builds and starts postgres + redis + api exactly as docker-compose.yml defines them and
+  # checks the running API: health, key enforcement, and a v3 round trip on the Postgres
+  # store. Building images alone did not catch an API that could not start.
+  compose-smoke:
+    name: Compose Smoke Test
+    runs-on: ubuntu-latest
+    needs: [python-tests]
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Start the stack
+        run: |
+          echo "AGENTWATCH_API_KEY=ci-compose-smoke-key" > .env
+          docker compose up -d --build --wait --wait-timeout 300 api
+      - name: Check the running API
+        run: |
+          pip install -q -e .
+          python - <<'EOF'
+          import httpx
+          from agentwatch import instrument as aw
+          from agentwatch.sensors.base import ListSink
+
+          base, key = "http://localhost:8000", {"X-Api-Key": "ci-compose-smoke-key"}
+          assert httpx.get(f"{base}/health", timeout=10).status_code == 200
+          assert httpx.get(f"{base}/api/v3/status", timeout=10).status_code == 401
+          status = httpx.get(f"{base}/api/v3/status", headers=key, timeout=30).json()
+          assert status["store_backend"] == "postgresql", status
+          sink = ListSink()
+          aw.configure(sink)
+          with aw.run("compose-smoke"):
+              with aw.span("TOOL_INVOCATION", "ping") as s:
+                  s.input("x").output("y")
+          body = {"observations": [d.to_dict() for d in sink.drafts]}
+          r = httpx.post(f"{base}/api/v3/observations", json=body, headers=key, timeout=30)
+          assert r.status_code == 200 and r.json()["accepted"] == len(body["observations"]), r.text
+          runs = httpx.get(f"{base}/api/v3/runs", headers=key, timeout=60).json()["runs"]
+          assert any(x["name"] == "compose-smoke" for x in runs), runs
+          print("compose smoke test passed")
+          EOF
+      - name: API logs on failure
+        if: failure()
+        run: docker compose logs api
+      - name: Stop the stack
+        if: always()
+        run: docker compose down -v
+
   # ─── Security scan ────────────────────────────────────────────────────────
   security:
     name: Security Scan
