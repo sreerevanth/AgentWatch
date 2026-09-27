@@ -172,9 +172,10 @@ jobs:
           cache-to: type=gha,mode=max
 
   # ─── Compose smoke test ───────────────────────────────────────────────────
-  # Builds and starts postgres + redis + api exactly as docker-compose.yml defines them and
-  # checks the running API: health, key enforcement, and a v3 round trip on the Postgres
-  # store. Building images alone did not catch an API that could not start.
+  # Builds and starts postgres + redis + api + frontend exactly as docker-compose.yml defines
+  # them and checks the running stack: health, key enforcement, a v3 round trip on the
+  # Postgres store, and the frontend proxy attaching the key server-side. Building images
+  # alone did not catch an API that could not start.
   compose-smoke:
     name: Compose Smoke Test
     runs-on: ubuntu-latest
@@ -188,7 +189,7 @@ jobs:
       - name: Start the stack
         run: |
           echo "AGENTWATCH_API_KEY=ci-compose-smoke-key" > .env
-          docker compose up -d --build --wait --wait-timeout 300 api
+          docker compose up -d --build --wait --wait-timeout 420 api frontend
       - name: Check the running API
         run: |
           pip install -q -e .
@@ -212,11 +213,18 @@ jobs:
           assert r.status_code == 200 and r.json()["accepted"] == len(body["observations"]), r.text
           runs = httpx.get(f"{base}/api/v3/runs", headers=key, timeout=60).json()["runs"]
           assert any(x["name"] == "compose-smoke" for x in runs), runs
+          # the frontend: its page renders, and its proxy reaches /api/v3 with the key attached
+          # (the browser sends none)
+          ui = "http://localhost:3000"
+          assert httpx.get(f"{ui}/", timeout=30).status_code == 200
+          proxied = httpx.get(f"{ui}/api/v3/runs", timeout=60)
+          assert proxied.status_code == 200, proxied.text
+          assert any(x["name"] == "compose-smoke" for x in proxied.json()["runs"])
           print("compose smoke test passed")
           EOF
       - name: API logs on failure
         if: failure()
-        run: docker compose logs api
+        run: docker compose logs api frontend
       - name: Stop the stack
         if: always()
         run: docker compose down -v
