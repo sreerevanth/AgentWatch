@@ -140,10 +140,8 @@ def test_replay_experiments_and_erasure_match(setup):
         branch_history(Workspace(engine), normal)
     )
     assert c.get("/api/v3/experiments/does-not-exist").status_code == 404
-    erased = c.post(
-        "/api/v3/evidence/erase", json={"subject_id": "nobody", "reason": "parity test"}
-    )
-    assert erased.status_code in (200, 422), erased.text
-    assert canon(c.get("/api/v3/evidence/erasures").json()) == canon(
-        engine.store.erasures("default")
-    )
+    erased = c.post("/api/v3/evidence/erase", json={"subject": "nobody", "reason": "parity test"})
+    assert erased.status_code == 200, erased.text
+    log = c.get("/api/v3/evidence/erasures").json()
+    assert canon(log) == canon(engine.store.erasures("default"))
+    assert [e["subject"] for e in log] == ["nobody"]
