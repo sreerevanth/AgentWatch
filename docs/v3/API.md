@@ -16,6 +16,8 @@ Source: `agentwatch/api/v3.py` (mounted by `agentwatch/api/server.py`). FastAPI 
 | POST | `/api/v3/process` | — | rebuild report (interp id, counts, timings) |
 | POST | `/api/v3/evidence/verify` | — | seals pending observations; `{ok, segments_checked, observations_checked, errors}` |
 | GET | `/api/v3/observations/{obs_id}` | — | raw observation, inclusion proof, derived events |
+| POST | `/api/v3/evidence/erase` | `{subject, reason}` | crypto-shreds a data subject (irreversible; ADR-0011): destroys its key and rebuilds derived data without its payloads; erasure report |
+| GET | `/api/v3/evidence/erasures` | — | the tenant's erasure log |
 
 `ObservationDraft` fields:
 
