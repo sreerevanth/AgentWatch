@@ -1,7 +1,7 @@
 # AWBench results (machine-generated — do not edit)
 
-- generated: 2026-09-26T18:43:21.834064+00:00
-- git: `e802336cc1016bcb8f0fdd317db44539801311f8` · registry sha256 `e3beac912f11`
+- generated: 2026-09-27T08:02:57.103506+00:00
+- git: `cfac76194b19021f9fe8b2278ca0760245552ef3` · registry sha256 `4488d9bae68b`
 - runs: 111 · seeds: 3 · models: deterministic stubs (no real LLMs)
 - python 3.14.2 on Windows-11-10.0.26200-SP0
 
@@ -124,7 +124,7 @@ Its first run (results/awbench-20260926T145401Z.json, commit 9f7e97c) is the hel
 | explanation_faithfulness | evidence_resolves | 1.0 | 1.0 | yes |
 | explanation_faithfulness | numbers_grounded | 1.0 | 0.95 | yes |
 
-## Held-out architecture: code_review_pipeline — status HELD_OUT
+## Held-out architecture: code_review_pipeline — status FORMER_HELD_OUT
 
 
 
@@ -145,7 +145,7 @@ Its first run (results/awbench-20260926T145401Z.json, commit 9f7e97c) is the hel
 | h4_divergence | root_at_or_upstream | 1.0 | 0.9 | yes |
 | h4_divergence | baseline_index_aligned_top1 | 1.0 |  |  |
 | h5_motifs | micro_precision | 1.0 | 0.9 | yes |
-| h5_motifs | micro_recall | 0.8889 | 0.8 | yes |
+| h5_motifs | micro_recall | 1.0 | 0.8 | yes |
 | replay_fidelity | l1_consistency | 1.0 | 1.0 | yes |
 | replay_fidelity | l2_mean_reproduction | 1.0 | 0.99 | yes |
 | counterfactual_quality | simulated_outcome_accuracy | 1.0 | 0.8 | yes |
