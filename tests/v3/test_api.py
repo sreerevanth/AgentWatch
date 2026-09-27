@@ -153,3 +153,10 @@ def test_legacy_v1_events_are_teed_into_v3(client):
         and obs[0].source_kind == "legacy.agent_event"
         and obs[0].declared("session_id") == "s-tee"
     )
+
+
+def test_status_names_the_store_backend_without_credentials(client):
+    c, engine = client
+    body = c.get("/api/v3/status").json()
+    assert body["store_backend"] == "sqlite"
+    assert engine.store.url not in str(body)  # the URL (may hold credentials) is not exposed

@@ -222,6 +222,8 @@ def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRou
             "capabilities": [c.to_dict() for c in all_capabilities()],
             "reexecution_enabled": _reexecution_allowed(),
             "payload_encryption": w.store.encrypt_payloads,
+            # the backend only; the store URL can contain credentials and is not exposed
+            "store_backend": w.store.engine.dialect.name,
         }
 
     @router.get("/api/v3/live", tags=["v3"])
