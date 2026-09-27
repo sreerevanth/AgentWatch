@@ -41,6 +41,10 @@ services:
       # v3 evidence store: on the Postgres service, whose volume persists (otherwise it would
       # be SQLite inside the container and lost when the container is recreated)
       AGENTWATCH_STORE: postgresql+psycopg://agentwatch:agentwatch@postgres:5432/agentwatch
+      # payloads over 64 KB are stored as files; keep them on a volume
+      AGENTWATCH_BLOB_DIR: /data/blobs
+    volumes:
+      - agentwatch_blobs:/data/blobs
     ports:
       - "8000:8000"
     depends_on:
@@ -100,6 +104,7 @@ services:
 
 volumes:
   postgres_data:
+  agentwatch_blobs:
 
 networks:
   default:

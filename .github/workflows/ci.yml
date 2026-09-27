@@ -220,7 +220,34 @@ jobs:
           proxied = httpx.get(f"{ui}/api/v3/runs", timeout=60)
           assert proxied.status_code == 200, proxied.text
           assert any(x["name"] == "compose-smoke" for x in proxied.json()["runs"])
+          # a payload over the 64 KB inline limit (stored as a blob), kept for after the restart
+          sink.drafts.clear()
+          with aw.run("compose-smoke-large"):
+              with aw.span("TOOL_INVOCATION", "big") as s:
+                  s.output("x" * 100_000)
+          body = {"observations": [d.to_dict() for d in sink.drafts]}
+          r = httpx.post(f"{base}/api/v3/observations", json=body, headers=key, timeout=30)
+          assert r.status_code == 200, r.text
+          open("large_obs_ids.txt", "w").write("\n".join(r.json()["obs_ids"]))
           print("compose smoke test passed")
+          EOF
+      - name: Large payloads survive an API restart
+        run: |
+          docker compose restart api
+          docker compose up -d --wait --wait-timeout 180 api
+          python - <<'EOF'
+          import httpx
+
+          base, key = "http://localhost:8000", {"X-Api-Key": "ci-compose-smoke-key"}
+          ids = open("large_obs_ids.txt").read().split()
+          found = False
+          for obs_id in ids:
+              r = httpx.get(f"{base}/api/v3/observations/{obs_id}", headers=key, timeout=30)
+              assert r.status_code == 200, r.text
+              if "x" * 100_000 in r.text:
+                  found = True
+          assert found, "the large payload did not survive the restart"
+          print("large payload survived the restart")
           EOF
       - name: API logs on failure
         if: failure()
