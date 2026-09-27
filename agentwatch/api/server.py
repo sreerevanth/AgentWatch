@@ -6,6 +6,7 @@ FastAPI-based REST API for the observability dashboard, CLI, and integrations.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import logging
 import os
 import re
@@ -324,6 +325,14 @@ _IS_PROD = _ENV.lower() == "production"
 _CLOUD_MODE = get_cloud_config().is_cloud
 
 
+def _key_matches(supplied: str | None) -> bool:
+    """Constant-time comparison with AGENTWATCH_API_KEY (a plain != leaks how many leading
+    characters match through its timing)."""
+    if _API_KEY is None or supplied is None:
+        return False
+    return hmac.compare_digest(supplied.encode("utf-8"), _API_KEY.encode("utf-8"))
+
+
 def _require_api_key(
     x_api_key: str | None = Header(default=None, alias="X-Api-Key"),
 ) -> None:
@@ -356,7 +365,7 @@ def _require_api_key(
             detail="Server misconfiguration: API key is required in production.",
         )
 
-    if _API_KEY is not None and x_api_key != _API_KEY:
+    if _API_KEY is not None and not _key_matches(x_api_key):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing or invalid API key. Supply the key in the X-Api-Key header.",
@@ -1552,7 +1561,7 @@ async def websocket_events(websocket: WebSocket) -> None:
         await websocket.close(code=4500, reason="Server misconfiguration")
         return
 
-    if _API_KEY and supplied_key != _API_KEY:
+    if _API_KEY and not _key_matches(supplied_key):
         logger.warning("WebSocket connection rejected: invalid or missing API key")
         await websocket.close(code=4001, reason="Unauthorized")
         return
