@@ -21,6 +21,17 @@ class Maturity(StrEnum):
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
 
+def _source_checkout() -> bool:
+    """True in an AgentWatch source checkout, where evidence files can be verified. In an
+    installed package REPO_ROOT is site-packages: it has an agentwatch/ directory and may
+    have an unrelated tests/ directory, so those alone prove nothing."""
+    try:
+        text = (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return 'name = "agentwatch-ai"' in text
+
+
 @dataclass(frozen=True)
 class Capability:
     name: str
@@ -52,9 +63,9 @@ def register(cap: Capability, *, check_evidence: bool = True) -> Capability:
     if cap.maturity != Maturity.EXPERIMENTAL:
         if not cap.evidence:
             raise MaturityError(f"{cap.name}: {cap.maturity} requires evidence references")
-        if check_evidence and (REPO_ROOT / "agentwatch").exists():
+        if check_evidence and _source_checkout():
             missing = [e for e in cap.evidence if not (REPO_ROOT / e).exists()]
-            if missing and (REPO_ROOT / "tests").exists():
+            if missing:
                 raise MaturityError(f"{cap.name}: evidence files missing: {missing}")
     _REGISTRY[cap.name] = cap
     return cap

@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2] / "agentwatch"
 
 V3_PACKAGES = [
@@ -111,3 +113,20 @@ def test_v3_core_has_no_control_path_into_observed_programs():
             text = f.read_text(encoding="utf-8")
             assert "AgentWatchBlockedError" not in text, f
             assert "SafetyEngine" not in text, f
+
+
+def test_maturity_evidence_is_checked_only_in_a_source_checkout(tmp_path, monkeypatch):
+    """Regression: installed in site-packages next to an unrelated top-level tests/ package,
+    the evidence check raised for every VALIDATED capability (agentwatch status failed)."""
+    from agentwatch.analysis import maturity
+
+    (tmp_path / "agentwatch").mkdir()
+    (tmp_path / "tests").mkdir()
+    monkeypatch.setattr(maturity, "REPO_ROOT", tmp_path)
+    cap = maturity.Capability(
+        "x.test", "1", maturity.Maturity.VALIDATED, "d", ("tests/missing.py",)
+    )
+    maturity.register(cap)  # site-packages-like layout: not checked, no error
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "agentwatch-ai"\n')
+    with pytest.raises(maturity.MaturityError):
+        maturity.register(cap)  # a real checkout: the missing evidence is caught
