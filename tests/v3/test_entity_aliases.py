@@ -91,3 +91,17 @@ def test_incremental_equals_full_with_aliases(store: Store, sink):
     engine.process(force=True)
     assert _entities(engine) == incremental
     assert incremental["model:openai/gpt-4o"]["event_count"] == 6
+
+
+def test_read_model_describes_aliases_on_both_names(store: Store, sink):
+    from agentwatch.query.workspace import Workspace
+
+    engine = Engine(store, entity_aliases={"model:gpt-4o": "model:openai/gpt-4o"})
+    _record(sink)
+    engine.ingest(sink.drafts)
+    ws = Workspace(engine)
+    canonical = ws.describe_node("entity:model:openai/gpt-4o")
+    assert canonical["resolution"] == "DECLARED_ALIAS"
+    assert canonical["aliases"] == ["model:gpt-4o"] and "alias_of" not in canonical
+    observed = ws.describe_node("entity:model:gpt-4o")  # graph nodes keep observed names
+    assert observed["alias_of"] == "model:openai/gpt-4o"

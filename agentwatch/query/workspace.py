@@ -325,7 +325,30 @@ class Workspace:
                 "preview": art.get("preview"),
                 "size_bytes": art.get("size_bytes"),
             }
-        return {"node": node, "type": "entity", "label": ident}
+        ent = self._entity_index().get(ident)
+        if ent is None:
+            return {"node": node, "type": "entity", "label": ident}
+        return {
+            "node": node,
+            "type": "entity",
+            "label": ident,
+            "kind": ent.get("kind"),
+            "event_count": ent.get("event_count"),
+            "runs": len(ent.get("runs") or []),
+            "resolution": (ent.get("resolution") or {}).get("basis"),
+            "aliases": ent.get("aliases", []),
+            # the observed name was merged into a declared canonical entity
+            **({"alias_of": ent["canonical_key"]} if ent["canonical_key"] != ident else {}),
+        }
+
+    def _entity_index(self) -> dict[str, dict[str, Any]]:
+        cache = self.__dict__.setdefault("_entity_cache", {})
+        if not cache:
+            for e in self.entities():
+                cache[e["canonical_key"]] = e
+                for alias in e.get("aliases", []):
+                    cache.setdefault(alias, e)
+        return cache
 
     def entities(self) -> list[dict[str, Any]]:
         return self.store.entities(self.interp_id)
