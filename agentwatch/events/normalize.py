@@ -81,6 +81,13 @@ class NormalizeContext:
         )
 
 
+def ordering_seq(seq: int | None) -> str:
+    """A source sequence number that sorts correctly as text. Ordering keys are compared as
+    strings (in Python and in SQL); with coarse clocks (15.6 ms on Windows before Python
+    3.13) many events share a timestamp, and an unpadded ':10' would sort before ':9'."""
+    return f"{seq:012d}" if seq is not None else ""
+
+
 @dataclass
 class NormalizeResult:
     events: list[ComputationalEvent] = field(default_factory=list)
@@ -141,7 +148,7 @@ def temporal(start: RawObservation | None, end: RawObservation | None = None) ->
     basis = anchor.clock.source if anchor.observed_at else "missing"
     s = start.observed_at if start else None
     e = end.observed_at if end else None
-    seq = anchor.source_seq if anchor.source_seq is not None else ""
+    seq = ordering_seq(anchor.source_seq)
     return TemporalInfo(
         start=s,
         end=e,

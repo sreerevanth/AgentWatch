@@ -36,7 +36,7 @@ from agentwatch.sensors.legacy.translator import LegacyTranslator, TranslationRe
 from agentwatch.storage.store import AppendResult, Store
 
 logger = logging.getLogger(__name__)
-PIPELINE_VERSION = "1"
+PIPELINE_VERSION = "2"  # 2: zero-padded ordering keys
 
 
 def _writes_seen_by_other_runs(

@@ -26,6 +26,7 @@ from agentwatch.events.normalize import (
     NormalizeContext,
     Normalizer,
     NormalizeResult,
+    ordering_seq,
     source_order,
     temporal,
 )
@@ -181,7 +182,7 @@ class ClaudeCodeNormalizer(Normalizer):
             start=obs[0].observed_at,
             end=obs[-1].observed_at if len(obs) > 1 else None,
             basis=obs[0].clock.source if obs[0].observed_at else "missing",
-            ordering_key=f"{obs[0].sensor.instance_id}:{obs[0].source_seq}",
+            ordering_key=f"{obs[0].sensor.instance_id}:{ordering_seq(obs[0].source_seq)}",
         )
         return b.build()
 
