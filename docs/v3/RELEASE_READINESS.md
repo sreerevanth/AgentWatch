@@ -39,7 +39,7 @@ Some systems are EXPERIMENTAL by design and are labelled so in the capability re
 
 | Check | Result |
 |---|---|
-| Backend `pytest tests/` (local, Python 3.14) | **1191 passed, 7 skipped**, 0 failed, 265 s |
+| Backend `pytest tests/` (local, Python 3.14; also 1207 passed / 7 skipped on Python 3.12) | **1191 passed, 7 skipped**, 0 failed, 265 s |
 | — of which v3 | 124 tests (incl. 15 adversarial lineage, 10 graph invariants, 5 API parity, full CLI surface) |
 | — skipped | 3 PostgreSQL store tests and 2 connectivity tests (need DATABASE_URL/REDIS_URL/PG URL; they run in CI), 2 real-model tests `SKIPPED_EXTERNAL_CREDENTIAL` |
 | `ruff check` / `ruff format --check` (agentwatch, tests/v3, benchmarks) | clean |
