@@ -4,7 +4,7 @@ It runs offline and deterministically (the "model" is a local extractive stub), 
 behaviour can be reconstructed, compared and replayed exactly.
 
     agentwatch observe python examples/research_system.py
-    agentwatch observe python examples/research_system.py -- --variant flaky_tool
+    agentwatch observe python examples/research_system.py --variant flaky_tool
     agentwatch inspect latest
 
 Variants change behaviour in controlled ways:
