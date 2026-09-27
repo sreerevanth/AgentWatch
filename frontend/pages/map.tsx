@@ -226,10 +226,36 @@ export default function MapView() {
               />
             ) : (
               selected && (
-                <Panel title="value">
+                <Panel title={selected.startsWith('entity:') ? 'entity' : 'value'}>
                   {(() => {
                     const n = g.data?.nodes.find((x) => x.node === selected);
                     if (!n) return null;
+                    if (n.type === 'entity')
+                      return (
+                        <div className="space-y-1 font-mono text-[11px]">
+                          <Mono>{n.label}</Mono>
+                          {n.alias_of ? (
+                            <p className="text-zinc-400">
+                              declared alias of{' '}
+                              <button
+                                className="text-sky-300 hover:underline"
+                                onClick={() => setSelected(`entity:${n.alias_of}`)}
+                              >
+                                {n.alias_of}
+                              </button>
+                            </p>
+                          ) : (
+                            <p className="text-zinc-500">
+                              {n.kind} · {n.event_count ?? 0} events · {n.runs ?? 0} runs · resolved
+                              by{' '}
+                              {n.resolution === 'DECLARED_ALIAS' ? 'declared alias' : 'exact key'}
+                            </p>
+                          )}
+                          {(n.aliases ?? []).length > 0 && (
+                            <p className="text-zinc-500">aliases: {(n.aliases ?? []).join(', ')}</p>
+                          )}
+                        </div>
+                      );
                     return (
                       <div className="space-y-1">
                         <Mono>{n.label}</Mono>

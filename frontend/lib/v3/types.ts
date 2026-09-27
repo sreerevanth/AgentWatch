@@ -121,6 +121,13 @@ export interface NodeDesc {
   consumer_event?: string | null;
   role?: string | null;
   erased?: boolean;
+  /** entities: how the key was resolved; DECLARED_ALIAS merges only user-declared aliases */
+  kind?: string;
+  event_count?: number;
+  runs?: number;
+  resolution?: 'EXACT_KEY' | 'DECLARED_ALIAS';
+  aliases?: string[];
+  alias_of?: string;
   actor?: string | null;
   status?: string;
   start?: string | null;
