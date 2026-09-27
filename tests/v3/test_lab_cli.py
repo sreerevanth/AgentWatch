@@ -12,7 +12,7 @@ from agentwatch.cli.main import app
 from agentwatch.lab.branch import branch_history, counterfactual, create_branch, execute_branch
 from agentwatch.lab.observe import observe
 from agentwatch.lab.replay import replay
-from agentwatch.query.workspace import Workspace
+from agentwatch.query.workspace import Workspace, run_order_key
 
 EXAMPLE = str(Path(__file__).resolve().parents[2] / "examples" / "research_system.py")
 OFF_TOPIC = [
@@ -191,7 +191,7 @@ def test_cli_full_surface_on_persisted_data(tmp_path, monkeypatch):
     run("observe", "python", EXAMPLE)
     run("observe", "python", EXAMPLE, "--variant", "flaky_tool")
     ws = Workspace(Store(url))
-    normal, flaky = (r["run_id"] for r in sorted(ws.runs(), key=lambda r: r["started_at"]))
+    normal, flaky = (r["run_id"] for r in sorted(ws.runs(), key=run_order_key))
     assert normal[:8] in run("runs")
     assert "execution" in run("inspect", normal[:8]) and "information lineage" in run(
         "inspect", normal[:8]

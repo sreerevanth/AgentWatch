@@ -16,6 +16,12 @@ from agentwatch.runtime.engine import Engine
 from agentwatch.storage.store import Store
 
 
+def run_order_key(run: dict[str, Any]) -> tuple[str, str]:
+    """Chronological order of runs: start time, then the first observation (ULIDs are
+    assigned in recording order), so runs sharing a coarse timestamp still order correctly."""
+    return (run.get("started_at") or "", run.get("first_observation") or "")
+
+
 class NotFoundError(LookupError):
     pass
 
@@ -41,7 +47,8 @@ class Workspace:
 
     # ── runs ──────────────────────────────────────────────────────────────
     def runs(self, limit: int | None = None) -> list[dict[str, Any]]:
-        return self.store.runs(self.interp_id, limit=limit)
+        """Most recent first."""
+        return sorted(self.store.runs(self.interp_id, limit=limit), key=run_order_key, reverse=True)
 
     def resolve_run(self, ref: str) -> dict[str, Any]:
         runs = self.runs()
@@ -49,7 +56,7 @@ class Workspace:
             raise NotFoundError("no runs recorded yet")
         if ref.startswith("latest"):
             offset = int(ref.split("~", 1)[1]) if "~" in ref else 0
-            ordered = sorted(runs, key=lambda r: r.get("started_at") or "", reverse=True)
+            ordered = sorted(runs, key=run_order_key, reverse=True)
             if offset >= len(ordered):
                 raise NotFoundError(f"only {len(ordered)} runs exist")
             return ordered[offset]
@@ -63,7 +70,7 @@ class Workspace:
             raise AmbiguousError(f"run prefix {ref!r} matches {len(pref)} runs")
         named = [r for r in runs if r.get("name") == ref]
         if named:
-            return sorted(named, key=lambda r: r.get("started_at") or "", reverse=True)[0]
+            return sorted(named, key=run_order_key, reverse=True)[0]
         raise NotFoundError(f"no run matches {ref!r}")
 
     # ── events ────────────────────────────────────────────────────────────

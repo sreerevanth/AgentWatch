@@ -55,7 +55,7 @@ def test_compare_blames_the_first_differing_retry_not_an_identical_one(engine, s
     failed identically in both runs."""
     from agentwatch import instrument as aw
     from agentwatch.compare.runs import compare
-    from agentwatch.query.workspace import Workspace
+    from agentwatch.query.workspace import Workspace, run_order_key
 
     def run(fails: int) -> None:
         state = {"n": fails}
@@ -79,7 +79,7 @@ def test_compare_blames_the_first_differing_retry_not_an_identical_one(engine, s
     run(3)
     engine.ingest(sink.drafts)
     ws = Workspace(engine)
-    base, perturbed = (r["run_id"] for r in sorted(ws.runs(), key=lambda r: r["started_at"]))
+    base, perturbed = (r["run_id"] for r in sorted(ws.runs(), key=run_order_key))
     runs = {"perturbed": perturbed}
     d = compare(ws, base, perturbed)["earliest_divergence"]
     attempts = [

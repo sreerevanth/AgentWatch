@@ -15,7 +15,7 @@ from agentwatch.graph.model import Basis, EvidenceClass, RelType, View, make_rel
 from agentwatch.graph.traverse import Graph
 from agentwatch.provenance.lineage import dependents, lineage, render
 from agentwatch.query.engine import ask, compile_question, execute
-from agentwatch.query.workspace import Workspace
+from agentwatch.query.workspace import Workspace, run_order_key
 from agentwatch.state.latent import infer_states
 
 DOCS = [
@@ -84,7 +84,7 @@ def ws(engine, sink):
 
 
 def run_by(ws: Workspace, i: int) -> str:
-    return sorted(ws.runs(), key=lambda r: r["started_at"])[i]["run_id"]
+    return sorted(ws.runs(), key=run_order_key)[i]["run_id"]
 
 
 def test_provenance_reaches_retrieved_documents_and_exposes_ambiguity(ws):

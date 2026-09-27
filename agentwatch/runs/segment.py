@@ -134,6 +134,9 @@ def summarize_run(
         "status": status,
         "status_basis": "run_lifecycle_event" if lifecycle else "not_declared",
         "started_at": min(starts).isoformat() if starts else None,
+        # tie-breaker for runs that share a start time (coarse clocks): observation ids are
+        # ULIDs assigned in recording order
+        "first_observation": min((o for e in evs for o in e.derived_from), default=None),
         "ended_at": max(ends).isoformat() if ends else None,
         "duration_ms": (max(ends) - min(starts)).total_seconds() * 1000.0
         if starts and ends

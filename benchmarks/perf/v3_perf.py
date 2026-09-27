@@ -21,7 +21,7 @@ from pathlib import Path
 from agentwatch import instrument as aw
 from agentwatch.compare.runs import compare
 from agentwatch.provenance.lineage import lineage
-from agentwatch.query.workspace import Workspace
+from agentwatch.query.workspace import Workspace, run_order_key
 from agentwatch.runtime.engine import Engine
 from agentwatch.sensors.base import ListSink
 
@@ -183,8 +183,8 @@ def main(argv: list[str] | None = None) -> int:
         results["incremental_mode"] = inc.get("mode")  # type: ignore[union-attr]
         ws = Workspace(engine)
         a, b = (
-            sorted(ws.runs(), key=lambda r: r["started_at"])[0]["run_id"],
-            sorted(ws.runs(), key=lambda r: r["started_at"])[1]["run_id"],
+            sorted(ws.runs(), key=run_order_key)[0]["run_id"],
+            sorted(ws.runs(), key=run_order_key)[1]["run_id"],
         )  # the two large runs
         t_graph, g = timed(lambda: ws._build_graph(a, None), repeat=3)  # uncached build
         results["graph_build_ms"] = round(t_graph * 1000, 1)
