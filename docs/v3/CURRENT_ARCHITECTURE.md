@@ -4,6 +4,8 @@ Status: Phase 0 deliverable · Audited 2026-09-25 against `main` @ `1eeeb2c` plu
 
 This document describes what exists, not what the README or `VISION.md` says exists. Every claim links to code.
 
+> **Dated snapshot.** This is the v0.2 system as audited on 2026-09-25, before v3. Several findings have since been addressed, for example the in-place HIPAA redaction race (regression test in `tests/v3/test_regressions.py`). For the current state see [IMPLEMENTATION_STATE.md](IMPLEMENTATION_STATE.md) and [MIGRATION_MAP.md](MIGRATION_MAP.md) §4.
+
 ---
 
 ## 1. Current system map
