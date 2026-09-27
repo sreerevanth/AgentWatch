@@ -11,6 +11,7 @@ commands on the server and is therefore disabled unless ``AGENTWATCH_ALLOW_REEXE
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 from collections.abc import Callable
@@ -42,6 +43,9 @@ def set_engine(engine: Engine | None) -> None:
     global _engine
     with _engine_lock:
         _engine = engine
+
+
+logger = logging.getLogger(__name__)
 
 
 def _reexecution_allowed() -> bool:
@@ -102,6 +106,12 @@ class QueryRequest(BaseModel):
 
 def build_router(auth: Callable[..., Any], tenant: Callable[..., str]) -> APIRouter:
     router = APIRouter(dependencies=[Depends(auth)])
+    if _reexecution_allowed():
+        logger.warning(
+            "AGENTWATCH_ALLOW_REEXECUTION is on: replay/branch requests re-run a run's recorded "
+            "command on this server, and anyone who can ingest observations can supply that "
+            "command. Enable only for trusted, single-user deployments (ADR-0014)."
+        )
 
     def ws(tenant_id: str = Depends(tenant)) -> Workspace:
         return Workspace(get_engine(), tenant_id)

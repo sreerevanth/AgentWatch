@@ -17,4 +17,5 @@ L2/L3 replay, branch execution and executed counterfactuals re-run the *recorded
 ## Consequences
 
 - Operators must opt in per deployment.
+- **Enabling it grants command execution to every client that can ingest observations.** The command that is re-run is the `command` attribute of the run, and a run's attributes come from its observations. Any client allowed to `POST /api/v3/observations` (or `/v1/traces`) can therefore record a run whose command it chose, then request its replay. The argument validator (`cli._utils`, no shell metacharacters) narrows what can be passed but is not a sandbox. Enable re-execution only for trusted, single-user deployments where every ingesting client is trusted. The server logs a warning at start when it is on (added 2026-09-27).
 - The UI (LAB) shows which levels are enabled.

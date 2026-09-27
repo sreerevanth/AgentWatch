@@ -71,7 +71,7 @@ Source: `agentwatch/api/v3.py` (mounted by `agentwatch/api/server.py`). FastAPI 
 
 | Method | Path | Body | Notes |
 |---|---|---|---|
-| POST | `/api/v3/replay` | `{run, level, live[]}` | L0/L1 always; L2/L3 need `AGENTWATCH_ALLOW_REEXECUTION=1` |
+| POST | `/api/v3/replay` | `{run, level, live[]}` | L0/L1 always; L2/L3 need `AGENTWATCH_ALLOW_REEXECUTION=1` — which lets any client that can ingest observations choose a command the server runs (ADR-0014); trusted single-user deployments only |
 | POST | `/api/v3/branches` | `{run, at, substitute, level, execute}` | executing needs re-execution enabled |
 | POST | `/api/v3/counterfactual` | `{run, at, alternative, execute}` | falls back to MODEL_ESTIMATED / UNKNOWN when re-execution is off |
 | GET | `/api/v3/experiments?record_type=&subject=` | — | recorded lab experiments of one type (e.g. `branch`), optionally for one run |
