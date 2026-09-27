@@ -154,7 +154,7 @@ command: agentwatch evidence erase-subject
     param yes kind=TyperOption type=boolean required=False default=False flags=--yes help=''
 
 command: agentwatch evidence purge
-    help: Retention: remove sealed segments older than N days (authorization recorded, chain preserved).
+    help: Retention: remove sealed segments older than N days, their payload files and derived copies (chain preserved).
     short_help: 
     param older_than_days kind=TyperOption type=int required=True default=None flags=--older-than-days help=''
     param reason kind=TyperOption type=str required=True default=None flags=--reason help=''

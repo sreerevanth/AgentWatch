@@ -1042,21 +1042,24 @@ def evidence_purge(
     store: str | None = STORE_OPTION,
     tenant: str = typer.Option("default", "--tenant"),
 ) -> None:
-    """Retention: remove sealed segments older than N days (authorization recorded, chain preserved)."""
+    """Retention: remove sealed segments older than N days, their payload files and derived copies (chain preserved)."""
     from datetime import UTC, datetime, timedelta
 
-    from agentwatch.storage.store import Store
+    from agentwatch.runtime.engine import Engine
 
-    st = Store(store)
+    engine = Engine(store)
+    st = engine.store
     segs = st.segments_sealed_before(tenant, datetime.now(UTC) - timedelta(days=older_than_days))
     if not segs:
         console.print("nothing to purge")
         return
     if not yes:
         _fail(f"{len(segs)} segments would be purged; re-run with --yes to confirm")
-    removed = sum(st.purge_segment(s, reason=reason, actor="cli") for s in segs)
+    report = engine.purge_segments(segs, reason=reason, actor="cli")
     console.print(
-        f"purged {len(segs)} segments ({removed} observations); chain verification: {st.verify(tenant).ok}"
+        f"purged {len(segs)} segments ({report['observations']} observations, "
+        f"{report['blobs_deleted']} payload files); derived data rebuilt; "
+        f"chain verification: {st.verify(tenant).ok}"
     )
 
 

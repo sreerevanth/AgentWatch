@@ -112,6 +112,16 @@ class Engine:
         report["rebuild"] = self.process(tenant_id, force=True)
         return report
 
+    def purge_segments(
+        self, segment_ids: Sequence[str], *, reason: str, actor: str | None = None
+    ) -> dict[str, Any]:
+        """Retention: purge sealed segments with every derived copy, then rebuild."""
+        report = self.store.purge_segments(segment_ids, reason, actor)
+        report["rebuild"] = {
+            t: self.process(t, force=True) for t in report.pop("tenants_to_rebuild")
+        }
+        return report
+
     def ingest_legacy(
         self, events: Iterable[Any], tenant_id: str = "default"
     ) -> tuple[list[TranslationResult], AppendResult]:

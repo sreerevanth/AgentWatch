@@ -207,7 +207,7 @@ agentwatch evidence erase-subject customer-42 --reason "GDPR art. 17" --yes
 
 This destroys the subject's key, purges every derived copy and rebuilds. The raw evidence chain still verifies.
 
-Raw observations cannot be updated or deleted. Database triggers reject both. Retention removes whole sealed segments, and the purge authorization is recorded. Secrets are redacted before storage, and a redaction manifest is kept.
+Raw observations cannot be updated or deleted. Database triggers reject both. Retention removes whole sealed segments, and the purge authorization is recorded. A purge (and an erasure) also deletes the blob files of large payloads that nothing references any more, and every derived copy (events, relations, artifacts, analyses, experiments about affected runs); the derived data is then rebuilt from the evidence that remains. Run retention while the same large payloads are not being ingested: a byte-identical payload ingested at that moment could lose its shared blob file. Secrets are redacted before storage, and a redaction manifest is kept.
 
 ## 7. Server and UI
 

@@ -273,61 +273,10 @@ class Store:
                     .where(s.data_keys.c.key_id == found[0])
                     .values(key_hex=None, destroyed_at=_now(), reason=reason)
                 )
-            runs: set[str] = set()
-            for chunk in _chunks(obs_ids, 500):
-                ev = [
-                    r[0]
-                    for r in conn.execute(
-                        select(s.event_sources.c.event_id).where(
-                            s.event_sources.c.obs_id.in_(chunk)
-                        )
-                    )
-                ]
-                for echunk in _chunks(ev, 500):
-                    runs.update(
-                        r[0]
-                        for r in conn.execute(
-                            select(s.events.c.run_id).where(s.events.c.event_id.in_(echunk))
-                        )
-                        if r[0]
-                    )
-            interp_ids = [
-                r[0]
-                for r in conn.execute(
-                    select(s.interpretations.c.interp_id).where(
-                        s.interpretations.c.tenant_id == tenant_id
-                    )
-                )
-            ]
-            for table in (
-                s.events,
-                s.event_sources,
-                s.diagnostics,
-                s.entities,
-                s.runs,
-                s.relations,
-                s.relation_members,
-                s.derived,
-            ):
-                for chunk in _chunks(interp_ids, 200):
-                    conn.execute(delete(table).where(table.c.interp_id.in_(chunk)))
-            conn.execute(
-                update(s.interpretations)
-                .where(s.interpretations.c.tenant_id == tenant_id)
-                .values(processed_through=None)
+            runs = self._runs_of(conn, obs_ids)
+            interp_ids, artifact_blobs, removed_experiments = self._clear_derived(
+                conn, tenant_id, runs
             )
-            conn.execute(delete(s.artifacts).where(s.artifacts.c.tenant_id == tenant_id))
-            removed_experiments = 0
-            for chunk in _chunks(sorted(runs), 200):
-                removed_experiments += int(
-                    conn.execute(
-                        delete(s.experiments).where(
-                            s.experiments.c.tenant_id == tenant_id,
-                            s.experiments.c.subject.in_(chunk),
-                        )
-                    ).rowcount
-                    or 0
-                )
             report = {
                 "subject": subject,
                 "key_destroyed": found is not None,
@@ -339,6 +288,7 @@ class Store:
                 },
                 "note": "raw observations are unchanged (ciphertext); rebuild derived data with Engine.process(force=True)",
             }
+            report["blobs_deleted"] = self._delete_unreferenced_blobs(conn, artifact_blobs)
             conn.execute(
                 insert(s.erasures).values(
                     erasure_id=new_ulid(),
@@ -353,6 +303,104 @@ class Store:
                 )
             )
         return report
+
+    def _runs_of(self, conn: Any, obs_ids: Sequence[str]) -> set[str]:
+        """Runs (of any interpretation) with an event derived from one of ``obs_ids``."""
+        runs: set[str] = set()
+        for chunk in _chunks(list(obs_ids), 500):
+            ev = [
+                r[0]
+                for r in conn.execute(
+                    select(s.event_sources.c.event_id).where(s.event_sources.c.obs_id.in_(chunk))
+                )
+            ]
+            for echunk in _chunks(ev, 500):
+                runs.update(
+                    r[0]
+                    for r in conn.execute(
+                        select(s.events.c.run_id).where(s.events.c.event_id.in_(echunk))
+                    )
+                    if r[0]
+                )
+        return runs
+
+    def _clear_derived(
+        self, conn: Any, tenant_id: str, runs: set[str]
+    ) -> tuple[list[str], set[str], int]:
+        """Delete every derived row of the tenant (all interpretations, artifacts) and the
+        experiments about ``runs``: they may hold copies of payloads that are going away.
+        Returns (interp_ids, artifact blob digests, experiments removed)."""
+        interp_ids = [
+            r[0]
+            for r in conn.execute(
+                select(s.interpretations.c.interp_id).where(
+                    s.interpretations.c.tenant_id == tenant_id
+                )
+            )
+        ]
+        for table in (
+            s.events,
+            s.event_sources,
+            s.diagnostics,
+            s.entities,
+            s.runs,
+            s.relations,
+            s.relation_members,
+            s.derived,
+        ):
+            for chunk in _chunks(interp_ids, 200):
+                conn.execute(delete(table).where(table.c.interp_id.in_(chunk)))
+        conn.execute(
+            update(s.interpretations)
+            .where(s.interpretations.c.tenant_id == tenant_id)
+            .values(processed_through=None)
+        )
+        artifact_blobs = {
+            r[0]
+            for r in conn.execute(
+                select(s.artifacts.c.content_blob).where(
+                    s.artifacts.c.tenant_id == tenant_id, s.artifacts.c.content_blob.is_not(None)
+                )
+            )
+        }
+        conn.execute(delete(s.artifacts).where(s.artifacts.c.tenant_id == tenant_id))
+        removed_experiments = 0
+        for chunk in _chunks(sorted(runs), 200):
+            removed_experiments += int(
+                conn.execute(
+                    delete(s.experiments).where(
+                        s.experiments.c.tenant_id == tenant_id,
+                        s.experiments.c.subject.in_(chunk),
+                    )
+                ).rowcount
+                or 0
+            )
+        return interp_ids, artifact_blobs, removed_experiments
+
+    def _delete_unreferenced_blobs(self, conn: Any, digests: set[str]) -> int:
+        """Delete the blob files among ``digests`` that no observation or artifact (of any
+        tenant: blobs are content-addressed and shared) still references.
+
+        Limitation: a payload byte-identical to a deleted one, ingested concurrently between
+        this check and its row insert, would lose its blob; run retention when that cannot
+        happen (e.g. not while replaying the same large payloads)."""
+        deleted = 0
+        for digest in sorted(digests):
+            used = (
+                conn.execute(
+                    select(s.observations.c.obs_id)
+                    .where(s.observations.c.payload_blob == digest)
+                    .limit(1)
+                ).first()
+                or conn.execute(
+                    select(s.artifacts.c.artifact_id)
+                    .where(s.artifacts.c.content_blob == digest)
+                    .limit(1)
+                ).first()
+            )
+            if not used and self.blobs.delete(digest):
+                deleted += 1
+        return deleted
 
     def erasures(self, tenant_id: str = "default") -> list[dict[str, Any]]:
         with self.engine.connect() as conn:
@@ -765,43 +813,76 @@ class Store:
 
     # ── retention ──────────────────────────────────────────────────────────
     def purge_segment(self, segment_id: str, reason: str, actor: str | None = None) -> int:
-        """Remove a sealed segment's observations under retention policy.
+        """Purge one sealed segment; see :meth:`purge_segments`. Returns observations removed."""
+        return int(self.purge_segments([segment_id], reason, actor)["observations"])
+
+    def purge_segments(
+        self, segment_ids: Sequence[str], reason: str, actor: str | None = None
+    ) -> dict[str, Any]:
+        """Remove sealed segments' observations under retention policy.
 
         The authorization is recorded and the segment row (with its hashes) is kept, so
-        the chain still verifies and the purge is visible.
+        the chain still verifies and the purge is visible. Everything that may hold a copy
+        of the purged payloads goes too: the blob files of large payloads, and the tenant's
+        derived data (events, relations, artifacts and their blobs, analyses, experiments
+        about affected runs). Rebuild the derived data afterwards with
+        ``Engine.process(force=True)`` (``Engine.purge_segments`` does both).
         """
+        removed = 0
+        blobs: set[str] = set()
+        runs: set[str] = set()
+        tenants: set[str] = set()
         with self.engine.begin() as conn:
-            seg = conn.execute(
-                select(s.segments).where(s.segments.c.segment_id == segment_id)
-            ).first()
-            if seg is None:
-                raise KeyError(segment_id)
-            conn.execute(
-                insert(s.purge_authorizations).values(
-                    segment_id=segment_id,
-                    tenant_id=seg.tenant_id,
-                    reason=reason,
-                    authorized_at=_now(),
-                    actor=actor,
+            for segment_id in segment_ids:
+                seg = conn.execute(
+                    select(s.segments).where(s.segments.c.segment_id == segment_id)
+                ).first()
+                if seg is None:
+                    raise KeyError(segment_id)
+                tenants.add(seg.tenant_id)
+                conn.execute(
+                    insert(s.purge_authorizations).values(
+                        segment_id=segment_id,
+                        tenant_id=seg.tenant_id,
+                        reason=reason,
+                        authorized_at=_now(),
+                        actor=actor,
+                    )
                 )
-            )
-            ids = [
-                r[0]
-                for r in conn.execute(
-                    select(s.observations.c.obs_id).where(s.observations.c.segment_id == segment_id)
+                rows = conn.execute(
+                    select(s.observations.c.obs_id, s.observations.c.payload_blob).where(
+                        s.observations.c.segment_id == segment_id
+                    )
+                ).all()
+                ids = [r[0] for r in rows]
+                blobs.update(r[1] for r in rows if r[1])
+                runs |= self._runs_of(conn, ids)
+                for chunk in _chunks(ids, 500):
+                    conn.execute(delete(s.declared_ids).where(s.declared_ids.c.obs_id.in_(chunk)))
+                removed += int(
+                    conn.execute(
+                        delete(s.observations).where(s.observations.c.segment_id == segment_id)
+                    ).rowcount
+                    or 0
                 )
-            ]
-            for chunk in _chunks(ids, 500):
-                conn.execute(delete(s.declared_ids).where(s.declared_ids.c.obs_id.in_(chunk)))
-            n = conn.execute(
-                delete(s.observations).where(s.observations.c.segment_id == segment_id)
-            ).rowcount
-            conn.execute(
-                update(s.segments)
-                .where(s.segments.c.segment_id == segment_id)
-                .values(purged_at=_now())
-            )
-        return int(n or 0)
+                conn.execute(
+                    update(s.segments)
+                    .where(s.segments.c.segment_id == segment_id)
+                    .values(purged_at=_now())
+                )
+            experiments = 0
+            for tenant in sorted(tenants):
+                _, artifact_blobs, n = self._clear_derived(conn, tenant, runs)
+                blobs |= artifact_blobs
+                experiments += n
+            deleted = self._delete_unreferenced_blobs(conn, blobs)
+        return {
+            "segments": len(segment_ids),
+            "observations": removed,
+            "blobs_deleted": deleted,
+            "experiments_removed": experiments,
+            "tenants_to_rebuild": sorted(tenants),
+        }
 
     def segments_sealed_before(self, tenant_id: str, cutoff: datetime) -> list[str]:
         return [

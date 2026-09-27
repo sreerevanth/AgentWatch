@@ -13,6 +13,7 @@ class BlobStore(Protocol):
     def put(self, data: bytes) -> str: ...
     def get(self, digest: str) -> bytes: ...
     def exists(self, digest: str) -> bool: ...
+    def delete(self, digest: str) -> bool: ...
 
 
 class BlobIntegrityError(RuntimeError):
@@ -60,6 +61,14 @@ class FsBlobStore:
     def exists(self, digest: str) -> bool:
         return self._path(digest).exists()
 
+    def delete(self, digest: str) -> bool:
+        """Remove a blob (retention/erasure). Returns whether it existed."""
+        try:
+            self._path(digest).unlink()
+        except FileNotFoundError:
+            return False
+        return True
+
 
 class MemoryBlobStore:
     def __init__(self) -> None:
@@ -75,3 +84,6 @@ class MemoryBlobStore:
 
     def exists(self, digest: str) -> bool:
         return digest in self._data
+
+    def delete(self, digest: str) -> bool:
+        return self._data.pop(digest, None) is not None
