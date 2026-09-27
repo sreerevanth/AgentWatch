@@ -86,12 +86,18 @@ def observe(
     system: str | None = typer.Option(None, "--system", help="System name recorded on the run."),
 ) -> None:
     """[bold]Observe[/bold] a program: run it under the v3 sensors and reconstruct the run."""
+    from agentwatch.cli._utils.run_cmd import CommandError
     from agentwatch.lab.observe import observe as run_observe
     from agentwatch.runtime.engine import Engine
 
     engine = Engine(store)
     env = {"AGENTWATCH_SYSTEM": system} if system else None
-    res = run_observe(engine, list(command), env=env)
+    try:
+        res = run_observe(engine, list(command), env=env)
+    except CommandError as exc:
+        # arguments are validated before anything runs (cli._utils policy: no shell
+        # metacharacters such as ';'); report it instead of a traceback
+        _fail(f"refused to run the command: {exc}")
     if res.stdout:
         sys.stdout.write(res.stdout)
     if res.stderr:

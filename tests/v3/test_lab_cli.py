@@ -227,3 +227,13 @@ def test_cli_full_surface_on_persisted_data(tmp_path, monkeypatch):
     assert refused.exit_code == 1 and "--yes" in refused.output
     erased = json.loads(run("evidence", "erase-subject", "nobody", "--reason", "test", "--yes"))
     assert "subject" in json.dumps(erased)
+
+
+def test_observe_rejects_unsafe_arguments_without_a_traceback(tmp_path, monkeypatch):
+    """Regression: an argument the command validator refuses (e.g. containing ';') crashed
+    `observe` with a traceback instead of a clean error."""
+    monkeypatch.setenv("AGENTWATCH_STORE", f"sqlite:///{(tmp_path / 'r.db').as_posix()}")
+    r = CliRunner().invoke(app, ["observe", "python", "-c", "import sys; print(1)"])
+    assert r.exit_code == 1
+    assert "refused to run the command" in r.output
+    assert "Traceback" not in r.output
