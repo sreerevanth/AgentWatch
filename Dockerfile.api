@@ -3,7 +3,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends build-essential
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY . .
-RUN pip wheel --no-cache-dir --wheel-dir /wheels .
+# [postgres]: the v3 evidence store's driver (docker-compose puts the store on Postgres)
+RUN pip wheel --no-cache-dir --wheel-dir /wheels ".[postgres]"
 
 FROM python:3.12-slim AS runtime
 RUN useradd --create-home --uid 10001 agentwatch
